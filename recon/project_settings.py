@@ -39,6 +39,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'USE_BRUTEFORCE_FOR_SUBDOMAINS': False,
     'STEALTH_MODE': False,
 
+    # AI in Pipeline (master switch + model picker for all AI hooks across recon)
+    'AI_IN_PIPELINE': False,
+    'AI_PIPELINE_MODEL': 'claude-opus-4-6',
+
     # WHOIS/DNS
     'WHOIS_ENABLED': True,
     'WHOIS_MAX_RETRIES': 6,
@@ -357,7 +361,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'FFUF_THREADS': 40,
     'FFUF_RATE': 0,
     'FFUF_TIMEOUT': 10,
-    'FFUF_MAX_TIME': 600,
+    'FFUF_MAX_TIME': 1800,
     'FFUF_MATCH_CODES': [200, 201, 204, 301, 302, 307, 308, 401, 403, 405],
     'FFUF_FILTER_CODES': [],
     'FFUF_FILTER_SIZE': '',
@@ -368,7 +372,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'FFUF_FOLLOW_REDIRECTS': False,
     'FFUF_CUSTOM_HEADERS': [],
     'FFUF_SMART_FUZZ': True,
-    'FFUF_PARALLELISM': 4,
+    'FFUF_PARALLELISM': 20,
+    'FFUF_AI_EXTENSIONS': False,
 
     # Arjun Parameter Discovery
     'ARJUN_ENABLED': True,
@@ -906,6 +911,11 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['FFUF_CUSTOM_HEADERS'] = project.get('ffufCustomHeaders', DEFAULT_SETTINGS['FFUF_CUSTOM_HEADERS'])
     settings['FFUF_SMART_FUZZ'] = project.get('ffufSmartFuzz', DEFAULT_SETTINGS['FFUF_SMART_FUZZ'])
     settings['FFUF_PARALLELISM'] = project.get('ffufParallelism', DEFAULT_SETTINGS['FFUF_PARALLELISM'])
+    settings['FFUF_AI_EXTENSIONS'] = project.get('ffufAiExtensions', DEFAULT_SETTINGS['FFUF_AI_EXTENSIONS'])
+
+    # AI in Pipeline (master switch + model)
+    settings['AI_IN_PIPELINE'] = project.get('aiInPipeline', DEFAULT_SETTINGS['AI_IN_PIPELINE'])
+    settings['AI_PIPELINE_MODEL'] = project.get('aiPipelineModel', DEFAULT_SETTINGS['AI_PIPELINE_MODEL'])
 
     # Arjun Parameter Discovery
     settings['ARJUN_ENABLED'] = project.get('arjunEnabled', DEFAULT_SETTINGS['ARJUN_ENABLED'])
@@ -1274,15 +1284,21 @@ def get_settings() -> dict[str, Any]:
         try:
             settings = fetch_project_settings(project_id, webapp_url)
             logger.info(f"Loaded {len(settings)} settings from API for project {project_id}")
-            return settings
-
         except Exception as e:
             logger.error(f"Failed to fetch project settings: {e}")
             raise  # Don't silently fall back - fail loudly if API is expected but unavailable
+    else:
+        # Fallback to DEFAULT_SETTINGS for CLI usage only
+        logger.info("Using DEFAULT_SETTINGS (no PROJECT_ID/WEBAPP_API_URL set - CLI mode)")
+        settings = DEFAULT_SETTINGS.copy()
 
-    # Fallback to DEFAULT_SETTINGS for CLI usage only
-    logger.info("Using DEFAULT_SETTINGS (no PROJECT_ID/WEBAPP_API_URL set - CLI mode)")
-    return DEFAULT_SETTINGS.copy()
+    # Apply project-level cascade overrides. Stealth runs first so that AI
+    # overrides see the post-stealth state (e.g., FFUF_ENABLED=False from
+    # stealth makes FFUF_AI_EXTENSIONS moot). Both functions are pure and
+    # idempotent.
+    settings = apply_stealth_overrides(settings)
+    settings = apply_ai_pipeline_overrides(settings)
+    return settings
 
 
 # Singleton settings instance
@@ -1496,4 +1512,31 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
                 "ActiveSecurityChecks=OFF, JsRecon=reduced, GraphQL=introspection-only, "
                 "GraphQLCop=no-DoS")
 
+    return settings
+
+
+# =============================================================================
+# AI IN PIPELINE OVERRIDES
+# =============================================================================
+
+def apply_ai_pipeline_overrides(settings: dict[str, Any]) -> dict[str, Any]:
+    """
+    Apply AI-in-pipeline cascade to per-tool AI flags.
+
+    When AI_IN_PIPELINE is True, every supported per-tool AI flag is forced ON.
+    When False, every per-tool AI flag is forced OFF (defense-in-depth against
+    drift between master and per-tool fields).
+
+    Today only FFUF_AI_EXTENSIONS is governed by this cascade; future per-tool
+    AI flags should be added to both branches.
+    """
+    if not settings.get('AI_IN_PIPELINE', False):
+        settings['FFUF_AI_EXTENSIONS'] = False
+        return settings
+
+    settings['FFUF_AI_EXTENSIONS'] = True
+    logger.info(
+        "AI in pipeline enabled, model=%s, FFuf=AI-extensions",
+        settings.get('AI_PIPELINE_MODEL', 'claude-opus-4-6'),
+    )
     return settings

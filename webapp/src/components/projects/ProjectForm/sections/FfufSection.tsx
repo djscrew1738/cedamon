@@ -200,10 +200,10 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                   <input
                     type="number"
                     className="textInput"
-                    value={data.ffufParallelism ?? 3}
-                    onChange={(e) => updateField('ffufParallelism', parseInt(e.target.value) || 3)}
+                    value={data.ffufParallelism ?? 20}
+                    onChange={(e) => updateField('ffufParallelism', parseInt(e.target.value) || 20)}
                     min={1}
-                    max={10}
+                    max={50}
                   />
                   <span className={styles.fieldHint}>Number of targets to fuzz in parallel</span>
                 </div>
@@ -227,7 +227,7 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                     type="number"
                     className="textInput"
                     value={data.ffufMaxTime}
-                    onChange={(e) => updateField('ffufMaxTime', parseInt(e.target.value) || 600)}
+                    onChange={(e) => updateField('ffufMaxTime', parseInt(e.target.value) || 1800)}
                     min={60}
                   />
                   <span className={styles.fieldHint}>Maximum total execution time per target</span>
@@ -427,6 +427,23 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                 </div>
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Extensions</label>
+                  <div className={styles.toggleRow} style={{ marginBottom: 'var(--space-2)' }}>
+                    <div style={{ flex: 1 }}>
+                      <span className={styles.toggleLabel}>Use AI for Extensions</span>
+                      <p className={styles.toggleDescription}>
+                        AI picks file extensions per target based on server response
+                        headers. When on, the static list below is ignored.
+                        {!data.aiInPipeline && (
+                          <span> Enable &quot;AI in Pipeline&quot; in the Target tab to use this.</span>
+                        )}
+                      </p>
+                    </div>
+                    <Toggle
+                      checked={data.ffufAiExtensions}
+                      disabled={!data.aiInPipeline}
+                      onChange={(checked) => updateField('ffufAiExtensions', checked)}
+                    />
+                  </div>
                   <div className={styles.fileImportWrap}>
                     <input
                       type="text"
@@ -434,13 +451,19 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
                       value={(data.ffufExtensions ?? []).join(', ')}
                       onChange={(e) => updateField('ffufExtensions', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
                       placeholder=".php, .bak, .env, .json"
+                      disabled={data.ffufAiExtensions}
+                      style={data.ffufAiExtensions ? { opacity: 0.5 } : undefined}
                     />
                     <FileImportButton
                       fieldName="extensions"
                       onImport={(values) => updateField('ffufExtensions', values)}
                     />
                   </div>
-                  <span className={styles.fieldHint}>File extensions to append to each word (comma-separated)</span>
+                  <span className={styles.fieldHint}>
+                    {data.ffufAiExtensions
+                      ? 'Extensions chosen by AI per target. Static list above is ignored.'
+                      : 'File extensions to append to each word (comma-separated)'}
+                  </span>
                 </div>
               </div>
 

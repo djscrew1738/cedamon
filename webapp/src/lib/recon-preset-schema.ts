@@ -17,6 +17,8 @@ export const reconPresetSchema = z.object({
   // -- Global --
   scanModules: strArr,
   stealthMode: bool,
+  aiInPipeline: bool,
+  aiPipelineModel: str,
   updateGraphDb: bool,
   useTorForRecon: bool,
   useBruteforceForSubdomains: bool,
@@ -234,6 +236,7 @@ export const reconPresetSchema = z.object({
   ffufFollowRedirects: bool,
   ffufSmartFuzz: bool,
   ffufParallelism: int,
+  ffufAiExtensions: bool,
 
   // -- Parameter Discovery: Arjun --
   arjunEnabled: bool,
@@ -428,6 +431,8 @@ export const RECON_PARAMETER_CATALOG = `
 ## Scan Modules & Global
 - scanModules: string[] - Pipeline phases to run. Values: "domain_discovery", "port_scan", "http_probe", "resource_enum", "vuln_scan", "js_recon"
 - stealthMode: boolean - Reduce scan aggressiveness and network noise
+- aiInPipeline: boolean - Master toggle that enables AI-powered enhancements across all recon modules that support them. Cascades on/off to per-tool AI flags (e.g. ffufAiExtensions).
+- aiPipelineModel: string - Model identifier for the AI hooks in recon (e.g. "claude-opus-4-6", "claude-haiku-4-5-20251001"). Independent of agentOpenaiModel.
 - updateGraphDb: boolean - Store results in the graph database
 - useTorForRecon: boolean - Route traffic through Tor
 - useBruteforceForSubdomains: boolean - Enable DNS brute-force for subdomain discovery
@@ -645,6 +650,7 @@ export const RECON_PARAMETER_CATALOG = `
 - ffufFollowRedirects: boolean
 - ffufSmartFuzz: boolean
 - ffufParallelism: integer - Targets fuzzed in parallel
+- ffufAiExtensions: boolean - When true, FFuf file extensions are picked per-target by AI from response headers (requires aiInPipeline=true). The static ffufExtensions list is ignored.
 
 ## Parameter Discovery - Arjun
 - arjunEnabled: boolean - Run Arjun parameter discovery

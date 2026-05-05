@@ -231,6 +231,8 @@ class ContainerManager:
                     "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
                     "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
                     "INTERNAL_API_KEY": os.environ.get("INTERNAL_API_KEY", ""),
+                    # Agent API for AI hooks (FFuf AI extensions, etc.)
+                    "AGENT_API_URL": os.environ.get("AGENT_API_URL", "http://localhost:8090"),
                 },
                 volumes={
                     "/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "rw"},
@@ -742,6 +744,8 @@ class ContainerManager:
                     "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
                     "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
                     "INTERNAL_API_KEY": os.environ.get("INTERNAL_API_KEY", ""),
+                    # Agent API for AI hooks (FFuf AI extensions, etc.)
+                    "AGENT_API_URL": os.environ.get("AGENT_API_URL", "http://localhost:8090"),
                 },
                 volumes={
                     "/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "rw"},

@@ -451,6 +451,9 @@ const Ffuf = (
       <li><strong>Subdomain nodes</strong> not yet covered by a BaseURL — both <span style={codeStyle}>http://&lt;sub&gt;</span> and <span style={codeStyle}>https://&lt;sub&gt;</span> added so freshly discovered subs get fuzzed.</li>
       <li><strong>Custom URLs</strong> from the partial recon modal — added to the fuzz list and treated as live targets.</li>
     </ol>
+    <p style={paraStyle}>
+      When <strong>AI in Pipeline</strong> is enabled, file extensions are chosen per target by AI from response headers (Server, X-Powered-By, etc.). The static extension list is ignored. The AI call is cached by header fingerprint so multiple targets behind the same stack only cost one call.
+    </p>
 
     <div style={sectionTitleStyle}>How output transforms the graph</div>
     <ul style={listStyle}>

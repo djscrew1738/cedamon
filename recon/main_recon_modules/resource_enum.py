@@ -24,6 +24,7 @@ Pipeline: http_probe -> resource_enum (Katana + Hakrawler + GAU + ParamSpider pa
 """
 
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional
@@ -222,7 +223,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     FFUF_THREADS = settings.get('FFUF_THREADS', 40)
     FFUF_RATE = settings.get('FFUF_RATE', 0)
     FFUF_TIMEOUT = settings.get('FFUF_TIMEOUT', 10)
-    FFUF_MAX_TIME = settings.get('FFUF_MAX_TIME', 600)
+    FFUF_MAX_TIME = settings.get('FFUF_MAX_TIME', 1800)
     FFUF_MATCH_CODES = settings.get('FFUF_MATCH_CODES', [200, 201, 204, 301, 302, 307, 308, 401, 403, 405])
     FFUF_FILTER_CODES = settings.get('FFUF_FILTER_CODES', [])
     FFUF_FILTER_SIZE = settings.get('FFUF_FILTER_SIZE', '')
@@ -233,7 +234,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     FFUF_FOLLOW_REDIRECTS = settings.get('FFUF_FOLLOW_REDIRECTS', False)
     FFUF_CUSTOM_HEADERS = settings.get('FFUF_CUSTOM_HEADERS', [])
     FFUF_SMART_FUZZ = settings.get('FFUF_SMART_FUZZ', True)
-    FFUF_PARALLELISM = settings.get('FFUF_PARALLELISM', 3)
+    FFUF_PARALLELISM = settings.get('FFUF_PARALLELISM', 20)
+    FFUF_AI_EXTENSIONS = settings.get('FFUF_AI_EXTENSIONS', False)
+    AI_PIPELINE_MODEL = settings.get('AI_PIPELINE_MODEL', 'claude-opus-4-6')
 
     # Arjun settings
     ARJUN_ENABLED = settings.get('ARJUN_ENABLED', False)
@@ -740,6 +743,25 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                     discovered_base_paths = sorted(base_paths)[:20]
                     print(f"[*][FFuf] Smart fuzz: targeting {len(discovered_base_paths)} discovered base paths")
 
+            effective_extensions = FFUF_EXTENSIONS
+            if FFUF_AI_EXTENSIONS:
+                from recon.helpers.ai_planner.ffuf_extensions import get_ai_extensions
+                user_id = os.environ.get('USER_ID', '')
+                project_id = os.environ.get('PROJECT_ID', '')
+                print(f"[*][FFuf] AI extensions enabled, model={AI_PIPELINE_MODEL}")
+                print(f"[*][FFuf] Querying AI for {len(target_urls)} target(s)...")
+                fp_cache: dict = {}
+                ai_per_target: dict = {}
+                for url in target_urls:
+                    ai_per_target[url] = get_ai_extensions(
+                        url, AI_PIPELINE_MODEL, max_extensions=6,
+                        cache=fp_cache, user_id=user_id, project_id=project_id,
+                    )
+                # Union of per-target extensions (single ffuf job uses one -e list).
+                effective_extensions = sorted({e for exts in ai_per_target.values() for e in exts})
+                print(f"[*][FFuf] AI selected {len(effective_extensions)} unique extensions across all targets: {effective_extensions}")
+                print(f"[*][FFuf] Static FFUF_EXTENSIONS list ({FFUF_EXTENSIONS}) is being ignored.")
+
             ffuf_results, ffuf_meta = run_ffuf_discovery(
                 target_urls,
                 FFUF_WORDLIST,
@@ -750,7 +772,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                 FFUF_MATCH_CODES,
                 FFUF_FILTER_CODES,
                 FFUF_FILTER_SIZE,
-                FFUF_EXTENSIONS,
+                effective_extensions,
                 FFUF_RECURSION,
                 FFUF_RECURSION_DEPTH,
                 FFUF_AUTO_CALIBRATE,

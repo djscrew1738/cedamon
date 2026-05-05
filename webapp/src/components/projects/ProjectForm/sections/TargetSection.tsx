@@ -1,11 +1,13 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronDown, Target, ShieldAlert, AlertTriangle } from 'lucide-react'
+import { ChevronDown, Target, ShieldAlert, AlertTriangle, Sparkles } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import { isHardBlockedDomain } from '@/lib/hard-guardrail'
 import { FileImportButton } from '../FileImportButton'
+import { ModelPicker } from '@/components/shared/ModelPicker'
+import { useProject } from '@/providers/ProjectProvider'
 import styles from '../ProjectForm.module.css'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -50,6 +52,7 @@ function parseIpList(text: string): string[] {
 export function TargetSection({ data, updateField, mode = 'create' }: TargetSectionProps) {
   const isLocked = mode === 'edit'
   const [isOpen, setIsOpen] = useState(true)
+  const { userId } = useProject()
 
   const ipMode = data.ipMode || false
 
@@ -279,6 +282,82 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                   onChange={handleRootDomainToggle}
                   disabled={isLocked}
                 />
+              </div>
+
+              {/* AI in Pipeline (master toggle, model picker, per-tool toggles) */}
+              <div className={styles.subSection}>
+                <h3 className={styles.subSectionTitle}>
+                  <Sparkles size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+                  AI in Pipeline
+                </h3>
+                <div className={styles.toggleRow} style={{ gap: 'var(--space-4)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span className={styles.toggleLabel}>Enable AI in Pipeline</span>
+                    <p className={styles.toggleDescription}>
+                      Master switch that unlocks every per-tool AI toggle below.
+                      When OFF, all per-tool AI flags are forced OFF and disabled,
+                      no LLM calls are made by the recon pipeline. When ON, each
+                      per-tool toggle becomes editable and individual AI hooks can
+                      be turned on or off independently. Pick the model used by
+                      every hook just below.
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={data.aiInPipeline}
+                    onChange={(checked) => {
+                      updateField('aiInPipeline', checked)
+                      // When master flips, cascade to every per-tool flag so the
+                      // form state matches the backend defense-in-depth contract.
+                      updateField('ffufAiExtensions', checked)
+                    }}
+                  />
+                </div>
+                {data.aiInPipeline && (
+                  <>
+                    <div className={styles.fieldRow} style={{ marginTop: 'var(--space-3)' }}>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>AI Model</label>
+                        <ModelPicker
+                          userId={userId}
+                          value={data.aiPipelineModel}
+                          onChange={(id) => updateField('aiPipelineModel', id)}
+                        />
+                        <span className={styles.fieldHint}>
+                          Model used by every AI hook in recon. Independent of the
+                          agent&apos;s own model selection. Pick a cheaper model here
+                          if cost matters more than peak quality.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Per-tool AI toggles. Each one mirrors the toggle in its tool
+                        section, sharing the same form field, so flipping either
+                        place updates both. Add new entries here as more tools gain
+                        AI hooks. */}
+                    <div style={{ marginTop: 'var(--space-4)' }}>
+                      <div className={styles.toggleRow} style={{ gap: 'var(--space-4)' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span className={styles.toggleLabel}>FFuf: Use AI for Extensions</span>
+                          <p className={styles.toggleDescription}>
+                            For each fuzz target, FFuf first sends a single HEAD
+                            request and asks the configured model to suggest the
+                            most likely file extensions based on the response
+                            headers (Server, X-Powered-By, X-AspNet-Version).
+                            The static FFuf extensions list in the FFuf module is
+                            ignored when this is on. Same toggle as in the FFuf
+                            module: flipping it here flips it there. A
+                            per-fingerprint cache means N hosts behind the same
+                            stack collapse to one LLM call.
+                          </p>
+                        </div>
+                        <Toggle
+                          checked={data.ffufAiExtensions}
+                          onChange={(checked) => updateField('ffufAiExtensions', checked)}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className={styles.subSection}>

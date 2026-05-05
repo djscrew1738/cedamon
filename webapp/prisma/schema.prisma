@@ -141,6 +141,8 @@ model Project {
   ownershipTxtPrefix          String   @default("_redamon-verify") @map("ownership_txt_prefix")
   stealthMode                 Boolean  @default(false) @map("stealth_mode")
   targetGuardrailEnabled      Boolean  @default(true) @map("target_guardrail_enabled")
+  aiInPipeline                Boolean  @default(false) @map("ai_in_pipeline")
+  aiPipelineModel             String   @default("claude-opus-4-6") @map("ai_pipeline_model")
 
   // ========== RECON PRESET ==========
   reconPresetId               String?  @map("recon_preset_id")
@@ -426,7 +428,7 @@ model Project {
   ffufThreads                 Int      @default(40) @map("ffuf_threads")
   ffufRate                    Int      @default(0) @map("ffuf_rate")
   ffufTimeout                 Int      @default(10) @map("ffuf_timeout")
-  ffufMaxTime                 Int      @default(600) @map("ffuf_max_time")
+  ffufMaxTime                 Int      @default(1800) @map("ffuf_max_time")
   ffufMatchCodes              Int[]    @default([200, 201, 204, 301, 302, 307, 308, 401, 403, 405]) @map("ffuf_match_codes")
   ffufFilterCodes             Int[]    @default([]) @map("ffuf_filter_codes")
   ffufFilterSize              String   @default("") @map("ffuf_filter_size")
@@ -437,7 +439,8 @@ model Project {
   ffufFollowRedirects         Boolean  @default(false) @map("ffuf_follow_redirects")
   ffufCustomHeaders           String[] @default([]) @map("ffuf_custom_headers")
   ffufSmartFuzz               Boolean  @default(true) @map("ffuf_smart_fuzz")
-  ffufParallelism             Int      @default(4) @map("ffuf_parallelism")
+  ffufParallelism             Int      @default(20) @map("ffuf_parallelism")
+  ffufAiExtensions            Boolean  @default(false) @map("ffuf_ai_extensions")
 
   // ========== ARJUN PARAMETER DISCOVERY ==========
   arjunEnabled                Boolean  @default(true) @map("arjun_enabled")

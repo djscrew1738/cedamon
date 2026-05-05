@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { ChevronDown, Bot, Search, Loader2, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, Bot, AlertTriangle } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import { useProject } from '@/providers/ProjectProvider'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
-import { type ModelOption, formatContextLength, getDisplayName } from '@/app/graph/components/AIAssistantDrawer/modelUtils'
+import { ModelPicker } from '@/components/shared/ModelPicker'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
@@ -18,67 +18,6 @@ interface AgentBehaviourSectionProps {
 export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
   const { userId } = useProject()
-
-  // Model selector state
-  const [allModels, setAllModels] = useState<Record<string, ModelOption[]>>({})
-  const [modelsLoading, setModelsLoading] = useState(true)
-  const [modelsError, setModelsError] = useState(false)
-  const [search, setSearch] = useState('')
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-
-  // Fetch models on mount (pass userId for user-specific providers)
-  useEffect(() => {
-    const params = userId ? `?userId=${userId}` : ''
-    fetch(`/api/models${params}`)
-      .then(r => {
-        if (!r.ok) throw new Error('Failed to fetch')
-        return r.json()
-      })
-      .then(data => {
-        if (data && typeof data === 'object' && !data.error) {
-          setAllModels(data)
-        } else {
-          setModelsError(true)
-        }
-      })
-      .catch(() => setModelsError(true))
-      .finally(() => setModelsLoading(false))
-  }, [userId])
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false)
-        setSearch('')
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const selectModel = useCallback((id: string) => {
-    updateField('agentOpenaiModel', id)
-    setDropdownOpen(false)
-    setSearch('')
-  }, [updateField])
-
-  // Filter models by search
-  const filteredModels: Record<string, ModelOption[]> = {}
-  const lowerSearch = search.toLowerCase()
-  for (const [provider, models] of Object.entries(allModels)) {
-    const filtered = models.filter(m =>
-      m.id.toLowerCase().includes(lowerSearch) ||
-      m.name.toLowerCase().includes(lowerSearch) ||
-      m.description.toLowerCase().includes(lowerSearch)
-    )
-    if (filtered.length > 0) filteredModels[provider] = filtered
-  }
-
-  const totalFiltered = Object.values(filteredModels).reduce((sum, arr) => sum + arr.length, 0)
 
   return (
     <div className={styles.section}>
@@ -106,86 +45,11 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             <div className={styles.fieldRow}>
               <div className={styles.fieldGroup}>
                 <label className={styles.fieldLabel}>LLM Model</label>
-                <div className={styles.modelSelector} ref={dropdownRef}>
-                  <div
-                    className={`${styles.modelSelectorInput} ${dropdownOpen ? styles.modelSelectorInputFocused : ''}`}
-                    onClick={() => {
-                      setDropdownOpen(true)
-                      setTimeout(() => inputRef.current?.focus(), 0)
-                    }}
-                  >
-                    {dropdownOpen ? (
-                      <input
-                        ref={inputRef}
-                        className={styles.modelSearchInput}
-                        type="text"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search models..."
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            setDropdownOpen(false)
-                            setSearch('')
-                          }
-                        }}
-                      />
-                    ) : (
-                      <span className={styles.modelSelectedText}>
-                        {modelsLoading ? 'Loading models...' : getDisplayName(data.agentOpenaiModel, allModels)}
-                      </span>
-                    )}
-                    {modelsLoading ? (
-                      <Loader2 size={12} className={styles.modelSelectorSpinner} />
-                    ) : (
-                      <Search size={12} className={styles.modelSelectorIcon} />
-                    )}
-                  </div>
-
-                  {dropdownOpen && (
-                    <div className={styles.modelDropdown}>
-                      {modelsError ? (
-                        <div className={styles.modelDropdownEmpty}>
-                          <span>Failed to load models. Type a model ID manually:</span>
-                          <input
-                            className="textInput"
-                            type="text"
-                            value={data.agentOpenaiModel}
-                            onChange={(e) => updateField('agentOpenaiModel', e.target.value)}
-                            placeholder="e.g. claude-opus-4-6, gpt-5.2, openrouter/meta-llama/llama-4-maverick, openai_compat/llama3.1"
-                            style={{ marginTop: 'var(--space-1)' }}
-                          />
-                        </div>
-                      ) : Object.keys(filteredModels).length === 0 ? (
-                        <div className={styles.modelDropdownEmpty}>
-                          {search ? `No models matching "${search}"` : 'No providers configured'}
-                        </div>
-                      ) : (
-                        Object.entries(filteredModels).map(([provider, models]) => (
-                          <div key={provider} className={styles.modelGroup}>
-                            <div className={styles.modelGroupHeader}>{provider}</div>
-                            {models.map(model => (
-                              <div
-                                key={model.id}
-                                className={`${styles.modelOption} ${model.id === data.agentOpenaiModel ? styles.modelOptionSelected : ''}`}
-                                onClick={() => selectModel(model.id)}
-                              >
-                                <div className={styles.modelOptionMain}>
-                                  <span className={styles.modelOptionName}>{model.name}</span>
-                                  {model.context_length && (
-                                    <span className={styles.modelOptionCtx}>{formatContextLength(model.context_length)}</span>
-                                  )}
-                                </div>
-                                {model.description && (
-                                  <span className={styles.modelOptionDesc}>{model.description}</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                <ModelPicker
+                  userId={userId}
+                  value={data.agentOpenaiModel}
+                  onChange={(id) => updateField('agentOpenaiModel', id)}
+                />
                 <span className={styles.fieldHint}>
                   Model used by the agent. Configure providers in Global Settings.
                 </span>

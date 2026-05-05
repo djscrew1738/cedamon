@@ -406,6 +406,145 @@ async def summarize_report(body: ReportSummarizeRequest):
         )
 
 
+class FfufExtensionsRequest(BaseModel):
+    url: str
+    headers: dict
+    model: str
+    max_extensions: int = 6
+    user_id: Optional[str] = None
+    project_id: Optional[str] = None
+
+
+_FFUF_EXT_SYSTEM_PROMPT = """You are a security testing assistant helping with directory fuzzing.
+
+Given a target URL and its HTTP response headers, suggest the file extensions
+most likely to discover real files on this server. Use header signals
+(Server, X-Powered-By, Set-Cookie like JSESSIONID, framework hints) and the
+URL path context to choose suffixes.
+
+Rules:
+- Path-aware: if the path is /js/ or /static/, prefer no extensions or only
+  source-map/config-style extensions (.map). For /api/ prefer .json, .xml.
+- Tech-aware: Apache+PHP -> .php, .phtml, .bak. IIS/ASP.NET -> .aspx, .asmx,
+  .config. Tomcat/Java -> .jsp, .do, .action.
+- Always include a small tail of generic backup/config suffixes when the
+  path looks admin-like: .bak, .old, .config, .zip.
+- Each extension must start with '.' and be a-z/0-9 only, max 8 chars.
+- If the path is clearly a CDN/static asset path with no useful suffixes,
+  return an empty list -- do not invent.
+- Never include leading wildcards or directory separators.
+
+Respond with ONLY a JSON object of this exact shape, no prose:
+{"extensions": [".ext1", ".ext2", ...]}"""
+
+
+def _build_llm_with_model_for_user(model_name: str, user_id: Optional[str]):
+    """Build an LLM using the user's saved providers but force a specific model.
+    Mirrors `_build_llm_for_user` but takes the model as an explicit argument
+    instead of reading it from project settings."""
+    import os
+    import requests as requests_mod
+    from orchestrator_helpers.llm_setup import setup_llm, _resolve_provider_key
+
+    user_providers: list = []
+    if user_id:
+        webapp_url = os.environ.get('WEBAPP_URL', 'http://webapp:3000')
+        internal_key = os.environ.get('INTERNAL_API_KEY', '')
+        try:
+            resp = requests_mod.get(
+                f"{webapp_url.rstrip('/')}/api/users/{user_id}/llm-providers?internal=true",
+                headers={'x-internal-key': internal_key} if internal_key else {},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            user_providers = resp.json() or []
+        except Exception as e:
+            logger.warning(f"ffuf-extensions: failed to fetch user LLM providers: {e}")
+
+    openai_p = _resolve_provider_key(user_providers, "openai")
+    anthropic_p = _resolve_provider_key(user_providers, "anthropic")
+    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
+    bedrock_p = _resolve_provider_key(user_providers, "bedrock")
+    deepseek_p = _resolve_provider_key(user_providers, "deepseek")
+    gemini_p = _resolve_provider_key(user_providers, "gemini")
+    glm_p = _resolve_provider_key(user_providers, "glm")
+    kimi_p = _resolve_provider_key(user_providers, "kimi")
+    qwen_p = _resolve_provider_key(user_providers, "qwen")
+    xai_p = _resolve_provider_key(user_providers, "xai")
+    mistral_p = _resolve_provider_key(user_providers, "mistral")
+    return setup_llm(
+        model_name,
+        openai_api_key=(openai_p or {}).get("apiKey"),
+        anthropic_api_key=(anthropic_p or {}).get("apiKey"),
+        openrouter_api_key=(openrouter_p or {}).get("apiKey"),
+        deepseek_api_key=(deepseek_p or {}).get("apiKey"),
+        gemini_api_key=(gemini_p or {}).get("apiKey"),
+        glm_api_key=(glm_p or {}).get("apiKey"),
+        kimi_api_key=(kimi_p or {}).get("apiKey"),
+        qwen_api_key=(qwen_p or {}).get("apiKey"),
+        xai_api_key=(xai_p or {}).get("apiKey"),
+        mistral_api_key=(mistral_p or {}).get("apiKey"),
+        aws_access_key_id=(bedrock_p or {}).get("awsAccessKeyId"),
+        aws_secret_access_key=(bedrock_p or {}).get("awsSecretKey"),
+        aws_region=(bedrock_p or {}).get("awsRegion") or "us-east-1",
+    )
+
+
+@app.post("/llm/ffuf-extensions", tags=["LLM"])
+async def llm_ffuf_extensions(body: FfufExtensionsRequest):
+    """Suggest FFuf file extensions for a target based on its response headers.
+
+    Called by the recon container's AI planner when FFUF_AI_EXTENSIONS is on.
+    Reuses the same per-user LLM provider resolution as the agent itself.
+    """
+    import json as json_mod
+
+    logger.info(
+        "ffuf-extensions: url=%s model=%s user=%s headers=%d-keys",
+        body.url, body.model, body.user_id, len(body.headers or {}),
+    )
+
+    try:
+        llm = _build_llm_with_model_for_user(body.model, body.user_id)
+    except Exception as e:
+        logger.error(f"ffuf-extensions: cannot set up LLM: {e}")
+        return JSONResponse(content={"error": f"LLM not configured: {e}"}, status_code=503)
+
+    user_msg = (
+        f"URL: {body.url}\n"
+        f"Headers: {json_mod.dumps(body.headers)}\n"
+        f"Suggest up to {body.max_extensions} extensions."
+    )
+
+    try:
+        response = await llm.ainvoke([
+            SystemMessage(content=_FFUF_EXT_SYSTEM_PROMPT),
+            HumanMessage(content=user_msg),
+        ])
+    except Exception as e:
+        logger.error(f"ffuf-extensions: LLM call failed: {e}")
+        return JSONResponse(content={"error": f"LLM call failed: {e}"}, status_code=502)
+
+    raw_text = (getattr(response, 'content', None) or '').strip()
+    # Strip ``` fences if the model wrapped the JSON
+    if raw_text.startswith('```'):
+        raw_text = raw_text.strip('`')
+        if raw_text.startswith('json'):
+            raw_text = raw_text[4:].strip()
+
+    try:
+        data = json_mod.loads(raw_text)
+    except (json_mod.JSONDecodeError, ValueError) as e:
+        logger.warning(f"ffuf-extensions: model returned non-JSON ({e}): {raw_text[:200]}")
+        return JSONResponse(content={"error": "Model returned non-JSON", "raw": raw_text[:500]}, status_code=502)
+
+    extensions = data.get('extensions', [])
+    if not isinstance(extensions, list):
+        return JSONResponse(content={"error": "Model returned non-list extensions", "raw": str(extensions)[:500]}, status_code=502)
+
+    return {"extensions": extensions[:body.max_extensions]}
+
+
 @app.post("/emergency-stop-all", tags=["System"])
 async def emergency_stop_all():
     """Emergency stop: cancel every running agent task immediately."""
