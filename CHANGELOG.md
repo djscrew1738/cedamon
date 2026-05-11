@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 
+## [4.9.2] - 2026-05-11
+
+### Fixed
+
+- **Fireteam wave-timeout left members stuck at `status=running`** ([agentic/orchestrator_helpers/nodes/fireteam_deploy_node.py](agentic/orchestrator_helpers/nodes/fireteam_deploy_node.py), [agentic/tests/test_fireteam_regressions.py](agentic/tests/test_fireteam_regressions.py)) -- when `FIRETEAM_TIMEOUT_SEC` expired, the outer handler called `t.cancel()` on every outstanding member, but `_run_one`'s `except asyncio.CancelledError: raise` re-raised before the per-member `_patch_member` (DB) and `on_fireteam_member_completed` (WebSocket) calls inside it could run. `fireteam_members` rows stayed at `status=running, completedAt=NULL` forever and on session restore the UI showed cancelled specialists as still spinning. PR [#112](https://github.com/samugit83/redamon/pull/112) added a patch in the cancel handler but missed iteration/token counts, sent a dead `completedAt` field the API route ignored, hardcoded `"timeout"` even for operator-stops, and didn't fix the WS gap. Moved both persistence and WS emission into the outer `TimeoutError` handler iterating the already-populated `results` list (mirrors the operator-cancel branch's pattern), so real iteration/token/findings/wallclock values land in Postgres and the live UI flips member cards to `timeout` without a refresh. `_run_one`'s `except CancelledError` is now log-and-raise only. Pinned by 4 regression tests in `WaveTimeoutDbPersistRegression` + `WaveTimeoutWebsocketEmitRegression` that fail against pre-PR-112 master and against the PR #112 partial fix.
+
+
+---
+
+
 ## [4.9.1] - 2026-05-10
 
 ### Fixed

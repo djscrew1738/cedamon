@@ -18,7 +18,6 @@ import json as _json
 import logging
 import os
 import time
-from datetime import datetime, timezone
 from typing import Iterable, Optional
 from uuid import uuid4
 
@@ -591,24 +590,10 @@ async def fireteam_deploy_node(
                 )
             except asyncio.CancelledError:
                 logger.info("[%s] wave=%s member=%s CANCELLED", session_id, fireteam_id_key, member_id)
-                # Bug 5c FIX: best-effort persist member status before propagating cancellation.
-                # Without this, members cancelled by FIRETEAM_TIMEOUT_SEC stay at status=running
-                # in Postgres because the _patch_member call at line ~599 is skipped by the raise.
-                try:
-                    await asyncio.wait_for(
-                        _patch_member(session_id, fireteam_id_key, member_id, {
-                            "status": "timeout",
-                            "completionReason": "fireteam_timeout",
-                            "completedAt": datetime.now(timezone.utc).isoformat(),
-                        }),
-                        timeout=2.0,
-                    )
-                except Exception as patch_exc:
-                    logger.warning(
-                        "[%s] best-effort _patch_member on cancel failed: %s",
-                        session_id, patch_exc
-                    )
-                # Propagate cancellation to gather.
+                # Propagate cancellation to gather. Per-member DB persistence on
+                # wave-timeout happens in the outer TimeoutError handler below,
+                # which has access to the full results list (including real
+                # iteration/token counts) and can label status correctly.
                 raise
             except Exception as exc:
                 logger.exception("[%s] wave=%s member=%s CRASHED", session_id, fireteam_id_key, member_id)
@@ -686,6 +671,45 @@ async def fireteam_deploy_node(
                 results.append(_timeout_result(m, mid, time.monotonic() - wave_start))
             except Exception as e:
                 results.append(_error_result(m, mid, e, time.monotonic() - wave_start))
+        # Persist per-member timeout to Postgres. Without this, members whose
+        # _run_one was cancelled never reach the post-try _patch_member call,
+        # so on session restore /fireteams returns them as `running` and the
+        # UI shows specialists "still running" forever. Mirrors the
+        # operator-cancel branch's per-member patch loop.
+        for r, m, mid in zip(results, members, member_ids):
+            await _patch_member(session_id, fireteam_id_key, mid, {
+                "status": r.get("status", "timeout"),
+                "completionReason": r.get("completion_reason") or "wave_timeout",
+                "iterationsUsed": r.get("iterations_used", 0),
+                "tokensUsed": r.get("tokens_used", 0),
+                "findingsCount": len(r.get("findings") or []),
+                "wallClockSeconds": r.get("wall_clock_seconds", 0.0),
+                "errorMessage": r.get("error_message"),
+                "resultBlob": r,
+            })
+        # Emit per-member WS events for cancelled members so the live UI
+        # flips cards from running to timeout without waiting for a refresh.
+        # _run_one's own emit at line ~614 is unreachable after t.cancel(),
+        # mirroring the persistence gap above. Mirrors the operator-cancel
+        # branch's WS emit loop.
+        if streaming_cb:
+            for r, m, mid in zip(results, members, member_ids):
+                try:
+                    await streaming_cb.on_fireteam_member_completed(
+                        fireteam_id=fireteam_id_key,
+                        member_id=mid,
+                        name=r.get("name") or m.get("name") or mid,
+                        status=r.get("status", "timeout"),
+                        iterations_used=r.get("iterations_used", 0),
+                        tokens_used=r.get("tokens_used", 0),
+                        input_tokens_used=r.get("input_tokens_used", 0),
+                        output_tokens_used=r.get("output_tokens_used", 0),
+                        findings_count=len(r.get("findings") or []),
+                        wall_clock_seconds=r.get("wall_clock_seconds", 0.0),
+                        error_message=r.get("error_message"),
+                    )
+                except Exception:
+                    logger.exception("timeout emit member_completed failed")
     except asyncio.CancelledError:
         logger.info("[%s] fireteam %s cancelled by operator", session_id, fireteam_id_key)
         from orchestrator_helpers.fireteam_confirmation_registry import drop_wave as _drop_wave
