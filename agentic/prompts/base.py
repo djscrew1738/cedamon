@@ -23,8 +23,19 @@ def _get_visible_tools(allowed_tools):
     ]
 
 
-def build_tool_availability_table(phase, allowed_tools):
-    """Build the tool availability table showing only tools allowed in the current phase."""
+def build_tool_availability_table(phase, allowed_tools, *, show_phase_allows_line=True):
+    """Build the tool availability table showing only tools allowed in the current phase.
+
+    Args:
+        phase: Current phase name (rendered in the table header).
+        allowed_tools: List of tool names to render.
+        show_phase_allows_line: When True (default), append a
+            "**Current phase allows:** ..." summary line listing the rendered
+            tools. Suppress this when rendering a FILTERED view (e.g. the
+            "Primary tools" block in fireteam member prompts) — the line would
+            otherwise misleadingly imply that other phase-allowed tools are
+            forbidden.
+    """
     visible = _get_visible_tools(allowed_tools)
 
     if not visible:
@@ -38,7 +49,8 @@ def build_tool_availability_table(phase, allowed_tools):
     for name, info in visible:
         lines.append(f"| **{name}** | {info['purpose']} | {info['when_to_use']} |")
 
-    lines.append(f"\n**Current phase allows:** {', '.join(t[0] for t in visible)}")
+    if show_phase_allows_line:
+        lines.append(f"\n**Current phase allows:** {', '.join(t[0] for t in visible)}")
     return "\n".join(lines) + "\n"
 
 
@@ -71,6 +83,27 @@ def build_tool_args_section(allowed_tools):
     return "\n".join(lines)
 
 
+def build_compact_tool_list(allowed_tools):
+    """Render a minimal "name: purpose" bullet list for the given tools.
+
+    Used by fireteam members to surface FALLBACK tools (the ones outside their
+    declared `tools` allowlist) without flooding the prompt with full
+    descriptions and flag examples. The model knows these tools exist and can
+    call them, but has to reason explicitly about why a primary tool can't do
+    the job — that friction is the point.
+
+    Returns an empty string when allowed_tools is empty.
+    """
+    visible = _get_visible_tools(allowed_tools)
+    if not visible:
+        return ""
+    lines = []
+    for name, info in visible:
+        purpose = info.get("purpose") or ""
+        lines.append(f"- **{name}**: {purpose}")
+    return "\n".join(lines) + "\n"
+
+
 _FIRETEAM_PROMPT_BLOCK = """deploy_fireteam (2 to {max_members} specialists, fork-join on INDEPENDENT subtasks).
 
 Fireteam = parallel REASONING (each specialist runs its own ReAct loop), not just parallel tool calls (that's plan_tools). Works in all phases.
@@ -100,13 +133,26 @@ Hard limits: max {max_members} members per wave, dangerous tools escalate to ope
 
 After a wave returns: findings show `(from <specialist>)` and matching TODOs auto-complete. DO NOT redeploy the same plan. Either emit action=complete with a consolidated report, OR deploy a DIFFERENT plan if findings reveal a genuinely new surface. If user asked "deploy a fireteam to do X" and it did, the task is done.
 
-Example (exploitation fan-out against a mapped surface):
+## `tools` field contract
+
+Each member spec carries `tools`: a list of canonical tool names (the exact
+identifiers from the Available Tools table, e.g. `execute_httpx`, `execute_curl`,
+`kali_shell`, `query_graph`). These become the member's "primary toolbox".
+Anything outside `tools` is reachable as "fallback" but requires the member to
+justify each call.
+
+- RIGHT: `"tools": ["execute_httpx", "execute_curl"]`
+- WRONG: `"tools": ["httpx", "curl"]` (short forms break the split)
+- WRONG: `"tools": ["nmap scan"]` (descriptions, not tool names)
+- 2-5 tools per member is typical. Include every tool the member actually needs.
+- `query_graph` is always implicitly primary.
+
+Example:
 ```json
 {{"action": "deploy_fireteam", "fireteam_plan": {{"members": [
-  {{"name": "SQLi Operator", "task": "Exploit SQLi on /api/users?id= via UNION/blind; extract users table.", "skills": ["sqlmap", "curl"]}},
-  {{"name": "SSRF Operator", "task": "Exploit SSRF on /api/fetch?url= to cloud metadata and internal services.", "skills": ["curl", "nuclei"]}},
-  {{"name": "Auth Bypass", "task": "Test /admin for JWT alg-confusion, missing sig checks, and IDOR.", "skills": ["curl"]}}
-], "plan_rationale": "Three independent vuln classes, no cross-dependency, no shared session"}}, ...}}
+  {{"name": "SQLi Op", "task": "...", "tools": ["kali_shell", "execute_curl"]}},
+  {{"name": "SSRF Op", "task": "...", "tools": ["execute_curl", "execute_nuclei"]}}
+], "plan_rationale": "..."}}, ...}}
 ```
 
 """

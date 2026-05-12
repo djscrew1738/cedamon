@@ -64,14 +64,14 @@ def _mk_member_id(idx: int) -> str:
 def _validate_mutex_groups(plan_members: list) -> Optional[str]:
     """Return None if OK, or a diagnostic string if two members claim the same
     singleton tool group (e.g. two members both using metasploit)."""
-    for group, tools in TOOL_MUTEX_GROUPS.items():
+    for group, group_tools in TOOL_MUTEX_GROUPS.items():
         claimers = []
         for m in plan_members:
-            # A member "claims" a group if any of its declared skills overlaps the
-            # group name, or if the group's tools are referenced by its skills.
-            skills = [s.lower() for s in (m.get("skills") or [])]
-            tool_keywords = {t.split("_", 1)[-1] for t in tools}
-            if group.lower() in skills or any(k in skills for k in tool_keywords):
+            # A member "claims" a group if any of its declared tools overlaps the
+            # group name, or if the group's tools are referenced by its tools list.
+            member_tools = [s.lower() for s in (m.get("tools") or [])]
+            tool_keywords = {t.split("_", 1)[-1] for t in group_tools}
+            if group.lower() in member_tools or any(k in member_tools for k in tool_keywords):
                 claimers.append(m.get("name") or "(unnamed)")
         if len(claimers) > 1:
             return f"Multiple members claim mutex group '{group}': {claimers}"
@@ -119,14 +119,18 @@ def _build_member_state(
     # project allows 20 — making the operator-facing setting feel broken.
     # If you want the model to have discretion back, reintroduce the
     # min(spec.max_iterations, project_cap) clamp here.
-    _resolved_max_iter = int(get_setting("FIRETEAM_MEMBER_MAX_ITERATIONS", 15))
+    _resolved_max_iter = int(get_setting("FIRETEAM_MEMBER_MAX_ITERATIONS", 10))
 
     # Diagnostic: log what we see on the parent state at snapshot time so we
     # can detect cases where think_node's analysis updates haven't reached the
     # deploy node yet (chain_findings_memory / execution_trace empty even
     # though target_info is populated).
+    _peer_count = max(
+        0,
+        len(((parent_state.get("_current_fireteam_plan") or {}).get("members") or [])) - 1,
+    )
     logger.info(
-        "[%s] member=%s SNAPSHOT parent counts: findings=%d failures=%d decisions=%d trace=%d target_keys=%d _completed_step=%s",
+        "[%s] member=%s SNAPSHOT parent counts: findings=%d failures=%d decisions=%d trace=%d target_keys=%d peers=%d _completed_step=%s",
         parent_state.get("session_id", "?"),
         member_id,
         len(parent_state.get("chain_findings_memory") or []),
@@ -134,6 +138,7 @@ def _build_member_state(
         len(parent_state.get("chain_decisions_memory") or []),
         len(parent_state.get("execution_trace") or []),
         len(parent_state.get("target_info") or {}),
+        _peer_count,
         bool(parent_state.get("_completed_step")),
     )
 
@@ -154,7 +159,7 @@ def _build_member_state(
         "member_name": spec.get("name") or member_id,
         "member_id": member_id,
         "fireteam_id": fireteam_id,
-        "skills": list(spec.get("skills") or []),
+        "tools": list(spec.get("tools") or []),
         "task": spec.get("task") or "",
 
         # Member-local
@@ -181,6 +186,26 @@ def _build_member_state(
         "_parent_chain_failures": list(parent_state.get("chain_failures_memory") or []),
         "_parent_chain_decisions": list(parent_state.get("chain_decisions_memory") or []),
         "_parent_execution_trace": _snapshot_parent_trace(parent_state),
+
+        # Sibling member specs for this wave (everyone in the plan except this
+        # member). Rendered into the system prompt as an "out of scope" block
+        # so scope creep onto sibling surfaces is structurally discouraged.
+        "_peer_tasks": [
+            {
+                "name": p.get("name") or "(unnamed)",
+                "task_summary": (p.get("task") or "")[:240],
+                "tools": list(p.get("tools") or []),
+            }
+            for p in ((parent_state.get("_current_fireteam_plan") or {}).get("members") or [])
+            if p.get("name") != spec.get("name")
+        ],
+
+        # Soft skill-allowlist accounting. Seeded to zero so the budget nudge
+        # in _build_member_prompt stays silent until the member actually
+        # reaches into the fallback toolbox.
+        "fallback_uses_this_run": 0,
+        "iterations_since_new_finding": 0,
+        "last_findings_count": 0,
 
         # Confirmation escalation
         "_pending_confirmation": None,
@@ -470,13 +495,13 @@ async def fireteam_deploy_node(
     )
     # Iteration budget is uniform across all members in a wave — set by the
     # operator via FIRETEAM_MEMBER_MAX_ITERATIONS (see _build_member_state).
-    _member_max_iter = int(get_setting("FIRETEAM_MEMBER_MAX_ITERATIONS", 15))
+    _member_max_iter = int(get_setting("FIRETEAM_MEMBER_MAX_ITERATIONS", 10))
     logger.info(f"[{session_id}] plan_rationale: {plan_data.get('plan_rationale', '')[:300]}")
     logger.info(f"[{session_id}] per-member iteration cap: {_member_max_iter}")
     for i, m in enumerate(members):
         logger.info(
             f"[{session_id}]   member[{i}]: name={m.get('name')!r} "
-            f"skills={m.get('skills') or []} "
+            f"tools={m.get('tools') or []} "
             f"task={(m.get('task') or '')[:200]}"
         )
     logger.info(f"{'=' * 80}")
@@ -498,8 +523,13 @@ async def fireteam_deploy_node(
                 iteration=iteration,
                 plan_rationale=plan_data.get("plan_rationale", ""),
                 members=[
-                    {"member_id": mid, "name": m.get("name"), "task": m.get("task"),
-                     "skills": m.get("skills") or [], "max_iterations": _member_max_iter}
+                    {
+                        "member_id": mid,
+                        "name": m.get("name"),
+                        "task": m.get("task"),
+                        "tools": m.get("tools") or [],
+                        "max_iterations": _member_max_iter,
+                    }
                     for mid, m in zip(member_ids, members)
                 ],
             )
@@ -519,7 +549,7 @@ async def fireteam_deploy_node(
             "projectId": project_id,
             "members": [
                 {"memberIdKey": mid, "name": m.get("name") or mid, "task": m.get("task") or "",
-                 "skills": m.get("skills") or []}
+                 "tools": m.get("tools") or []}
                 for mid, m in zip(member_ids, members)
             ],
         },
@@ -535,10 +565,10 @@ async def fireteam_deploy_node(
             member_state = _build_member_state(state, spec, member_id, fireteam_id_key)
             t0 = time.monotonic()
             logger.info(
-                "[%s] wave=%s member=%s (%s) STARTED skills=%s max_iter=%s",
+                "[%s] wave=%s member=%s (%s) STARTED tools=%s max_iter=%s",
                 session_id, fireteam_id_key, member_id,
                 spec.get("name") or member_id,
-                spec.get("skills") or [],
+                spec.get("tools") or [],
                 _member_max_iter,
             )
             if streaming_cb:

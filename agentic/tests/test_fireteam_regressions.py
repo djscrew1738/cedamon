@@ -33,7 +33,7 @@ def _base_member_state(**overrides):
         "parent_target_info": {},
         "member_name": "Web Tester", "member_id": "member-0-abc",
         "fireteam_id": "fteam-1",
-        "skills": ["xss"], "task": "scan target",
+        "tools": ["xss"], "task": "scan target",
         "execution_trace": [],
         "target_info": {}, "chain_findings_memory": [],
         "chain_failures_memory": [],
@@ -343,7 +343,7 @@ class FindingStepIterationPreservedRegression(unittest.TestCase):
             ],
             "execution_trace": [],
         }
-        spec = {"name": "API Fuzzer", "task": "t", "skills": ["ffuf"], "max_iterations": 10}
+        spec = {"name": "API Fuzzer", "task": "t", "tools": ["ffuf"], "max_iterations": 10}
 
         result = _result_from_final_state(final_state, spec, "member-0-abc", 12.3)
         findings = result.get("findings") or []
@@ -422,7 +422,7 @@ def _parent_state(n_members: int = 2) -> dict:
         "_current_fireteam_plan": {
             "plan_rationale": "test",
             "members": [
-                {"name": f"M{i}", "task": f"t{i}", "skills": [], "max_iterations": 10}
+                {"name": f"M{i}", "task": f"t{i}", "tools": [], "max_iterations": 10}
                 for i in range(n_members)
             ],
         },

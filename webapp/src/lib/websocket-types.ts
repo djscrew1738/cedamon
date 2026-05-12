@@ -93,7 +93,11 @@ export interface FireteamMemberInfo {
   member_id: string
   name: string
   task: string
-  skills: string[]
+  // Agent canonical key is `tools` (the member's primary allowlist). The
+  // legacy `skills` alias is kept optional for back-compat during rollout but
+  // is no longer emitted by the agent.
+  tools?: string[]
+  skills?: string[]
   max_iterations: number
 }
 

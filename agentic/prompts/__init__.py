@@ -22,6 +22,7 @@ from .base import (
     # Dynamic prompt builders
     build_tool_availability_table,
     build_informational_tool_descriptions,
+    build_compact_tool_list,
     build_informational_guidance,
     build_attack_path_behavior,
     build_tool_args_section,
@@ -149,6 +150,7 @@ def get_phase_tools(
     post_expl_type: str = "stateless",
     attack_path_type: str = "",
     execution_trace: list = None,
+    tool_filter: set = None,
 ) -> str:
     """Get tool descriptions for the current phase with attack path-specific guidance.
 
@@ -162,6 +164,10 @@ def get_phase_tools(
         post_expl_type: "statefull" for Meterpreter sessions, "stateless" for single commands.
         attack_path_type: Type of attack path ("cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", "sql_injection")
         execution_trace: List of execution steps (used to detect MSF search failures).
+        tool_filter: Optional whitelist of tool names. When set, the rendered output is
+                     restricted to the intersection of phase-allowed tools and this set.
+                     Used by fireteam members to render a "primary tools" view limited
+                     to their declared skills. None means no filtering (full phase view).
 
     Returns:
         Concatenated tool descriptions appropriate for the phase, mode, and attack path.
@@ -190,17 +196,39 @@ def get_phase_tools(
         parts.append(f"## Custom Instructions\n\n{post_expl_prompt}\n")
 
     # Determine allowed tools for current phase (dynamic from TOOL_PHASE_MAP in DB)
-    allowed_tools = get_allowed_tools_for_phase(phase)
+    phase_allowed_unfiltered = get_allowed_tools_for_phase(phase)
+    # Optional fireteam-member filter: render only the intersection with the
+    # member's declared skills, so the "primary tools" view stays focused.
+    # Phase-allowlisting still applies — filter is a SUBSET operation, never a
+    # superset.
+    if tool_filter is not None:
+        allowed_tools = [t for t in phase_allowed_unfiltered if t in tool_filter]
+    else:
+        allowed_tools = phase_allowed_unfiltered
 
-    # Kali shell library installation rules (prompt-based control)
-    if "kali_shell" in allowed_tools:
+    # Kali shell library installation rules (prompt-based control).
+    # IMPORTANT: check the UNFILTERED phase allowlist. A fireteam member may
+    # render the "primary tools" view without kali_shell in its declared
+    # skills, but kali_shell still appears in the member's fallback toolbox
+    # and is callable. The install constraints must be communicated regardless
+    # of which view we're rendering — otherwise the model may try `apt install`
+    # via a fallback kali_shell call without seeing the warning.
+    if "kali_shell" in phase_allowed_unfiltered:
         parts.append(build_kali_install_prompt())
 
     # Dynamic tool availability table — render in EVERY phase so the LLM
     # always sees the same purpose + when_to_use columns for any allowed
     # tool. Phase toggles control whether a tool appears at all (via
     # allowed_tools), not which fields render.
-    parts.append(build_tool_availability_table(phase, allowed_tools))
+    #
+    # When a tool_filter is active (fireteam member primary view), suppress
+    # the "Current phase allows: ..." summary line — the filtered list is
+    # NOT what the phase fully allows, and emitting it as such would lie to
+    # the model and could discourage legitimate fallback-tool calls.
+    parts.append(build_tool_availability_table(
+        phase, allowed_tools,
+        show_phase_allows_line=(tool_filter is None),
+    ))
 
     # Add mode decision matrix for exploitation only (not needed in post-expl, mode already determined)
     if phase == "exploitation" and attack_path_type == "cve_exploit":
@@ -500,6 +528,7 @@ __all__ = [
     "TOOL_REGISTRY",
     "build_tool_availability_table",
     "build_informational_tool_descriptions",
+    "build_compact_tool_list",
     "build_informational_guidance",
     "build_attack_path_behavior",
     "build_tool_args_section",

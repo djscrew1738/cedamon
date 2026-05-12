@@ -219,7 +219,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             const fireteamEnabled = (data as any).fireteamEnabled ?? true
             const maxConcurrent = (data as any).fireteamMaxConcurrent ?? 5
             const maxMembers = (data as any).fireteamMaxMembers ?? 5
-            const memberMaxIter = (data as any).fireteamMemberMaxIterations ?? 20
+            const memberMaxIter = (data as any).fireteamMemberMaxIterations ?? 10
             const timeoutSec = (data as any).fireteamTimeoutSec ?? 3600
             const propensity = (data as any).fireteamPropensity ?? 3
             const allowedPhasesRaw = (data as any).fireteamAllowedPhases ?? ['informational', 'exploitation', 'post_exploitation']
@@ -264,7 +264,16 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           min={1}
                           max={8}
                           onChange={(e) => {
-                            const v = Math.max(1, Math.min(8, parseInt(e.target.value) || 5))
+                            // Pass raw value (string or NaN) through during typing.
+                            // Clamping on every keystroke makes it impossible to enter
+                            // multi-digit numbers — e.g. typing `15` clamps `1` to `2`
+                            // before the user can finish.
+                            const raw = e.target.value
+                            updateField('fireteamMaxConcurrent' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(1, Math.min(8, n)) : 5
                             updateField('fireteamMaxConcurrent' as any, v as any)
                           }}
                         />
@@ -279,7 +288,12 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           min={2}
                           max={8}
                           onChange={(e) => {
-                            const v = Math.max(2, Math.min(8, parseInt(e.target.value) || 5))
+                            const raw = e.target.value
+                            updateField('fireteamMaxMembers' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(2, Math.min(8, n)) : 5
                             updateField('fireteamMaxMembers' as any, v as any)
                           }}
                         />
@@ -296,7 +310,12 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           min={5}
                           max={50}
                           onChange={(e) => {
-                            const v = Math.max(5, Math.min(50, parseInt(e.target.value) || 20))
+                            const raw = e.target.value
+                            updateField('fireteamMemberMaxIterations' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(5, Math.min(50, n)) : 10
                             updateField('fireteamMemberMaxIterations' as any, v as any)
                           }}
                         />
@@ -311,7 +330,12 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           min={60}
                           max={7200}
                           onChange={(e) => {
-                            const v = Math.max(60, Math.min(7200, parseInt(e.target.value) || 1800))
+                            const raw = e.target.value
+                            updateField('fireteamTimeoutSec' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(60, Math.min(7200, n)) : 1800
                             updateField('fireteamTimeoutSec' as any, v as any)
                           }}
                         />

@@ -215,7 +215,7 @@ def _base_member_state(**overrides):
         "user_id": "u", "project_id": "p", "session_id": "s",
         "parent_target_info": {}, "member_name": "Web Tester",
         "member_id": "member-0-abc", "fireteam_id": "fteam-1",
-        "skills": ["xss"], "task": "scan target",
+        "tools": ["xss"], "task": "scan target",
         "execution_trace": [], "target_info": {}, "chain_findings_memory": [],
         "chain_failures_memory": [], "_pending_confirmation": None,
         "_current_plan": None, "tokens_used": 0, "_decision": None,

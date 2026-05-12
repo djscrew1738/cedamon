@@ -341,9 +341,18 @@ class FireteamMemberSpec(BaseModel):
     """
     name: str = Field(description="Short human-readable name, shown in UI")
     task: str = Field(description="Task description the member receives as its objective")
-    skills: List[str] = Field(
+    # The member's "primary tools" — names MUST match keys in TOOL_REGISTRY
+    # exactly (e.g. "execute_httpx", "execute_curl", "kali_shell",
+    # "query_graph"). Tools outside this list are treated as "fallback" and
+    # require a tool_expansion_reason on the member's decision.
+    tools: List[str] = Field(
         default_factory=list,
-        description="Skill slugs filtered into member's allowed tool set",
+        description=(
+            "Canonical tool names from TOOL_REGISTRY (e.g. 'execute_httpx', "
+            "'execute_curl', 'kali_shell'). These become the member's primary "
+            "toolbox; everything else is a 'fallback' that requires "
+            "justification when the member calls it."
+        ),
     )
 
 
@@ -397,7 +406,7 @@ class FireteamMemberState(TypedDict):
     member_name: str             # for streaming attribution
     member_id: str               # UUID for chain graph and logging
     fireteam_id: str             # fireteam this member belongs to
-    skills: List[str]            # tool filter
+    tools: List[str]             # primary tool allowlist (canonical TOOL_REGISTRY names)
     task: str                    # member's local objective
 
     # Member-local
@@ -419,6 +428,34 @@ class FireteamMemberState(TypedDict):
     _parent_chain_failures: List[dict]
     _parent_chain_decisions: List[dict]
     _parent_execution_trace: List[dict]
+
+    # Sibling member specs for the same wave, minus this member. Populated once
+    # by fireteam_deploy_node._build_member_state from the fireteam plan, then
+    # rendered into the system prompt as an "out of scope" block so the LLM
+    # knows which surfaces are owned by other members and must not be probed.
+    # MUST be declared here (see comment above) — LangGraph strips undeclared
+    # keys on merge, so without this field the peer block would always be empty.
+    _peer_tasks: List[dict]
+
+    # Soft skill-allowlist accounting (per-run). Incremented inside
+    # fireteam_member_think_node whenever the member's decision references a
+    # tool outside its declared `tools` (the "fallback toolbox"). Surfaces a
+    # graduated nudge in the prompt prefix when it climbs without producing new
+    # findings — see _build_member_prompt's `budget_prefix`. Reset implicitly
+    # because each member starts with a fresh state.
+    fallback_uses_this_run: int
+
+    # Stall detector for the soft allowlist (paired with fallback_uses_this_run).
+    # Tracks how many consecutive iterations have produced zero new
+    # chain_findings entries. Combined with the fallback counter it powers the
+    # "Recommendation: complete" nudge when a member is burning fallback calls
+    # without yield.
+    iterations_since_new_finding: int
+
+    # Last-seen findings count, snapshotted at end of each iteration. Read at
+    # start of next iteration to compute the "did we get new findings?" delta
+    # that feeds iterations_since_new_finding.
+    last_findings_count: int
 
     # Tool confirmation escalation (member does not block; parent handles)
     _pending_confirmation: Optional[dict]
@@ -501,6 +538,24 @@ class LLMDecision(BaseModel):
 
     # Deep Think self-request (only used when Deep Think is enabled)
     need_deep_think: bool = Field(default=False, description="Set to true if you feel stuck or not progressing, to trigger strategic re-evaluation on next iteration")
+
+    # Tool expansion (fireteam members only). When a member's tool call uses a
+    # tool outside its declared `tools` list (the "fallback toolbox"), this
+    # field MUST carry a one-sentence justification. The validator in
+    # fireteam_member_think_node re-prompts the LLM if it reaches for a fallback
+    # tool without filling this field. Logged in chain context so the root
+    # planner sees which expansions were genuinely useful and can adjust the
+    # tools assignment on the next wave. Always None for the root agent.
+    tool_expansion_reason: Optional[str] = Field(
+        default=None,
+        description=(
+            "Required ONLY when tool_name (or any plan_tools step's tool_name) "
+            "is outside your declared `tools` (primary) list. One sentence "
+            "explaining why your primary tools cannot accomplish this step. "
+            "If your primary tools CAN do the job, switch to one instead of "
+            "filling this field."
+        ),
+    )
 
 
 class OutputAnalysis(BaseModel):
