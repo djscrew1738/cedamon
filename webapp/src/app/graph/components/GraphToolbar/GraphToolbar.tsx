@@ -465,29 +465,29 @@ export function GraphToolbar({
           </div>
         )}
 
-        {onOpenFileSystem && (
+        <div className={styles.aiButtonGroup}>
           <button
-            className={`${styles.aiButton} ${isFileSystemOpen ? styles.aiButtonActive : ''}`}
-            onClick={onOpenFileSystem}
-            aria-label="Toggle Workspace"
-            aria-expanded={isFileSystemOpen}
-            title="Workspace files + background jobs"
-            style={{ marginRight: 4 }}
+            className={`${styles.aiButton} ${styles.aiButtonGroupStart} ${isAIOpen ? styles.aiButtonActive : ''}`}
+            onClick={onToggleAI}
+            aria-label="Toggle AI Agent"
+            aria-expanded={isAIOpen}
+            title="AI Agent"
           >
-            <FolderOpen size={14} />
+            <Bot size={14} />
+            <span>AI Agent</span>
           </button>
-        )}
-
-        <button
-          className={`${styles.aiButton} ${isAIOpen ? styles.aiButtonActive : ''}`}
-          onClick={onToggleAI}
-          aria-label="Toggle AI Agent"
-          aria-expanded={isAIOpen}
-          title="AI Agent"
-        >
-          <Bot size={14} />
-          <span>AI Agent</span>
-        </button>
+          {onOpenFileSystem && (
+            <button
+              className={`${styles.aiButton} ${styles.aiButtonGroupEnd} ${isFileSystemOpen ? styles.aiButtonActive : ''}`}
+              onClick={onOpenFileSystem}
+              aria-label="Toggle Workspace"
+              aria-expanded={isFileSystemOpen}
+              title="Workspace files + background jobs"
+            >
+              <FolderOpen size={14} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

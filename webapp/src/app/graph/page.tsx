@@ -96,12 +96,14 @@ export default function GraphPage() {
     expandChild,
     collapseChild,
   } = useNodeSelection()
-  // Opening the FS drawer must close the node drawer first - both live on
-  // the left edge of the graph; otherwise the FS would slide over the node
-  // panel and the user would see a confusing stack.
-  const openFileSystemDrawer = useCallback(() => {
-    clearSelection()
-    setIsFileSystemOpen(true)
+  // Toggle the FS drawer. Opening must close the node drawer first - both
+  // live on the left edge of the graph; otherwise the FS would slide over
+  // the node panel and the user would see a confusing stack.
+  const toggleFileSystemDrawer = useCallback(() => {
+    setIsFileSystemOpen(prev => {
+      if (!prev) clearSelection()
+      return !prev
+    })
   }, [clearSelection])
   const handleNodeClick = useCallback((node: Parameters<typeof selectNode>[0]) => {
     setIsFileSystemOpen(false)
@@ -1176,7 +1178,7 @@ export default function GraphPage() {
         onToggleLabels={setShowLabels}
         onToggleAI={handleToggleAI}
         isAIOpen={isAIOpen}
-        onOpenFileSystem={openFileSystemDrawer}
+        onOpenFileSystem={toggleFileSystemDrawer}
         isFileSystemOpen={isFileSystemOpen}
         // Target info
         targetDomain={currentProject?.targetDomain}
@@ -1529,7 +1531,7 @@ export default function GraphPage() {
         hasOtherChains={sessionChainIds.length > 1 || (sessionChainIds.length === 1 && sessionChainIds[0] !== sessionId)}
         requireToolConfirmation={currentProject?.agentRequireToolConfirmation ?? true}
         graphViewCypher={selectedFilterCypher}
-        onOpenFileSystem={openFileSystemDrawer}
+        onOpenFileSystem={toggleFileSystemDrawer}
       />
 
       <FileSystemDrawer

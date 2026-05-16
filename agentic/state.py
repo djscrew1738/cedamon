@@ -28,6 +28,19 @@ from langgraph.graph.message import add_messages
 Phase = Literal["informational", "exploitation", "post_exploitation"]
 TodoStatus = Literal["pending", "in_progress", "completed", "blocked"]
 Priority = Literal["high", "medium", "low"]
+
+# LLM occasionally emits severity-style words ("info", "critical") in the
+# todo-item priority slot — observed in a 2026-05-16 think step where
+# `priority: "info"` triggered a pydantic retry that cost one LLM round-trip.
+# Coerce the common confusables to the canonical 3 values before the Literal
+# validator runs, so the parse succeeds on attempt 1.
+_PRIORITY_SYNONYMS = {"info": "low", "critical": "high", "urgent": "high"}
+
+
+def _coerce_priority(value):
+    if isinstance(value, str):
+        return _PRIORITY_SYNONYMS.get(value.lower().strip(), value)
+    return value
 ApprovalDecision = Literal["approve", "modify", "abort"]
 QuestionFormat = Literal["text", "single_choice", "multi_choice"]
 
@@ -58,6 +71,11 @@ class TodoItem(BaseModel):
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     completed_at: Optional[datetime] = None
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _coerce_priority_synonyms(cls, v):
+        return _coerce_priority(v)
 
     def mark_complete(self) -> "TodoItem":
         """Mark this todo as completed."""
@@ -236,6 +254,11 @@ class TodoItemUpdate(BaseModel):
     description: str
     status: TodoStatus = "pending"
     priority: Priority = "medium"
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _coerce_priority_synonyms(cls, v):
+        return _coerce_priority(v)
 
 
 class ExtractedTargetInfo(BaseModel):

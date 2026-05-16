@@ -1576,24 +1576,22 @@ async def get_defaults():
     return camel_case_defaults
 
 
-@app.get("/models", tags=["System"])
-async def get_models(providers: str = Query(default="", description="JSON-encoded list of provider configs from DB")):
+class ModelsRequest(BaseModel):
+    providers: list[dict] | None = None
+
+
+@app.post("/models", tags=["System"])
+async def get_models(body: ModelsRequest | None = None):
     """
     Fetch available AI models from all configured providers.
 
-    When `providers` query param is supplied (JSON list of UserLlmProvider rows),
-    uses those configs for discovery. Otherwise falls back to env vars.
+    Providers (a list of UserLlmProvider rows) are passed in the POST body
+    rather than the URL to keep apiKey values out of uvicorn access logs.
+    Falls back to env vars when the body is empty.
     """
     from orchestrator_helpers.model_providers import fetch_all_models
 
-    provider_list = None
-    if providers:
-        import json as json_mod
-        try:
-            provider_list = json_mod.loads(providers)
-        except (json_mod.JSONDecodeError, TypeError):
-            logger.warning("Invalid providers JSON in /models request, falling back to env")
-
+    provider_list = body.providers if body else None
     return await fetch_all_models(providers=provider_list)
 
 
@@ -2002,6 +2000,25 @@ async def workspace_delete(
         return JSONResponse(content={"error": str(e)}, status_code=400)
     except Exception as e:
         logger.error(f"/workspace/delete failed: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+class WorkspaceResetRequest(BaseModel):
+    projectId: str
+
+
+@app.post("/workspace/reset", tags=["Workspace"])
+async def workspace_reset(req: WorkspaceResetRequest):
+    """Wipe the workspace back to its initial state (4 empty default folders)."""
+    if not req.projectId:
+        return JSONResponse(content={"error": "projectId required"}, status_code=400)
+    try:
+        summary = workspace_fs.reset_for_project(req.projectId)
+        return {"projectId": req.projectId, **summary}
+    except ValueError as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
+    except Exception as e:
+        logger.error(f"/workspace/reset failed: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 

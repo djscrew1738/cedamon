@@ -82,6 +82,29 @@ class TestAlwaysRendered(WorkspaceLayoutBase):
         self.assertIn("auto-offload", out.lower().replace("-", "").replace("_", "") + "auto-offload")  # tolerant match
         self.assertIn("stdout", out)
 
+    def test_workspace_root_rendered_as_absolute_path(self):
+        # The agent should see its concrete workspace root in the prompt so
+        # it can pass workspace files as absolute paths to external tools
+        # (ffuf -w, kali_shell, etc.) without an extra discovery round-trip.
+        out = base.build_workspace_layout_block("proj-abc-123")
+        # Concrete path resolved
+        self.assertIn("proj-abc-123/", out)
+        # Header label present
+        self.assertIn("Your project workspace root", out)
+        # Concrete example for the abs-path guidance
+        self.assertIn("-w", out)
+        self.assertIn("uploads/wordlist.txt", out)
+        # Placeholder sentinel must NOT leak through
+        self.assertNotIn("__WORKSPACE_ROOT__", out)
+
+    def test_empty_project_id_falls_back_to_placeholder_label(self):
+        # With no project_id, we still render the block but the absolute
+        # path shows <projectId> instead of crashing or rendering a bogus path.
+        out = base.build_workspace_layout_block("")
+        self.assertNotIn("__WORKSPACE_ROOT__", out)
+        self.assertIn("<projectId>", out)  # placeholder visible
+        self.assertIn("Your project workspace root", out)
+
     def test_job_spawn_policy_always_present(self):
         # When-to-spawn / when-not-to-spawn / live-progress guidance.
         out = base.build_workspace_layout_block("proj")
@@ -113,7 +136,11 @@ class TestUploadsConditional(WorkspaceLayoutBase):
         self._project_dir("proj")  # creates the dir, no files
         out = base.build_workspace_layout_block("proj")
         self.assertNotIn("USER INBOX", out)
-        self.assertNotIn("uploads/", out.replace("uploads/<", ""))  # ignore the path-in-prose mention
+        # Strip prose mentions so we only catch the actual section header.
+        # Prose mentions include: the `uploads/<...>` path placeholder and
+        # the `uploads/wordlist.txt` example in the absolute-path guidance.
+        scrubbed = out.replace("uploads/<", "").replace("uploads/wordlist.txt", "")
+        self.assertNotIn("uploads/", scrubbed)
         # Sanity: the other 3 sections still rendered
         self.assertIn("`notes/`", out)
 

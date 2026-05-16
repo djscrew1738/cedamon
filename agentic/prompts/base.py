@@ -39,6 +39,13 @@ _WORKSPACE_LAYOUT_HEADER = """## Workspace Layout
 Every project has a per-project workspace at /workspace/<projectId>/ with 4
 fixed subdirs. Each has a role - respect them.
 
+**Your project workspace root:** `__WORKSPACE_ROOT__/`
+
+Use this absolute path whenever you pass a workspace file as an INPUT to an
+external tool (e.g. `execute_ffuf -w __WORKSPACE_ROOT__/uploads/wordlist.txt`,
+`kali_shell` referencing files in your workspace). fs_* tools accept relative
+paths (`uploads/wordlist.txt`) - only external tools need the absolute form.
+
 - `notes/` - YOUR SCRATCH. Write here freely with fs_write / fs_edit when
   you want to record findings, draft a report, build a payload file, or
   hand off context to a future turn or to the user. Examples:
@@ -139,8 +146,20 @@ def build_workspace_layout_block(project_id: str) -> str:
     the agent immediately knows what the user has staged. Suppressing the
     section on empty avoids nagging the agent about a folder that doesn't
     matter for the current task.
+
+    Resolves `__WORKSPACE_ROOT__` placeholders to the concrete project path
+    so the agent can pass absolute workspace paths to external tools
+    (ffuf -w, kali_shell, etc.) without an extra `kali_shell find ...`
+    round-trip to discover its own project_id.
     """
-    parts = [_WORKSPACE_LAYOUT_HEADER]
+    workspace_root_path = (
+        f"{_WORKSPACE_ROOT_FOR_PROMPT}/{project_id}" if project_id else
+        f"{_WORKSPACE_ROOT_FOR_PROMPT}/<projectId>"
+    )
+    header = _WORKSPACE_LAYOUT_HEADER.replace(
+        "__WORKSPACE_ROOT__", workspace_root_path
+    )
+    parts = [header]
     uploads = _list_uploads(project_id)
     if uploads:
         n = len(uploads)

@@ -564,13 +564,43 @@
 /* Stage D: entry checkbox + selected row highlight */
 
 .entry {
-  grid-template-columns: 16px 16px 1fr auto;  /* checkbox + icon + name + actions */
+  grid-template-columns: 18px 16px 1fr auto;  /* checkbox + icon + name + actions */
 }
 
 .entryCheckbox {
+  /* Custom-rendered checkbox (mirrors .checkbox in styles/components/inputs.css).
+     Native checkboxes render unreliably at small sizes inside flex/grid cells —
+     in some browsers they collapse to a tiny filled dot. `appearance: none` plus
+     an SVG check on `:checked` guarantees a visible square in every browser. */
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
   margin: 0;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm, 3px);
   cursor: pointer;
-  accent-color: var(--accent-primary);
+  flex-shrink: 0;
+  transition: var(--transition-all);
+}
+
+.entryCheckbox:hover {
+  border-color: var(--accent-primary);
+}
+
+.entryCheckbox:checked {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.entryCheckbox:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 .entrySelected {

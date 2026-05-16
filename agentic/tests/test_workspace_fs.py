@@ -271,6 +271,45 @@ class TestWriteMutate(WorkspaceFSTestBase):
         self.assertIn("Removed directory", out)
         self.assertFalse((self.root / "a").exists())
 
+    async def test_fs_mkdir_fresh_returns_created(self):
+        out = await workspace_fs.fs_mkdir("fresh")
+        self.assertIn("Created directory fresh", out)
+        self.assertTrue((self.root / "fresh").is_dir())
+
+    async def test_fs_mkdir_existing_empty_dir_signals_no_change(self):
+        # Regression: used to return "Created directory X." even when the
+        # dir already existed (default subdirs like uploads/), misleading
+        # the agent into thinking it had just created something.
+        (self.root / "uploads_existing").mkdir()
+        out = await workspace_fs.fs_mkdir("uploads_existing")
+        self.assertIn("already exists", out)
+        self.assertIn("no change", out)
+        self.assertIn("0 entries", out)
+        self.assertNotIn("Created directory", out)
+
+    async def test_fs_mkdir_existing_non_empty_dir_reports_entry_count(self):
+        (self.root / "pkg").mkdir()
+        (self.root / "pkg" / "a.txt").write_text("1")
+        (self.root / "pkg" / "b.txt").write_text("2")
+        out = await workspace_fs.fs_mkdir("pkg")
+        self.assertIn("already exists", out)
+        self.assertIn("2 entries", out)
+
+    async def test_fs_mkdir_path_is_file_returns_error(self):
+        # Used to crash with FileExistsError because exist_ok=True only
+        # suppresses for directories, not files.
+        await workspace_fs.fs_write("collide.txt", "data")
+        out = await workspace_fs.fs_mkdir("collide.txt")
+        self.assertIn("Error", out)
+        self.assertIn("not a directory", out)
+
+    async def test_fs_mkdir_missing_parent_without_parents_flag(self):
+        # Used to raise FileNotFoundError with no friendly message.
+        out = await workspace_fs.fs_mkdir("never/before/seen", parents=False)
+        self.assertIn("Error", out)
+        self.assertIn("parents=True", out)
+        self.assertFalse((self.root / "never").exists())
+
     async def test_fs_move_creates_parents(self):
         await workspace_fs.fs_write("x.txt", "v")
         out = await workspace_fs.fs_move("x.txt", "sub1/sub2/y.txt")
@@ -418,13 +457,51 @@ class TestSearchNavigate(WorkspaceFSTestBase):
 
     async def test_fs_symbols_unsupported_extension(self):
         # Even without tree-sitter installed, the extension check fires first.
-        await workspace_fs.fs_write("notes.md", "# h")
-        out = await workspace_fs.fs_symbols("notes.md")
+        await workspace_fs.fs_write("data.lua", "function f() end")
+        out = await workspace_fs.fs_symbols("data.lua")
         self.assertIn("unsupported language", out.lower())
 
     async def test_fs_symbols_missing_file(self):
         out = await workspace_fs.fs_symbols("nope.py")
         self.assertIn("not found", out.lower())
+
+    async def test_fs_symbols_markdown_atx(self):
+        await workspace_fs.fs_write(
+            "doc.md",
+            "# Top\n\nintro\n\n## Sub A\n\nbody\n\n### Deep\n\n## Sub B\n",
+        )
+        out = await workspace_fs.fs_symbols("doc.md")
+        self.assertIn("4 defs", out)
+        self.assertIn("h1 Top", out)
+        self.assertIn("h2 Sub A", out)
+        self.assertIn("h3 Deep", out)
+        self.assertIn("h2 Sub B", out)
+
+    async def test_fs_symbols_markdown_setext(self):
+        await workspace_fs.fs_write(
+            "doc.md",
+            "Title One\n=========\n\npara\n\nSubtitle\n--------\n",
+        )
+        out = await workspace_fs.fs_symbols("doc.md")
+        self.assertIn("h1 Title One", out)
+        self.assertIn("h2 Subtitle", out)
+
+    async def test_fs_symbols_markdown_ignores_fenced_code(self):
+        # `#` inside a fenced code block must NOT be treated as a header.
+        await workspace_fs.fs_write(
+            "doc.md",
+            "# Real\n\n```\n# not a header\n## still not\n```\n\n## After\n",
+        )
+        out = await workspace_fs.fs_symbols("doc.md")
+        self.assertIn("h1 Real", out)
+        self.assertIn("h2 After", out)
+        self.assertNotIn("not a header", out)
+        self.assertNotIn("still not", out)
+
+    async def test_fs_symbols_markdown_empty(self):
+        await workspace_fs.fs_write("empty.md", "just a paragraph with no headers\n")
+        out = await workspace_fs.fs_symbols("empty.md")
+        self.assertIn("no definitions", out.lower())
 
 
 # =============================================================================
@@ -513,6 +590,54 @@ class TestIntegrityArchive(WorkspaceFSTestBase):
         await workspace_fs.fs_write("a.txt", "1")
         out = await workspace_fs.fs_archive(["a.txt"], "bundle.zip", format="zip")
         self.assertIn("Archived 1", out)
+
+    async def test_fs_archive_directory_zip_preserves_dir_name(self):
+        # Regression: archiving a dir used to embed the full project-root path
+        # so an extract reproduced the nesting (`payloads-restored/notes/payloads/...`).
+        # Now arcnames are relative to the input's parent: archiving `pkg/` yields
+        # entries `pkg/...` so an extract gives `<dest>/pkg/...` (one level).
+        await workspace_fs.fs_write("pkg/a.txt", "1")
+        await workspace_fs.fs_write("pkg/nested/b.txt", "2")
+        out = await workspace_fs.fs_archive(["pkg"], "bundle.zip", format="zip")
+        self.assertIn("Archived 1", out)
+        with zipfile.ZipFile(self.root / "bundle.zip") as zf:
+            names = sorted(zf.namelist())
+        self.assertEqual(names, ["pkg/a.txt", "pkg/nested/b.txt"])
+
+    async def test_fs_archive_directory_tar_preserves_dir_name(self):
+        await workspace_fs.fs_write("pkg/a.txt", "1")
+        await workspace_fs.fs_write("pkg/nested/b.txt", "2")
+        out = await workspace_fs.fs_archive(["pkg"], "bundle.tar.gz")
+        self.assertIn("Archived 1", out)
+        with tarfile.open(self.root / "bundle.tar.gz", "r:gz") as tf:
+            names = sorted(tf.getnames())
+        # tar.add() recurses by default; the top-level entry is `pkg`, with children below.
+        self.assertIn("pkg", names)
+        self.assertIn("pkg/a.txt", names)
+        self.assertIn("pkg/nested/b.txt", names)
+
+    async def test_fs_archive_zip_skips_symlinks_inside_dir(self):
+        # Security parity with archive_dir_for_project: a symlink found while
+        # walking the archived directory must not be followed (zf.write would
+        # otherwise inline the target's content under the symlink's name).
+        await workspace_fs.fs_write("pkg/real.txt", "ok")
+        os.symlink(self.root / "pkg" / "real.txt", self.root / "pkg" / "link.txt")
+        await workspace_fs.fs_archive(["pkg"], "bundle.zip", format="zip")
+        with zipfile.ZipFile(self.root / "bundle.zip") as zf:
+            names = zf.namelist()
+        self.assertIn("pkg/real.txt", names)
+        self.assertNotIn("pkg/link.txt", names)
+
+    async def test_fs_archive_then_extract_roundtrip(self):
+        # Full bundle -> extract roundtrip: a single dir archived and extracted
+        # into a fresh destination reproduces the source under `<dest>/<dirname>/`.
+        await workspace_fs.fs_write("src/x.txt", "X")
+        await workspace_fs.fs_write("src/y.txt", "Y")
+        await workspace_fs.fs_archive(["src"], "bundle.zip", format="zip")
+        out = await workspace_fs.fs_extract("bundle.zip", "restored", format="zip")
+        self.assertIn("Extracted 2", out)
+        self.assertEqual((self.root / "restored" / "src" / "x.txt").read_text(), "X")
+        self.assertEqual((self.root / "restored" / "src" / "y.txt").read_text(), "Y")
 
     # --- Gap-fill #2: fs_extract failure modes -----------------------------
 

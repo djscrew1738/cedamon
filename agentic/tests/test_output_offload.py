@@ -211,6 +211,38 @@ class TestStripOutputMode(unittest.TestCase):
         self.assertEqual(cleaned, "not a dict")
         self.assertIsNone(override)
 
+    def test_strips_inline_override(self):
+        cleaned, override = output_offload.strip_output_mode({"output_mode": "inline"})
+        self.assertEqual(cleaned, {})
+        self.assertEqual(override, "inline")
+
+    def test_strips_auto_override(self):
+        cleaned, override = output_offload.strip_output_mode({"output_mode": "auto"})
+        self.assertEqual(cleaned, {})
+        self.assertEqual(override, "auto")
+
+    def test_passes_through_fs_grep_content_value(self):
+        # fs_grep owns `output_mode` natively with vocabulary
+        # files_with_matches|content|count. Stripping it would silently
+        # revert fs_grep to its default (`files_with_matches`) and return
+        # only the filename — observed bug.
+        args = {"pattern": "200", "path": "notes/x.json", "output_mode": "content"}
+        cleaned, override = output_offload.strip_output_mode(args)
+        self.assertEqual(cleaned, args)  # untouched
+        self.assertIsNone(override)
+
+    def test_passes_through_fs_grep_count_value(self):
+        args = {"pattern": "foo", "output_mode": "count"}
+        cleaned, override = output_offload.strip_output_mode(args)
+        self.assertEqual(cleaned, args)
+        self.assertIsNone(override)
+
+    def test_passes_through_fs_grep_files_with_matches_value(self):
+        args = {"pattern": "foo", "output_mode": "files_with_matches"}
+        cleaned, override = output_offload.strip_output_mode(args)
+        self.assertEqual(cleaned, args)
+        self.assertIsNone(override)
+
 
 class TestNonStringOutput(OffloadTestBase):
     def test_none_returns_empty(self):

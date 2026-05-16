@@ -21,9 +21,10 @@ import {
   Lock,
   Info,
   ArrowLeft,
+  Eraser,
 } from 'lucide-react'
 import { Drawer } from '@/components/ui/Drawer'
-import { useAlertModal } from '@/components/ui'
+import { useAlertModal, WikiInfoButton } from '@/components/ui'
 import styles from './FileSystemDrawer.module.css'
 
 // =============================================================================
@@ -69,6 +70,11 @@ export interface FileSystemDrawerProps {
 // Protected default subdirs — these cannot be renamed or deleted. Mirrors
 // PROTECTED_SUBDIRS in agentic/workspace_fs.py (backend also enforces).
 const PROTECTED_SUBDIRS = new Set(['notes', 'tool-outputs', 'jobs', 'uploads'])
+
+const WIDTH_STORAGE_KEY = 'redamon-filesystem-drawer-width'
+const DEFAULT_WIDTH_PX = 494
+const MIN_WIDTH_PX = 320
+const MAX_WIDTH_PX = 1200
 
 function isProtectedPath(path: string): boolean {
   const norm = path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\.\//, '')
@@ -184,6 +190,26 @@ export function FileSystemDrawer({
   const [jobsLoading, setJobsLoading] = useState(false)
   const [jobsError, setJobsError] = useState<string | null>(null)
 
+  // Drawer width — persisted per-user via localStorage so it survives reloads
+  // and project switches. Lazy init reads the stored value once on mount.
+  const [drawerWidth, setDrawerWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return DEFAULT_WIDTH_PX
+    const raw = window.localStorage.getItem(WIDTH_STORAGE_KEY)
+    if (!raw) return DEFAULT_WIDTH_PX
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n)) return DEFAULT_WIDTH_PX
+    return Math.min(Math.max(n, MIN_WIDTH_PX), MAX_WIDTH_PX)
+  })
+
+  const handleResizeEnd = useCallback((widthPx: number) => {
+    const clamped = Math.min(Math.max(Math.round(widthPx), MIN_WIDTH_PX), MAX_WIDTH_PX)
+    try {
+      window.localStorage.setItem(WIDTH_STORAGE_KEY, String(clamped))
+    } catch {
+      // localStorage unavailable (private mode, quota) — width still applies for the session.
+    }
+  }, [])
+
   // Reset when the drawer "context" changes (reopen, projectId switch, or
   // initialPath/initialTab override). Without resetting preview/properties
   // here, stale content from the prior session/project would show up
@@ -230,39 +256,53 @@ export function FileSystemDrawer({
 
   // ---- Fetchers ---------------------------------------------------------
 
-  const fetchEntries = useCallback(async (path: string) => {
+  // `silent` skips the loading/error state toggle — used for the 5s background
+  // poll so the entry list doesn't unmount/remount on every tick (which
+  // produced a visible flash). The current list stays on screen; if the
+  // poll fails we keep the stale data rather than wiping it.
+  const fetchEntries = useCallback(async (path: string, silent = false) => {
     if (!projectId) return
-    setEntriesLoading(true)
-    setEntriesError(null)
+    if (!silent) {
+      setEntriesLoading(true)
+      setEntriesError(null)
+    }
     try {
       const url = `/api/agent/workspace/list?projectId=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`
       const resp = await fetch(url, { cache: 'no-store' })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
       setEntries(data.entries || [])
+      if (silent) setEntriesError(null)
     } catch (e) {
-      setEntriesError(e instanceof Error ? e.message : 'Failed to load')
-      setEntries([])
+      if (!silent) {
+        setEntriesError(e instanceof Error ? e.message : 'Failed to load')
+        setEntries([])
+      }
     } finally {
-      setEntriesLoading(false)
+      if (!silent) setEntriesLoading(false)
     }
   }, [projectId])
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (silent = false) => {
     if (!projectId) return
-    setJobsLoading(true)
-    setJobsError(null)
+    if (!silent) {
+      setJobsLoading(true)
+      setJobsError(null)
+    }
     try {
       const url = `/api/agent/workspace/jobs?projectId=${encodeURIComponent(projectId)}`
       const resp = await fetch(url, { cache: 'no-store' })
       const data = await resp.json()
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
       setJobs(data.jobs || [])
+      if (silent) setJobsError(null)
     } catch (e) {
-      setJobsError(e instanceof Error ? e.message : 'Failed to load')
-      setJobs([])
+      if (!silent) {
+        setJobsError(e instanceof Error ? e.message : 'Failed to load')
+        setJobs([])
+      }
     } finally {
-      setJobsLoading(false)
+      if (!silent) setJobsLoading(false)
     }
   }, [projectId])
 
@@ -281,7 +321,7 @@ export function FileSystemDrawer({
   useEffect(() => {
     if (!(isOpen && tab === 'files')) return
     if (previewing !== null) return
-    const handle = setInterval(() => fetchEntries(currentPath), 5000)
+    const handle = setInterval(() => fetchEntries(currentPath, true), 5000)
     return () => clearInterval(handle)
   }, [isOpen, tab, currentPath, fetchEntries, previewing])
 
@@ -290,7 +330,7 @@ export function FileSystemDrawer({
   useEffect(() => {
     if (!(isOpen && tab === 'jobs')) return
     fetchJobs()
-    const handle = setInterval(fetchJobs, 5000)
+    const handle = setInterval(() => fetchJobs(true), 5000)
     return () => clearInterval(handle)
   }, [isOpen, tab, fetchJobs])
 
@@ -660,6 +700,32 @@ export function FileSystemDrawer({
     setTab('files')
   }, [projectId])
 
+  // Clean All: wipes every entry under the project root and recreates the
+  // four PROTECTED_SUBDIRS empty. Always behind a confirmation modal.
+  const handleCleanAll = useCallback(async () => {
+    const ok = await dangerConfirm(
+      'This will permanently delete every file and folder in the project workspace and reset it to the four empty default folders (jobs, notes, tool-outputs, uploads). This cannot be undone.',
+      'Clean entire workspace?',
+    )
+    if (!ok) return
+    try {
+      const resp = await fetch('/api/agent/workspace/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
+      setSelectedPaths(new Set())
+      setFilterText('')
+      setCurrentPath('.')
+      fetchEntries('.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'reset failed'
+      alertError(msg, 'Clean all failed')
+    }
+  }, [projectId, fetchEntries, dangerConfirm, alertError])
+
   const handleCancelJob = useCallback(async (job: JobRow) => {
     const ok = await dangerConfirm(
       `Cancel the running ${job.tool_name} job? Any work done so far will be discarded.`,
@@ -697,8 +763,19 @@ export function FileSystemDrawer({
       onClose={onClose}
       position="left"
       mode="overlay"
-      width="380px"
+      width={`${drawerWidth}px`}
       title="Agent Workspace"
+      headerActions={
+        <WikiInfoButton
+          target="https://github.com/samugit83/redamon/wiki/Agent-Workspace"
+          title="Open Agent Workspace wiki page"
+        />
+      }
+      resizable
+      minWidth={MIN_WIDTH_PX}
+      maxWidth={MAX_WIDTH_PX}
+      onResize={setDrawerWidth}
+      onResizeEnd={handleResizeEnd}
     >
       <div className={styles.tabs}>
         <button
@@ -794,6 +871,13 @@ export function FileSystemDrawer({
               title="Refresh"
             >
               <RefreshCw size={12} />
+            </button>
+            <button
+              className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+              onClick={handleCleanAll}
+              title="Clean all — reset workspace to 4 empty default folders"
+            >
+              <Eraser size={12} />
             </button>
           </div>
 
@@ -906,6 +990,7 @@ export function FileSystemDrawer({
             <div className={styles.entryList}>
               {currentPath !== '.' && currentPath !== '' && (
                 <div className={styles.entry} onClick={handleGoUp}>
+                  <span />
                   <FolderIcon size={14} />
                   <span className={styles.entryName}>..</span>
                   <span />
@@ -1021,7 +1106,7 @@ export function FileSystemDrawer({
             <span style={{ flex: 1 }}>Background jobs</span>
             <button
               className={styles.actionBtn}
-              onClick={fetchJobs}
+              onClick={() => fetchJobs()}
               title="Refresh"
             >
               <RefreshCw size={12} />

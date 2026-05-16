@@ -20,6 +20,7 @@ import hashlib
 import logging
 import mimetypes
 import os
+import re
 import shutil
 import stat as statlib
 import subprocess
@@ -531,7 +532,25 @@ async def fs_mkdir(path: str, parents: bool = True) -> str:
         full = _resolve_safe(path)
     except ValueError as e:
         return f"Error: {e}"
-    full.mkdir(parents=parents, exist_ok=True)
+    if full.exists():
+        if not full.is_dir():
+            return f"Error: {path} exists and is not a directory."
+        try:
+            entry_count = sum(1 for _ in full.iterdir())
+        except OSError:
+            entry_count = -1
+        if entry_count < 0:
+            return f"Directory {path} already exists (no change)."
+        return f"Directory {path} already exists (no change, {entry_count} entries inside)."
+    try:
+        full.mkdir(parents=parents, exist_ok=False)
+    except FileNotFoundError:
+        return (
+            f"Error: parent of {path} does not exist. "
+            f"Pass parents=True to auto-create intermediate directories."
+        )
+    except OSError as e:
+        return f"Error: failed to create {path}: {e}"
     return f"Created directory {path}."
 
 
@@ -823,6 +842,49 @@ _DEFINITION_TYPES = {
 }
 
 
+_MARKDOWN_EXTS = (".md", ".markdown", ".mdown", ".mkd")
+
+
+def _markdown_symbols(full: Path, rel_path: str) -> str:
+    try:
+        text = full.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        return f"Error parsing {rel_path}: {e}"
+    headers: list[tuple[int, str, int, int]] = []
+    lines = text.splitlines()
+    in_fence = False
+    fence_marker: str | None = None
+    atx_re = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
+    setext_re = re.compile(r"^(=+|-+)\s*$")
+    for idx, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[:3]
+            if not in_fence:
+                in_fence, fence_marker = True, marker
+            elif fence_marker and stripped.startswith(fence_marker):
+                in_fence, fence_marker = False, None
+            continue
+        if in_fence:
+            continue
+        m = atx_re.match(line)
+        if m:
+            headers.append((len(m.group(1)), m.group(2).strip(), idx + 1, idx + 1))
+            continue
+        if idx > 0 and setext_re.match(line):
+            prev = lines[idx - 1].strip()
+            if prev and not prev.startswith("#") and not atx_re.match(lines[idx - 1]):
+                level = 1 if line.lstrip().startswith("=") else 2
+                headers.append((level, prev, idx, idx + 1))
+    if not headers:
+        return f"No definitions found in {rel_path}."
+    out = [f"Symbols in {rel_path} ({len(headers)} defs):"]
+    for level, name, start, end in headers[:500]:
+        indent = "  " * (level - 1)
+        out.append(f"{indent}h{level} {name}  [{start}-{end}]")
+    return "\n".join(out)
+
+
 async def fs_symbols(file_path: str) -> str:
     try:
         full = _resolve_safe(file_path)
@@ -830,9 +892,12 @@ async def fs_symbols(file_path: str) -> str:
         return f"Error: {e}"
     if not full.exists():
         return f"Error: file not found: {file_path}"
+    if full.suffix.lower() in _MARKDOWN_EXTS:
+        return _markdown_symbols(full, file_path)
     lang = _EXT_TO_LANG.get(full.suffix)
     if not lang:
-        return f"Error: unsupported language for {full.suffix}. Supported: {', '.join(_EXT_TO_LANG)}"
+        supported = ", ".join(list(_EXT_TO_LANG) + list(_MARKDOWN_EXTS))
+        return f"Error: unsupported language for {full.suffix}. Supported: {supported}"
     try:
         from tree_sitter_languages import get_parser
         parser = get_parser(lang)
@@ -1022,22 +1087,30 @@ async def fs_archive(paths: list, dest: str, format: str = "tar.gz") -> str:
         if not p.exists():
             return f"Error: not found: {_rel(p)}"
     dest_p.parent.mkdir(parents=True, exist_ok=True)
-    root = _workspace_root().resolve()
     n = 0
     if format == "tar.gz":
+        def _skip_symlinks(tarinfo):
+            if tarinfo.issym() or tarinfo.islnk():
+                return None
+            return tarinfo
         with tarfile.open(dest_p, "w:gz") as tf:
             for p in resolved_inputs:
-                tf.add(p, arcname=str(p.relative_to(root)))
+                if p.is_symlink():
+                    continue
+                tf.add(p, arcname=p.name, filter=_skip_symlinks)
                 n += 1
     else:
         with zipfile.ZipFile(dest_p, "w", zipfile.ZIP_DEFLATED) as zf:
             for p in resolved_inputs:
+                if p.is_symlink():
+                    continue
                 if p.is_dir():
                     for sub in p.rglob("*"):
-                        if sub.is_file():
-                            zf.write(sub, arcname=str(sub.relative_to(root)))
+                        if sub.is_symlink() or not sub.is_file():
+                            continue
+                        zf.write(sub, arcname=f"{p.name}/{sub.relative_to(p)}")
                 else:
-                    zf.write(p, arcname=str(p.relative_to(root)))
+                    zf.write(p, arcname=p.name)
                 n += 1
     return f"Archived {n} entries -> {dest} ({format})."
 
@@ -1184,6 +1257,40 @@ def delete_for_project(project_id: str, path: str, recursive: bool = False) -> N
         shutil.rmtree(full)
     else:
         full.unlink()
+
+
+def reset_for_project(project_id: str) -> dict:
+    """Wipe the entire workspace back to its initial state.
+
+    Removes every entry under the project root, then re-creates the four
+    PROTECTED_SUBDIRS empty. Returns a small summary so the caller can
+    confirm what was removed.
+    """
+    root = _workspace_root_for(project_id).resolve()
+    removed_entries = 0
+    removed_protected_children = 0
+    for child in list(root.iterdir()):
+        name = child.name
+        if name in PROTECTED_SUBDIRS and child.is_dir() and not child.is_symlink():
+            for sub in list(child.iterdir()):
+                if sub.is_dir() and not sub.is_symlink():
+                    shutil.rmtree(sub)
+                else:
+                    sub.unlink()
+                removed_protected_children += 1
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+        removed_entries += 1
+    for sub in _DEFAULT_SUBDIRS:
+        (root / sub).mkdir(exist_ok=True)
+    return {
+        "removed_top_level": removed_entries,
+        "removed_protected_children": removed_protected_children,
+        "default_subdirs": list(_DEFAULT_SUBDIRS),
+    }
 
 
 # =============================================================================

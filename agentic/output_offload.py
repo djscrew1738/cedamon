@@ -33,19 +33,32 @@ HEAD_CHAR_CAP = 4000
 TAIL_CHAR_CAP = 2000
 
 
+_OFFLOAD_OVERRIDE_VALUES = {"inline", "file", "auto"}
+
+
 def strip_output_mode(tool_args) -> tuple:
     """
-    Pop `output_mode` from tool_args (if present) and return (cleaned_args, override).
+    Pop `output_mode` from tool_args ONLY when its value is an offload override
+    (`inline` | `file` | `auto`), and return (cleaned_args, override).
+
+    Tools like `fs_grep` own a native `output_mode` param with a different
+    vocabulary (`files_with_matches` | `content` | `count`). Stripping it
+    unconditionally would silently revert those calls to the default and
+    swallow caller intent — bug observed: fs_grep(output_mode="content")
+    returned just the filename because the param was eaten before reaching
+    the tool. Now the strip only fires for the offload tokens.
 
     Called by PhaseAwareToolExecutor BEFORE invoking the tool so MCP servers
-    never see the param. Returns the original args dict (unchanged) and None
-    if no override was set.
+    never see the offload override. Returns the original args dict (unchanged)
+    and None when no override is set OR the value belongs to the tool.
     """
     if not isinstance(tool_args, dict) or "output_mode" not in tool_args:
         return tool_args, None
-    override = tool_args.get("output_mode")
+    value = tool_args.get("output_mode")
+    if value not in _OFFLOAD_OVERRIDE_VALUES:
+        return tool_args, None
     cleaned = {k: v for k, v in tool_args.items() if k != "output_mode"}
-    return cleaned, override
+    return cleaned, value
 
 
 def _resolve_mode(tool_name: str, override: Optional[str]) -> str:
