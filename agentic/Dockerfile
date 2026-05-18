@@ -167,5 +167,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the API server
+# Run the API server. Single-worker by design: the fireteam confirmation
+# registry uses an in-process dict (orchestrator_helpers/
+# fireteam_confirmation_registry.py). The startup guard in api.py refuses
+# to start if WORKERS / UVICORN_WORKERS / WEB_CONCURRENCY / GUNICORN_WORKERS
+# is > 1. To scale horizontally, first move the registry to a shared store.
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]

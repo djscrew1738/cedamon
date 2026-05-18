@@ -13,6 +13,13 @@ This registry is process-local (no cross-process sharing) and is cleared on
 member resume or wave cancellation. Not durable across backend restarts; if
 the backend dies mid-await, the whole wave is cancelled and the member is
 marked ``cancelled`` by normal fireteam cancellation semantics.
+
+The single-process invariant is enforced at startup by
+``agentic/startup_guard.py:check_single_worker()`` (called from
+``api.py``'s FastAPI lifespan). With multiple workers, registrations in
+worker A would be invisible to worker B and confirmations would silently
+hang. To scale horizontally, replace ``_PENDING`` with a shared backing
+store (Redis pub/sub, Postgres LISTEN/NOTIFY, etc.) and remove the guard.
 """
 
 import asyncio

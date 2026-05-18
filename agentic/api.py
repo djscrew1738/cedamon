@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from logging_config import setup_logging
 from orchestrator import AgentOrchestrator
 from orchestrator_helpers import normalize_content
+from startup_guard import check_single_worker
 from utils import get_session_count
 from websocket_api import WebSocketManager, websocket_endpoint, MessageType
 import workspace_fs
@@ -52,6 +53,12 @@ async def lifespan(app: FastAPI):
     Initializes the orchestrator and WebSocket manager on startup and cleans up on shutdown.
     """
     global orchestrator, ws_manager
+
+    # Refuse to start under multi-worker uvicorn/gunicorn. The fireteam
+    # confirmation registry uses an in-process dict; multiple workers would
+    # silently break confirmation routing. See startup_guard for the env
+    # vars consulted and the documented remediation paths.
+    check_single_worker()
 
     # Agent container runs as root; bind-mounted /workspace files would
     # otherwise end up root:root on the host (UID 1000), breaking the
