@@ -16,6 +16,7 @@ import { MasscanSection } from '../sections/MasscanSection'
 import { NmapSection } from '../sections/NmapSection'
 import { HttpxSection } from '../sections/HttpxSection'
 import { KatanaSection } from '../sections/KatanaSection'
+import { ZapAjaxSpiderSection } from '../sections/ZapAjaxSpiderSection'
 import { HakrawlerSection } from '../sections/HakrawlerSection'
 import { JsluiceSection } from '../sections/JsluiceSection'
 import { FfufSection } from '../sections/FfufSection'
@@ -90,6 +91,7 @@ export function WorkflowNodeModal({
       case 'Nmap':              return <NmapSection {...baseProps} />
       case 'Httpx':             return <HttpxSection {...baseProps} />
       case 'Katana':            return <KatanaSection {...baseProps} />
+      case 'ZapAjaxSpider':     return <ZapAjaxSpiderSection {...baseProps} />
       case 'Hakrawler':         return <HakrawlerSection {...baseProps} />
       case 'Jsluice':           return <JsluiceSection {...baseProps} />
       case 'Ffuf':              return <FfufSection {...extendedProps} />

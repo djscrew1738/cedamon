@@ -91,6 +91,10 @@ const TOOL_DESCRIPTIONS: Record<string, string> = {
     'Targets are loaded from the graph (BaseURLs from prior HTTP probing). ' +
     'You can also provide custom URLs below. ' +
     'Endpoint, Parameter, BaseURL, and ExternalDomain nodes are merged into the existing graph.',
+  ZapAjaxSpider:
+    'Browser-driven crawling with OWASP ZAP Ajax Spider. Executes JavaScript and SPA interactions to discover API endpoints that static crawlers can miss. ' +
+    'Targets are loaded from graph BaseURLs, with optional endpoint seeding from settings. You can also provide custom URLs below. ' +
+    'Custom headers/cookies configured in project settings are sent by ZAP for authenticated crawling. Endpoint, Parameter, BaseURL, and ExternalDomain nodes are merged into the existing graph.',
   Hakrawler:
     'Lightweight web crawler that discovers endpoints and links from BaseURLs using Hakrawler (Docker-based). ' +
     'Targets are loaded from the graph (BaseURLs from prior HTTP probing). ' +
@@ -412,7 +416,7 @@ export function PartialReconModal({
   const isNuclei = toolId === 'Nuclei'
   const isGraphql = toolId === 'GraphqlScan'
   const isSecurityChecks = toolId === 'SecurityChecks'
-  const isResourceEnum = toolId === 'Katana' || toolId === 'Hakrawler' || toolId === 'Jsluice' || toolId === 'Ffuf' || toolId === 'Kiterunner' || toolId === 'JsRecon' || isNuclei
+  const isResourceEnum = toolId === 'Katana' || toolId === 'ZapAjaxSpider' || toolId === 'Hakrawler' || toolId === 'Jsluice' || toolId === 'Ffuf' || toolId === 'Kiterunner' || toolId === 'JsRecon' || isNuclei
   const isArjun = toolId === 'Arjun'
   const isGau = toolId === 'Gau'
   const isParamSpider = toolId === 'ParamSpider'
@@ -568,7 +572,8 @@ export function PartialReconModal({
     || (toolId === 'JsRecon' && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0 && (graphInputs?.existing_endpoints_count ?? 0) === 0 && uploadedJsFiles.length === 0)
     || (isNuclei && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0 && (graphInputs?.existing_endpoints_count ?? 0) === 0 && (graphInputs?.existing_subdomains_count ?? 0) === 0)
     || (isGraphql && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0 && (graphInputs?.existing_endpoints_count ?? 0) === 0)
-    || (isResourceEnum && !isNuclei && toolId !== 'JsRecon' && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0)
+    || (toolId === 'ZapAjaxSpider' && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0 && (graphInputs?.existing_endpoints_count ?? 0) === 0)
+    || (isResourceEnum && !isNuclei && toolId !== 'JsRecon' && toolId !== 'ZapAjaxSpider' && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0)
     || (isArjun && !loadingInputs && (graphInputs?.existing_baseurls_count ?? 0) === 0 && (graphInputs?.existing_endpoints_count ?? 0) === 0)
     || (toolId === 'EndpointAiClassifier' && !loadingInputs && (graphInputs?.existing_endpoints_count ?? 0) === 0)
     || (isSecurityChecks && !loadingInputs && (graphInputs?.existing_ips_count ?? 0) === 0 && (graphInputs?.existing_subdomains_count ?? 0) === 0 && (graphInputs?.existing_baseurls_count ?? 0) === 0)
@@ -580,6 +585,7 @@ export function PartialReconModal({
   const nmapNoPorts = isNmap && !includeGraphTargets && !customPorts.trim()
   const httpxNoPorts = isHttpx && !includeGraphTargets && !customPorts.trim() && !customSubdomains.trim()
   const resourceEnumNoUrls = isResourceEnum && !includeGraphTargets && !customUrls.trim() && !hasJsUploads
+  const zapAjaxSpiderNoUrls = toolId === 'ZapAjaxSpider' && !loadingInputs && !customUrls.trim() && (!includeGraphTargets || ((graphInputs?.existing_baseurls_count ?? 0) === 0 && (graphInputs?.existing_endpoints_count ?? 0) === 0))
   const arjunNoUrls = isArjun && !includeGraphTargets && !customUrls.trim()
   const securityChecksNoUrls = isSecurityChecks && !includeGraphTargets && !customUrls.trim() && !customSubdomains.trim() && !customIps.trim()
   const shodanNoIps = isShodan && !includeGraphTargets && !customIps.trim()
@@ -629,6 +635,8 @@ export function PartialReconModal({
                 ? `${domain || 'No domain'} (${graphInputs?.existing_subdomains_count ?? 0} subdomains, ${graphInputs?.existing_ports_count ?? 0} ports, ${graphInputs?.existing_baseurls_count ?? 0} existing URLs)`
                 : toolId === 'JsRecon'
                 ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints${uploadedJsFiles.length ? `, ${uploadedJsFiles.length} uploaded` : ''})`
+                : toolId === 'ZapAjaxSpider'
+                ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints)`
                 : isNuclei
                 ? `${domain || 'No domain'} (${graphInputs?.existing_baseurls_count ?? 0} BaseURLs, ${graphInputs?.existing_endpoints_count ?? 0} Endpoints, ${graphInputs?.existing_subdomains_count ?? 0} Subdomains)`
                 : isGraphql
@@ -743,6 +751,8 @@ export function PartialReconModal({
               ? 'No subdomains or ports found in graph. Run Subdomain Discovery + Port Scanning first, or provide custom subdomains below.'
               : toolId === 'JsRecon'
               ? 'No BaseURLs or Endpoints found in graph. Run HTTP Probing (Httpx) and Resource Enumeration (Katana/Hakrawler) first, or provide custom URLs below.'
+              : toolId === 'ZapAjaxSpider'
+              ? 'No BaseURLs or Endpoints found in graph. Run HTTP Probing (Httpx) first, enable endpoint seeding after prior crawling, or provide custom URLs below.'
               : isNuclei
               ? 'No BaseURLs or Endpoints found in graph. Run HTTP Probing (Httpx) and Resource Enumeration first, or provide custom URLs below.'
               : isResourceEnum
@@ -791,9 +801,19 @@ export function PartialReconModal({
               ? 'Jsluice requires URLs to analyze. Provide custom URLs below or enable graph targets (which include existing Endpoints from Katana/Hakrawler).'
               : toolId === 'JsRecon'
               ? 'JS Recon requires URLs to analyze for JavaScript files. Provide custom URLs below or enable graph targets (which include existing BaseURLs + Endpoints).'
+              : toolId === 'ZapAjaxSpider'
+              ? 'ZAP Ajax Spider requires URLs to crawl. Provide custom URLs below or enable graph targets (BaseURLs, plus Endpoints when endpoint seeding is configured).'
               : isNuclei
               ? 'Nuclei works best with BaseURLs/Endpoints from prior phases. With only Subdomains it falls back to scanning http:// and https:// on default ports. Provide custom URLs below or enable graph targets.'
-              : `${toolId} requires URLs to crawl. Provide custom URLs below or enable graph targets (which include existing BaseURLs from Httpx).`}
+              : `${toolId} requires URLs to process. Provide custom URLs below or enable graph targets (which include existing BaseURLs from Httpx).`}
+          </div>
+        )}
+        {zapAjaxSpiderNoUrls && !resourceEnumNoUrls && !noTargetsToScan && (
+          <div style={{
+            fontSize: '11px', color: '#f87171', lineHeight: '1.5', padding: '8px 12px', borderRadius: '6px',
+            backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
+          }}>
+            ZAP Ajax Spider requires URLs to crawl. Provide custom URLs below or enable graph targets with BaseURLs or endpoint seeding targets.
           </div>
         )}
         {arjunNoUrls && !noTargetsToScan && (
@@ -1139,14 +1159,14 @@ export function PartialReconModal({
           <button
             type="button"
             onClick={handleRun}
-            disabled={!domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || arjunNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps}
+            disabled={!domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps}
             style={{
               padding: '8px 16px', borderRadius: '6px', border: 'none',
               backgroundColor: '#3b82f6', color: '#fff',
-              cursor: !domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || arjunNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps ? 'not-allowed' : 'pointer',
+              cursor: !domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps ? 'not-allowed' : 'pointer',
               fontSize: '13px',
               display: 'flex', alignItems: 'center', gap: '6px',
-              opacity: !domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || arjunNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps ? 0.5 : 1,
+              opacity: !domain || isStarting || hasValidationErrors || noTargetsToScan || nmapNoPorts || httpxNoPorts || resourceEnumNoUrls || zapAjaxSpiderNoUrls || arjunNoUrls || securityChecksNoUrls || shodanNoIps || osintNoIps ? 0.5 : 1,
             }}
           >
             {isStarting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />}

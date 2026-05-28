@@ -433,6 +433,27 @@ model Project {
   katanaParallelism           Int      @default(8) @map("katana_parallelism")
   katanaConcurrency           Int      @default(15) @map("katana_concurrency")
 
+  // ========== ZAP AJAX SPIDER ==========
+  zapAjaxSpiderEnabled           Boolean  @default(false) @map("zap_ajax_spider_enabled")
+  zapAjaxSpiderDockerImage       String   @default("ghcr.io/zaproxy/zaproxy:stable") @map("zap_ajax_spider_docker_image")
+  zapAjaxSpiderSeedMode          String   @default("base_urls") @map("zap_ajax_spider_seed_mode")
+  zapAjaxSpiderMaxDuration       Int      @default(10) @map("zap_ajax_spider_max_duration")
+  zapAjaxSpiderMaxCrawlDepth     Int      @default(5) @map("zap_ajax_spider_max_crawl_depth")
+  zapAjaxSpiderMaxCrawlStates    Int      @default(0) @map("zap_ajax_spider_max_crawl_states")
+  zapAjaxSpiderNumberOfBrowsers  Int      @default(1) @map("zap_ajax_spider_number_of_browsers")
+  zapAjaxSpiderBrowserId         String   @default("firefox-headless") @map("zap_ajax_spider_browser_id")
+  zapAjaxSpiderEventWait         Int      @default(1000) @map("zap_ajax_spider_event_wait")
+  zapAjaxSpiderReloadWait        Int      @default(1000) @map("zap_ajax_spider_reload_wait")
+  zapAjaxSpiderClickDefaultElems Boolean  @default(true) @map("zap_ajax_spider_click_default_elems")
+  zapAjaxSpiderClickElemsOnce    Boolean  @default(true) @map("zap_ajax_spider_click_elems_once")
+  zapAjaxSpiderRandomInputs      Boolean  @default(false) @map("zap_ajax_spider_random_inputs")
+  zapAjaxSpiderLogoutAvoidance   Boolean  @default(true) @map("zap_ajax_spider_logout_avoidance")
+  zapAjaxSpiderScopeCheck        String   @default("Strict") @map("zap_ajax_spider_scope_check")
+  zapAjaxSpiderCustomHeaders     String[] @default([]) @map("zap_ajax_spider_custom_headers")
+  zapAjaxSpiderExcludePatterns   String[] @default([]) @map("zap_ajax_spider_exclude_patterns")
+  zapAjaxSpiderMaxUrls           Int      @default(1000) @map("zap_ajax_spider_max_urls")
+  zapAjaxSpiderParallelism       Int      @default(1) @map("zap_ajax_spider_parallelism")
+
   // ========== HAKRAWLER WEB CRAWLER ==========
   hakrawlerEnabled            Boolean  @default(true) @map("hakrawler_enabled")
   hakrawlerDockerImage        String   @default("jauderho/hakrawler:latest") @map("hakrawler_docker_image")

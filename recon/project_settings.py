@@ -302,6 +302,27 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'KATANA_PARALLELISM': 8,
     'KATANA_CONCURRENCY': 15,
 
+    # ZAP Ajax Spider Browser Crawler
+    'ZAP_AJAX_SPIDER_ENABLED': False,
+    'ZAP_AJAX_SPIDER_DOCKER_IMAGE': 'ghcr.io/zaproxy/zaproxy:stable',
+    'ZAP_AJAX_SPIDER_SEED_MODE': 'base_urls',
+    'ZAP_AJAX_SPIDER_MAX_DURATION': 10,
+    'ZAP_AJAX_SPIDER_MAX_CRAWL_DEPTH': 5,
+    'ZAP_AJAX_SPIDER_MAX_CRAWL_STATES': 0,
+    'ZAP_AJAX_SPIDER_NUMBER_OF_BROWSERS': 1,
+    'ZAP_AJAX_SPIDER_BROWSER_ID': 'firefox-headless',
+    'ZAP_AJAX_SPIDER_EVENT_WAIT': 1000,
+    'ZAP_AJAX_SPIDER_RELOAD_WAIT': 1000,
+    'ZAP_AJAX_SPIDER_CLICK_DEFAULT_ELEMS': True,
+    'ZAP_AJAX_SPIDER_CLICK_ELEMS_ONCE': True,
+    'ZAP_AJAX_SPIDER_RANDOM_INPUTS': False,
+    'ZAP_AJAX_SPIDER_LOGOUT_AVOIDANCE': True,
+    'ZAP_AJAX_SPIDER_SCOPE_CHECK': 'Strict',
+    'ZAP_AJAX_SPIDER_CUSTOM_HEADERS': [],
+    'ZAP_AJAX_SPIDER_EXCLUDE_PATTERNS': [],
+    'ZAP_AJAX_SPIDER_MAX_URLS': 1000,
+    'ZAP_AJAX_SPIDER_PARALLELISM': 1,
+
     # GAU Passive URL Discovery
     'GAU_ENABLED': False,
     'GAU_DOCKER_IMAGE': 'sxcurity/gau:latest',
@@ -927,6 +948,27 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['KATANA_PARALLELISM'] = project.get('katanaParallelism', DEFAULT_SETTINGS['KATANA_PARALLELISM'])
     settings['KATANA_CONCURRENCY'] = project.get('katanaConcurrency', DEFAULT_SETTINGS['KATANA_CONCURRENCY'])
 
+    # ZAP Ajax Spider Browser Crawler
+    settings['ZAP_AJAX_SPIDER_ENABLED'] = project.get('zapAjaxSpiderEnabled', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_ENABLED'])
+    settings['ZAP_AJAX_SPIDER_DOCKER_IMAGE'] = project.get('zapAjaxSpiderDockerImage', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_DOCKER_IMAGE'])
+    settings['ZAP_AJAX_SPIDER_SEED_MODE'] = project.get('zapAjaxSpiderSeedMode', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_SEED_MODE'])
+    settings['ZAP_AJAX_SPIDER_MAX_DURATION'] = project.get('zapAjaxSpiderMaxDuration', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_MAX_DURATION'])
+    settings['ZAP_AJAX_SPIDER_MAX_CRAWL_DEPTH'] = project.get('zapAjaxSpiderMaxCrawlDepth', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_MAX_CRAWL_DEPTH'])
+    settings['ZAP_AJAX_SPIDER_MAX_CRAWL_STATES'] = project.get('zapAjaxSpiderMaxCrawlStates', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_MAX_CRAWL_STATES'])
+    settings['ZAP_AJAX_SPIDER_NUMBER_OF_BROWSERS'] = project.get('zapAjaxSpiderNumberOfBrowsers', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_NUMBER_OF_BROWSERS'])
+    settings['ZAP_AJAX_SPIDER_BROWSER_ID'] = project.get('zapAjaxSpiderBrowserId', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_BROWSER_ID'])
+    settings['ZAP_AJAX_SPIDER_EVENT_WAIT'] = project.get('zapAjaxSpiderEventWait', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_EVENT_WAIT'])
+    settings['ZAP_AJAX_SPIDER_RELOAD_WAIT'] = project.get('zapAjaxSpiderReloadWait', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_RELOAD_WAIT'])
+    settings['ZAP_AJAX_SPIDER_CLICK_DEFAULT_ELEMS'] = project.get('zapAjaxSpiderClickDefaultElems', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_CLICK_DEFAULT_ELEMS'])
+    settings['ZAP_AJAX_SPIDER_CLICK_ELEMS_ONCE'] = project.get('zapAjaxSpiderClickElemsOnce', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_CLICK_ELEMS_ONCE'])
+    settings['ZAP_AJAX_SPIDER_RANDOM_INPUTS'] = project.get('zapAjaxSpiderRandomInputs', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_RANDOM_INPUTS'])
+    settings['ZAP_AJAX_SPIDER_LOGOUT_AVOIDANCE'] = project.get('zapAjaxSpiderLogoutAvoidance', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_LOGOUT_AVOIDANCE'])
+    settings['ZAP_AJAX_SPIDER_SCOPE_CHECK'] = project.get('zapAjaxSpiderScopeCheck', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_SCOPE_CHECK'])
+    settings['ZAP_AJAX_SPIDER_CUSTOM_HEADERS'] = project.get('zapAjaxSpiderCustomHeaders', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_CUSTOM_HEADERS'])
+    settings['ZAP_AJAX_SPIDER_EXCLUDE_PATTERNS'] = project.get('zapAjaxSpiderExcludePatterns', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_EXCLUDE_PATTERNS'])
+    settings['ZAP_AJAX_SPIDER_MAX_URLS'] = project.get('zapAjaxSpiderMaxUrls', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_MAX_URLS'])
+    settings['ZAP_AJAX_SPIDER_PARALLELISM'] = project.get('zapAjaxSpiderParallelism', DEFAULT_SETTINGS['ZAP_AJAX_SPIDER_PARALLELISM'])
+
     # Hakrawler Web Crawler
     settings['HAKRAWLER_ENABLED'] = project.get('hakrawlerEnabled', DEFAULT_SETTINGS['HAKRAWLER_ENABLED'])
     settings['HAKRAWLER_DOCKER_IMAGE'] = project.get('hakrawlerDockerImage', DEFAULT_SETTINGS['HAKRAWLER_DOCKER_IMAGE'])
@@ -1467,6 +1509,9 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     settings['KATANA_JS_CRAWL'] = False  # JS rendering = headless browser = noisy
     settings['KATANA_PARALLELISM'] = 1
     settings['KATANA_CONCURRENCY'] = 1
+
+    # --- ZAP Ajax Spider: DISABLED (browser-driven active crawling) ---
+    settings['ZAP_AJAX_SPIDER_ENABLED'] = False
 
     # --- GAU: enable it (passive source) but throttle verification ---
     settings['GAU_ENABLED'] = True

@@ -400,6 +400,34 @@ const Katana = (
   </div>
 )
 
+const ZapAjaxSpider = (
+  <div style={wrapperStyle}>
+    <div style={firstSectionTitleStyle}>How input is generated</div>
+    <p style={paraStyle}>
+      ZAP Ajax Spider starts from <strong>BaseURL</strong> nodes by default, using the live URLs verified by HTTP Probing as browser crawl seeds.
+    </p>
+    <p style={paraStyle}>
+      When the project setting <span style={codeStyle}>base_urls_and_endpoints</span> is selected, existing <strong>Endpoint</strong> nodes are also reconstructed into full URLs and added as seeds. Custom URLs from the partial recon modal are appended to the same target set.
+    </p>
+    <p style={paraStyle}>
+      Header and cookie lines from the ZAP Ajax Spider settings are sent to ZAP for authenticated browser requests. They affect crawling behavior but are not surfaced in this workflow view.
+    </p>
+
+    <div style={sectionTitleStyle}>How output transforms the graph</div>
+    <ul style={listStyle}>
+      <li>Browser-discovered routes become <strong>Endpoint</strong> nodes through the existing resource enumeration graph conventions.</li>
+      <li>Query strings and observed request inputs become <strong>Parameter</strong> nodes attached to their Endpoint.</li>
+      <li>New in-scope origins become <strong>BaseURL</strong> nodes; out-of-scope hosts are represented as <strong>ExternalDomain</strong> nodes when graph storage rules allow it.</li>
+      <li>The raw endpoint source should be recorded as <span style={codeStyle}>zap_ajax_spider</span>, while storage relationships and deduplication stay unchanged from the rest of resource enumeration.</li>
+    </ul>
+
+    <div style={sectionTitleStyle}>When the scan refuses to start</div>
+    <p style={{ ...paraStyle, margin: 0 }}>
+      If there are no BaseURLs and no custom URLs. Endpoint-only graph input can start the scan when endpoint seeding is enabled and graph Endpoints exist.
+    </p>
+  </div>
+)
+
 const Hakrawler = (
   <div style={wrapperStyle}>
     <div style={firstSectionTitleStyle}>How input is generated</div>
@@ -871,6 +899,7 @@ export const INPUT_LOGIC_TOOLTIPS: Record<string, ReactNode> = {
   Httpx,
   // Resource enumeration
   Katana,
+  ZapAjaxSpider,
   Hakrawler,
   Kiterunner,
   Ffuf,

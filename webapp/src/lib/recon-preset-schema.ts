@@ -167,6 +167,27 @@ export const reconPresetSchema = z.object({
   katanaParallelism: int,
   katanaConcurrency: int,
 
+  // -- Web Crawling: ZAP Ajax Spider --
+  zapAjaxSpiderEnabled: bool,
+  zapAjaxSpiderDockerImage: str,
+  zapAjaxSpiderSeedMode: str,
+  zapAjaxSpiderMaxDuration: int,
+  zapAjaxSpiderMaxCrawlDepth: int,
+  zapAjaxSpiderMaxCrawlStates: int,
+  zapAjaxSpiderNumberOfBrowsers: int,
+  zapAjaxSpiderBrowserId: str,
+  zapAjaxSpiderEventWait: int,
+  zapAjaxSpiderReloadWait: int,
+  zapAjaxSpiderClickDefaultElems: bool,
+  zapAjaxSpiderClickElemsOnce: bool,
+  zapAjaxSpiderRandomInputs: bool,
+  zapAjaxSpiderLogoutAvoidance: bool,
+  zapAjaxSpiderScopeCheck: str,
+  zapAjaxSpiderCustomHeaders: strArr,
+  zapAjaxSpiderExcludePatterns: strArr,
+  zapAjaxSpiderMaxUrls: int,
+  zapAjaxSpiderParallelism: int,
+
   // -- Web Crawling: Hakrawler --
   hakrawlerEnabled: bool,
   hakrawlerDepth: int,
@@ -608,6 +629,27 @@ export const RECON_PARAMETER_CATALOG = `
 - katanaCustomHeaders: string[] - Custom HTTP headers for crawler
 - katanaParallelism: integer - Targets crawled simultaneously
 - katanaConcurrency: integer - Concurrent fetchers per target
+
+## Web Crawling - ZAP Ajax Spider
+- zapAjaxSpiderEnabled: boolean - Enable browser-driven Ajax Spider crawling for modern SPAs and authenticated apps
+- zapAjaxSpiderDockerImage: string - Docker image used for the ZAP Ajax Spider runner
+- zapAjaxSpiderSeedMode: string - "base_urls" or "base_urls_and_endpoints" seed selection
+- zapAjaxSpiderMaxDuration: integer - Max Ajax Spider duration per seed in minutes
+- zapAjaxSpiderMaxCrawlDepth: integer - Max crawl depth per seed
+- zapAjaxSpiderMaxCrawlStates: integer - Max crawl states, or 0 for unlimited
+- zapAjaxSpiderNumberOfBrowsers: integer - Browser instances used by Ajax Spider
+- zapAjaxSpiderBrowserId: string - ZAP browser id, such as "firefox-headless"
+- zapAjaxSpiderEventWait: integer - Event wait time in milliseconds
+- zapAjaxSpiderReloadWait: integer - Reload wait time in milliseconds
+- zapAjaxSpiderClickDefaultElems: boolean - Click default clickable elements
+- zapAjaxSpiderClickElemsOnce: boolean - Click each element only once
+- zapAjaxSpiderRandomInputs: boolean - Fill inputs with random values
+- zapAjaxSpiderLogoutAvoidance: boolean - Avoid actions likely to log out
+- zapAjaxSpiderScopeCheck: string - Ajax Spider scope check mode
+- zapAjaxSpiderCustomHeaders: string[] - Header/cookie lines for authenticated crawling
+- zapAjaxSpiderExcludePatterns: string[] - Regex patterns to exclude from Ajax crawling
+- zapAjaxSpiderMaxUrls: integer - Max in-scope URLs to ingest
+- zapAjaxSpiderParallelism: integer - Seeds crawled simultaneously
 
 ## Web Crawling - Hakrawler
 - hakrawlerEnabled: boolean

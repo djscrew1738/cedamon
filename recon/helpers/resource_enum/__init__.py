@@ -69,6 +69,18 @@ from .jsluice_helpers import (
     verify_jsluice_urls,
 )
 
+# ZAP Ajax Spider helpers
+from .zap_ajax_spider_helpers import (
+    pull_zap_ajax_docker_image,
+    run_zap_ajax_spider,
+    merge_zap_ajax_into_by_base_url,
+    parse_zap_ajax_header_lines,
+    mask_zap_ajax_header_line,
+    build_zap_ajax_automation_plan,
+    parse_zap_ajax_export_urls,
+    filter_zap_ajax_urls,
+)
+
 # FFuf helpers
 from .ffuf_helpers import (
     run_ffuf_discovery,
@@ -131,6 +143,15 @@ __all__ = [
     "run_jsluice_analysis",
     "merge_jsluice_into_by_base_url",
     "verify_jsluice_urls",
+    # ZAP Ajax Spider
+    "pull_zap_ajax_docker_image",
+    "run_zap_ajax_spider",
+    "merge_zap_ajax_into_by_base_url",
+    "parse_zap_ajax_header_lines",
+    "mask_zap_ajax_header_line",
+    "build_zap_ajax_automation_plan",
+    "parse_zap_ajax_export_urls",
+    "filter_zap_ajax_urls",
     # FFuf
     "run_ffuf_discovery",
     "pull_ffuf_binary_check",

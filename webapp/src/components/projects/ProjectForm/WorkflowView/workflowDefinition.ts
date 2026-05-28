@@ -31,6 +31,7 @@ export const WORKFLOW_TOOLS: WorkflowToolDef[] = [
 
   // Group 5 - Resource Enumeration
   { id: 'Katana',      label: 'Katana',      enabledField: 'katanaEnabled',      group: 5, badge: 'active' },
+  { id: 'ZapAjaxSpider', label: 'ZAP Ajax Spider', enabledField: 'zapAjaxSpiderEnabled', group: 5, badge: 'active' },
   { id: 'Hakrawler',   label: 'Hakrawler',   enabledField: 'hakrawlerEnabled',   group: 5, badge: 'active' },
   { id: 'Jsluice',     label: 'jsluice',     enabledField: 'jsluiceEnabled',     group: 5, badge: 'both' },
   { id: 'Ffuf',        label: 'FFuf',        enabledField: 'ffufEnabled',        group: 5, badge: 'active' },

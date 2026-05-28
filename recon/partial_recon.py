@@ -61,6 +61,7 @@ from recon.partial_recon_modules.http_probing import run_httpx
 from recon.partial_recon_modules.web_crawling import (
     run_katana,
     run_hakrawler,
+    run_zap_ajax_spider_partial,
     run_ffuf,
     run_gau,
     run_jsluice,
@@ -123,6 +124,8 @@ def main():
         run_katana(config)
     elif tool_id == "Hakrawler":
         run_hakrawler(config)
+    elif tool_id == "ZapAjaxSpider":
+        run_zap_ajax_spider_partial(config)
     elif tool_id == "Gau":
         run_gau(config)
     elif tool_id == "Jsluice":
