@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JS Recon analysis hung indefinitely on large targets** ([recon/main_recon_modules/js_recon.py](recon/main_recon_modules/js_recon.py)): `_run_analysis()` wrapped the analyzer pool in `with ThreadPoolExecutor(...)`, so `future.result(timeout=...)` raised on time but the `with` exit then blocked on `shutdown(wait=True)` until every worker finished naturally. A 5894-file (303 MB) scan sat in `running` for 35+ minutes. Switched to manual executor with a shared wall-clock deadline and `shutdown(wait=False, cancel_futures=True)` in `finally`, so `JS_RECON_TIMEOUT` is now a real cap. Regression coverage: [recon/tests/test_js_recon_timeout.py](recon/tests/test_js_recon_timeout.py).
+
 - **Generate Recon Preset with AI: 404 on non-Anthropic providers** ([webapp/src/app/api/presets/generate/route.ts](webapp/src/app/api/presets/generate/route.ts)) — the route was treating the suffix in `custom/<id>` as the upstream API model name, when it's actually a `UserLlmProvider` id. Now resolves the provider by id and uses `provider.modelIdentifier`, honoring `temperature` / `maxTokens` / `defaultHeaders` / `sslVerify` like the chat path. Fixes [#133](https://github.com/samugit83/redamon/issues/133).
 
 - **Root-domain-only recon silently produced no targets** ([recon/main.py](recon/main.py)) — with Subdomain Discovery disabled and no prefixes set, the pipeline entered FULL DISCOVERY mode, skipped discovery, and never resolved the root domain, leaving downstream tools with zero targets. Now auto-promotes to FILTERED mode in that scenario so the root domain gets DNS-resolved and scanned. Fixes [#134](https://github.com/samugit83/redamon/issues/134).

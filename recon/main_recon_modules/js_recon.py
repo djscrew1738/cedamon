@@ -282,7 +282,15 @@ def _run_analysis(js_files: list, settings: dict) -> dict:
     min_confidence = settings.get('JS_RECON_MIN_CONFIDENCE', 'low')
 
     # --- Run analyzers in parallel ---
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    # Manual executor management so that JS_RECON_TIMEOUT acts as a real
+    # wall-clock budget: when it elapses, pending tasks are cancelled and the
+    # function returns with whatever results completed. The default `with`
+    # form calls shutdown(wait=True) which blocks until all worker threads
+    # finish naturally, defeating the per-future timeout.
+    analysis_budget = settings.get('JS_RECON_TIMEOUT', 900)
+    deadline = time.monotonic() + analysis_budget
+    executor = ThreadPoolExecutor(max_workers=4)
+    try:
         futures = {}
 
         # 1. Pattern scanning (secrets, emails, IPs, UUIDs)
@@ -377,7 +385,8 @@ def _run_analysis(js_files: list, settings: dict) -> dict:
         # Collect results
         for name, future in futures.items():
             try:
-                result = future.result(timeout=settings.get('JS_RECON_TIMEOUT', 900))
+                remaining = max(1.0, deadline - time.monotonic())
+                result = future.result(timeout=remaining)
 
                 if name == 'patterns':
                     # Unpack tuple: (findings, filtered_stats)
@@ -441,6 +450,11 @@ def _run_analysis(js_files: list, settings: dict) -> dict:
 
             except Exception as e:
                 print(f"[!][JsRecon] Analyzer '{name}' failed: {type(e).__name__}: {e}")
+    finally:
+        # cancel_futures drops tasks that have not started yet; tasks already
+        # running cannot be killed (Python limitation) but the container exits
+        # shortly after this function returns so the threads die with it.
+        executor.shutdown(wait=False, cancel_futures=True)
 
     return results
 
