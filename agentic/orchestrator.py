@@ -155,7 +155,7 @@ class AgentOrchestrator:
                 )
             logger.info("recover_orphaned_fireteams: stale fireteams and members marked cancelled")
         except Exception as exc:
-            logger.warning("recover_orphaned_fireteams failed: %s", exc)
+            logger.warning("recover_orphaned_fireteams failed: %s", exc, exc_info=True)
 
     async def _setup_checkpointer(self) -> None:
         """Optionally replace MemorySaver with AsyncPostgresSaver.
@@ -193,7 +193,7 @@ class AgentOrchestrator:
             self._checkpoint_pool = pool
             logger.info("Using AsyncPostgresSaver for persistent checkpointing")
         except Exception as exc:
-            logger.warning("AsyncPostgresSaver setup failed (%s); falling back to MemorySaver", exc)
+            logger.warning("AsyncPostgresSaver setup failed (%s); falling back to MemorySaver", exc, exc_info=True)
             self._checkpoint_pool = None
 
     # =========================================================================
@@ -235,7 +235,7 @@ class AgentOrchestrator:
         except asyncio.CancelledError:
             logger.info(f"[{session_key}] Metasploit prewarm cancelled")
         except Exception as e:
-            logger.warning(f"[{session_key}] Metasploit prewarm error: {e}")
+            logger.warning(f"[{session_key}] Metasploit prewarm error: {e}", exc_info=True)
         finally:
             # Clean up the task reference
             self._prewarm_tasks.pop(session_key, None)
@@ -436,7 +436,7 @@ class AgentOrchestrator:
                     # Skip; reload will fire on the next async-context apply.
                     logger.debug("User MCP manifest changed but no running loop; deferred.")
         except Exception as e:
-            logger.warning(f"User MCP manifest reload check failed: {e}")
+            logger.warning(f"User MCP manifest reload check failed: {e}", exc_info=True)
 
     def _build_section_picker_llm(self):
         """Instantiate a Haiku LLM for the tradecraft section picker.
@@ -467,7 +467,7 @@ class AgentOrchestrator:
                 picker_kwargs["temperature"] = 0
             return ChatAnthropic(**picker_kwargs)
         except Exception as e:
-            logger.debug(f"Section picker LLM build skipped: {e}")
+            logger.debug(f"Section picker LLM build skipped: {e}", exc_info=True)
             return None
 
     def _setup_llm(self) -> None:
@@ -710,7 +710,7 @@ class AgentOrchestrator:
             logger.info(f"Knowledge base loaded: {stats}")
             return kb
         except Exception as e:
-            logger.warning(f"Failed to initialize knowledge base ({e}) — KB disabled, agent will fall back to Tavily")
+            logger.warning(f"Failed to initialize knowledge base ({e}) — KB disabled, agent will fall back to Tavily", exc_info=True)
             return None
 
     def _build_graph(self) -> None:
@@ -1110,7 +1110,7 @@ class AgentOrchestrator:
             return self._build_response(final_state)
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Error: {e}", exc_info=True)
             return InvokeResponse(error=str(e))
 
     async def resume_after_approval(
@@ -1155,7 +1155,7 @@ class AgentOrchestrator:
             return self._build_response(final_state)
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}", exc_info=True)
             return InvokeResponse(error=str(e))
 
     async def resume_after_answer(
@@ -1198,7 +1198,7 @@ class AgentOrchestrator:
             return self._build_response(final_state)
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}", exc_info=True)
             return InvokeResponse(error=str(e))
 
     def _build_response(self, state: dict) -> InvokeResponse:
@@ -1330,7 +1330,7 @@ class AgentOrchestrator:
                 raise RuntimeError("No final state returned from graph execution")
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Streaming error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Streaming error: {e}", exc_info=True)
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
@@ -1407,7 +1407,7 @@ class AgentOrchestrator:
                 raise RuntimeError("No final state returned")
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume streaming error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume streaming error: {e}", exc_info=True)
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
@@ -1482,7 +1482,7 @@ class AgentOrchestrator:
                 raise RuntimeError("No final state returned")
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume streaming error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume streaming error: {e}", exc_info=True)
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
@@ -1532,7 +1532,7 @@ class AgentOrchestrator:
             return self._build_response(final_state)
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume error: {e}", exc_info=True)
             return InvokeResponse(error=str(e))
 
     async def resume_after_tool_confirmation_with_streaming(
@@ -1607,7 +1607,7 @@ class AgentOrchestrator:
                 raise RuntimeError("No final state returned")
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume streaming error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume streaming error: {e}", exc_info=True)
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
@@ -1674,7 +1674,7 @@ class AgentOrchestrator:
                 raise RuntimeError("No final state returned")
 
         except Exception as e:
-            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume execution error: {e}")
+            logger.error(f"[{user_id}/{project_id}/{session_id}] Resume execution error: {e}", exc_info=True)
             await streaming_callback.on_error(str(e), recoverable=False)
             return InvokeResponse(error=str(e))
         finally:
@@ -1693,7 +1693,7 @@ class AgentOrchestrator:
                     driver.close()
                     logger.debug("Knowledge base Neo4j driver closed")
             except Exception as e:
-                logger.warning(f"Error closing KB Neo4j driver: {e}")
+                logger.warning(f"Error closing KB Neo4j driver: {e}", exc_info=True)
 
         self._initialized = False
         logger.info("AgentOrchestrator closed")

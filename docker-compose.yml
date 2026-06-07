@@ -102,7 +102,8 @@ services:
     volumes:
       - cert_data:/mnt
     depends_on:
-      - gvm-cert-bund-data
+      gvm-cert-bund-data:
+        condition: service_completed_successfully
 
   gvm-data-objects:
     image: registry.community.greenbone.net/community/data-objects

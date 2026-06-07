@@ -107,11 +107,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware for webapp (allow all origins for development)
+# Add CORS middleware — locked down in production, permissive in development
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "*").strip()
+_cors_origins = (
+    [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    if _cors_origins_env
+    else ["*"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,  # Must be False when allow_origins is ["*"]
+    allow_origins=_cors_origins,
+    allow_credentials=(_cors_origins != ["*"]),  # Credentials only with specific origins
     allow_methods=["*"],
     allow_headers=["*"],
 )

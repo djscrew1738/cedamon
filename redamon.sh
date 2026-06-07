@@ -13,7 +13,7 @@ LEGACY_SKIPKBASE_FLAG_FILE="$SCRIPT_DIR/.skipkbase"
 
 # Service lists
 CORE_SERVICES="postgres neo4j recon-orchestrator kali-sandbox agent webapp"
-TOOL_IMAGES="redamon-recon:latest redamon-vuln-scanner:latest redamon-github-hunter:latest redamon-trufflehog:latest redamon-baddns:latest"
+TOOL_IMAGES=(redamon-recon:latest redamon-vuln-scanner:latest redamon-github-hunter:latest redamon-trufflehog:latest redamon-baddns:latest)
 DEV_COMPOSE="-f docker-compose.yml -f docker-compose.dev.yml"
 
 # Colors
@@ -223,10 +223,12 @@ pull_gvm_images() {
     # due to a known Docker+Go 1.24 bug (moby/moby#49513) and Greenbone
     # registry instability. Pull individually with retries.
     local max_retries=5
-    local gvm_services
-    gvm_services=$(docker compose config --services 2>/dev/null | grep '^gvm-')
+    local gvm_services=()
+    while IFS= read -r svc; do
+        gvm_services+=("$svc")
+    done < <(docker compose config --services 2>/dev/null | grep '^gvm-')
 
-    if [[ -z "$gvm_services" ]]; then
+    if [[ ${#gvm_services[@]} -eq 0 ]]; then
         return 0
     fi
 
@@ -236,7 +238,7 @@ pull_gvm_images() {
         local need_pull=false
         local compose_json
         compose_json=$(docker compose config --format json 2>/dev/null)
-        for svc in $gvm_services gvmd; do
+        for svc in "${gvm_services[@]}" gvmd; do
             local img
             img=$(echo "$compose_json" | jq -r ".services.\"$svc\".image // empty")
             if [[ -n "$img" ]] && ! docker image inspect "$img" &>/dev/null; then
@@ -252,7 +254,7 @@ pull_gvm_images() {
 
     info "Pulling GVM images (with retry)..."
     local failed=()
-    for svc in $gvm_services; do
+    for svc in "${gvm_services[@]}"; do
         local attempt=1
         while [[ $attempt -le $max_retries ]]; do
             if docker compose pull "$svc" 2>/dev/null; then
@@ -824,7 +826,7 @@ cmd_update() {
 
 ensure_tool_images() {
     local missing=false
-    for img in $TOOL_IMAGES; do
+    for img in "${TOOL_IMAGES[@]}"; do
         if ! docker image inspect "$img" &>/dev/null; then
             missing=true
             break

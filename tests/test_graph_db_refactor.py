@@ -152,7 +152,7 @@ class TestMethodPresence(unittest.TestCase):
         return methods
 
     def test_all_original_public_methods_preserved(self):
-        original = self._methods("graph_db/neo4j_client copy.py", "Neo4jClient")
+        original = self._methods("graph_db/neo4j_client_legacy.py", "Neo4jClient")
         original -= {"_init_schema"}  # intentionally consolidated into __init__
 
         new_methods = set()
@@ -357,7 +357,7 @@ class TestSchema(unittest.TestCase):
             self.fail(f"init_schema raised: {e}")
 
     def test_constraints_match_original(self):
-        original_src = open(os.path.join(_REPO, "graph_db/neo4j_client copy.py")).read()
+        original_src = open(os.path.join(_REPO, "graph_db/neo4j_client_legacy.py")).read()
         orig_names = sorted(re.findall(r"CREATE CONSTRAINT (\S+)", original_src))
         new_names = sorted(
             re.search(r"CREATE CONSTRAINT (\S+)", s).group(1)
