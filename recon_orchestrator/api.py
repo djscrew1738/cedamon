@@ -8,6 +8,7 @@ import socket
 from contextlib import asynccontextmanager
 
 import docker
+from docker.errors import NotFound
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
@@ -45,16 +46,55 @@ def _detect_host_mounts() -> dict[str, str]:
     """
     Auto-detect host filesystem paths by inspecting this container's Docker mounts.
 
-    Inside a Docker container the hostname equals the container ID.
-    We use the Docker SDK (via the mounted socket) to inspect our own container
-    and read the Source (host path) for each Destination (container path).
+    Uses multiple lookup strategies since socket.gethostname() returns the
+    container's hostname (service name in Compose), not the container name or ID
+    that docker-py's containers.get() expects.
+
+    Falls back to listing all containers and matching by hostname or image.
 
     Returns a dict mapping container_path -> host_path, e.g.:
         {"/app/recon": "/home/user/project/recon", ...}
     """
     try:
         client = docker.from_env()
-        container = client.containers.get(socket.gethostname())
+        hostname = socket.gethostname()
+
+        # Strategy 1: Try by hostname (works if hostname == container ID)
+        container = None
+        try:
+            container = client.containers.get(hostname)
+        except NotFound:
+            pass
+
+        # Strategy 2: Try known container names for this service
+        if container is None:
+            known_names = [
+                os.getenv("CONTAINER_NAME"),
+                "redamon-recon-orchestrator",
+                "recon-orchestrator",
+            ]
+            for name in known_names:
+                if name:
+                    try:
+                        container = client.containers.get(name)
+                        if container:
+                            break
+                    except NotFound:
+                        continue
+
+        # Strategy 3: List all containers and match by hostname or image
+        if container is None:
+            for c in client.containers.list(all=True):
+                c_hostname = c.attrs.get("Config", {}).get("Hostname", "")
+                c_image = c.attrs.get("Config", {}).get("Image", "")
+                if c_hostname == hostname or "recon-orchestrator" in c_image:
+                    container = c
+                    break
+
+        if container is None:
+            logger.warning("Could not identify own container via Docker API")
+            return {}
+
         mount_map = {}
         for mount in container.attrs["Mounts"]:
             mount_map[mount["Destination"]] = mount["Source"]

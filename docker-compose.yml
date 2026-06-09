@@ -37,6 +37,20 @@ services:
     networks:
       - redamon
 
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   neo4j:
     image: neo4j:5.26-community
     container_name: redamon-neo4j
@@ -70,6 +84,20 @@ services:
 
   # --- Data containers (init-only, exit after populating volumes) ---
 
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   gvm-vt:
     image: registry.community.greenbone.net/community/vulnerability-tests
     container_name: redamon-gvm-vt
@@ -78,11 +106,23 @@ services:
     volumes:
       - vt_data:/mnt
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   gvm-notus-data:
     image: registry.community.greenbone.net/community/notus-data
     container_name: redamon-gvm-notus-data
     volumes:
       - notus_data:/mnt
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvm-scap-data:
     image: registry.community.greenbone.net/community/scap-data
@@ -90,11 +130,23 @@ services:
     volumes:
       - scap_data:/mnt
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   gvm-cert-bund-data:
     image: registry.community.greenbone.net/community/cert-bund-data
     container_name: redamon-gvm-cert-data
     volumes:
       - cert_data:/mnt
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvm-dfn-cert-data:
     image: registry.community.greenbone.net/community/dfn-cert-data
@@ -105,6 +157,12 @@ services:
       gvm-cert-bund-data:
         condition: service_completed_successfully
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   gvm-data-objects:
     image: registry.community.greenbone.net/community/data-objects
     container_name: redamon-gvm-data-objects
@@ -112,6 +170,12 @@ services:
       FEED_RELEASE: "24.10"
     volumes:
       - data_objects:/mnt
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvm-report-formats:
     image: registry.community.greenbone.net/community/report-formats
@@ -123,6 +187,12 @@ services:
     depends_on:
       - gvm-data-objects
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   gvm-gpg-data:
     image: registry.community.greenbone.net/community/gpg-data
     container_name: redamon-gvm-gpg-data
@@ -131,12 +201,24 @@ services:
 
   # --- GVM runtime services ---
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   gvm-redis:
     image: registry.community.greenbone.net/community/redis-server:stable
     container_name: redamon-gvm-redis
     restart: on-failure
     volumes:
       - gvm_redis_socket:/run/redis/
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvm-postgres-init:
     image: alpine:3.20
@@ -145,6 +227,12 @@ services:
       - gvm_psql_data:/var/lib/postgresql
       - gvm_psql_socket:/var/run/postgresql
     entrypoint: ["/bin/sh", "-c", "rm -f /var/run/postgresql/.s.PGSQL.5432.lock /var/run/postgresql/.s.PGSQL.5432 /var/lib/postgresql/17/main/postmaster.pid && echo 'Cleaned stale PG locks'"]
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvm-postgres:
     image: registry.community.greenbone.net/community/pg-gvm:stable
@@ -162,6 +250,20 @@ services:
       timeout: 3s
       retries: 20
       start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvmd:
     image: registry.community.greenbone.net/community/gvmd:stable
@@ -190,6 +292,20 @@ services:
         condition: service_completed_successfully
       gvm-report-formats:
         condition: service_completed_successfully
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   gvm-ospd:
     image: registry.community.greenbone.net/community/ospd-openvas:stable
@@ -232,6 +348,20 @@ services:
   # Build with: docker compose --profile tools build
   # ===========================================================================
 
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   recon:
     build:
       context: .
@@ -240,6 +370,12 @@ services:
     image: redamon-recon:latest
     profiles: ["tools"]
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   vuln-scanner:
     build:
       context: .
@@ -247,12 +383,24 @@ services:
     image: redamon-vuln-scanner:latest
     profiles: ["tools"]
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   github-secret-hunter:
     build:
       context: .
       dockerfile: github_secret_hunt/Dockerfile
     image: redamon-github-hunter:latest
     profiles: ["tools"]
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   trufflehog-scanner:
     build:
@@ -265,6 +413,12 @@ services:
   # imports or links against it -- the recon container spawns this image
   # via Docker-in-Docker and receives NDJSON on stdout. See baddns_scan/
   # Dockerfile and THIRD-PARTY-LICENSES.md for the license boundary.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   baddns-scanner:
     build:
       context: .
@@ -275,6 +429,12 @@ services:
   # ===========================================================================
   # Backend Services
   # ===========================================================================
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   recon-orchestrator:
     build: ./recon_orchestrator
@@ -295,7 +455,15 @@ services:
       - ./mcp/nuclei-templates:/app/nuclei-templates:ro
       - /tmp/redamon:/tmp/redamon:rw
     environment:
-      # Host paths are auto-detected from container mounts (no hardcoded paths needed)
+      # Host paths — auto-detected from container mounts when possible.
+      # These explicit fallback paths are used when auto-detection fails
+      # (e.g., hostname-based container lookup is unreliable in Compose).
+      RECON_PATH: ${PWD:-.}/recon
+      GVM_SCAN_PATH: ${PWD:-.}/gvm_scan
+      GITHUB_HUNT_PATH: ${PWD:-.}/github_secret_hunt
+      TRUFFLEHOG_PATH: ${PWD:-.}/trufflehog_scan
+      CUSTOM_TEMPLATES_PATH: ${PWD:-.}/mcp/nuclei-templates
+      # Image tags
       RECON_IMAGE: redamon-recon:latest
       GVM_IMAGE: redamon-vuln-scanner:latest
       GITHUB_HUNT_IMAGE: redamon-github-hunter:latest
@@ -323,6 +491,20 @@ services:
       start_period: 10s
     networks:
       - redamon
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   kali-sandbox:
     build:
@@ -393,6 +575,20 @@ services:
     networks:
       redamon:
       pentest-net:
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   agent:
     build:
@@ -480,6 +676,20 @@ services:
   # Or via redamon.sh once that integration lands. Default is OFF — users opt in.
   # ===========================================================================
 
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   kb-refresh:
     profiles: ["kb-refresh"]
     build:
@@ -503,8 +713,12 @@ services:
     networks:
       - redamon
     # Sleep loop scheduler — runs source updates on cadence.
-    # Production setups should replace this with a real cron container or
-    # external scheduler (host cron, systemd timer, GitHub Actions).
+    # WARNING: This uses an infinite shell loop (while true; do ... sleep 86400; done).
+    # If the python ingestion command fails, the loop continues (failure is logged but
+    # not alerted). If the shell process crashes, Docker restarts the container,
+    # skipping the missed cycle. For production, replace with a real cron sidecar
+    # (e.g. mcuadros/ofelia) or an external scheduler (host cron, systemd timer,
+    # GitHub Actions, Kubernetes CronJob) so failures are surfaced and retried.
     command: >
       sh -c '
       echo "[KB-REFRESH] sidecar started at $$(date -u +%Y-%m-%dT%H:%M:%SZ)";
@@ -550,6 +764,12 @@ services:
   # ===========================================================================
   # Frontend
   # ===========================================================================
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
   webapp:
     build:
@@ -612,6 +832,20 @@ services:
 # =============================================================================
 # Networks
 # =============================================================================
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
 
 networks:
   redamon:
