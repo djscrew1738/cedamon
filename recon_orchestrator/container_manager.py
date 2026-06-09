@@ -203,9 +203,14 @@ class ContainerManager:
             try:
                 self.client.images.get(self.recon_image)
             except NotFound:
-                logger.info(f"Building recon image from {recon_path}")
+                # Use the in-container path (/app/recon) for the build context.
+                # images.build() reads from the local (container) filesystem,
+                # not the Docker host — but recon_path is a HOST path used for
+                # volume mounts in spawned sibling containers.
+                build_path = "/app/recon"
+                logger.info(f"Building recon image from {build_path}")
                 self.client.images.build(
-                    path=recon_path,
+                    path=build_path,
                     tag=self.recon_image,
                     rm=True,
                 )
@@ -222,6 +227,12 @@ class ContainerManager:
                     "USER_ID": user_id,
                     "WEBAPP_API_URL": webapp_api_url,
                     "UPDATE_GRAPH_DB": "true",
+                    # Anonymity — route all scanning traffic through Tor
+                    "USE_TOR_FOR_RECON": "true",
+                    "HTTP_PROXY": "socks5h://127.0.0.1:9050",
+                    "HTTPS_PROXY": "socks5h://127.0.0.1:9050",
+                    "ALL_PROXY": "socks5h://127.0.0.1:9050",
+                    "NO_PROXY": "localhost,127.0.0.1,::1",
                     # HOST_RECON_OUTPUT_PATH: Required for nested Docker containers (naabu, httpx, etc.)
                     # These run as sibling containers and need host paths for volume mounts
                     "HOST_RECON_OUTPUT_PATH": f"{recon_path}/output",
@@ -714,8 +725,9 @@ class ContainerManager:
             try:
                 self.client.images.get(self.recon_image)
             except NotFound:
-                logger.info(f"Building recon image from {recon_path}")
-                self.client.images.build(path=recon_path, tag=self.recon_image, rm=True)
+                build_path = "/app/recon"
+                logger.info(f"Building recon image from {build_path}")
+                self.client.images.build(path=build_path, tag=self.recon_image, rm=True)
 
             # Write config JSON to /tmp/redamon/ (shared volume)
             import json
@@ -1046,10 +1058,13 @@ class ContainerManager:
             try:
                 self.client.images.get(self.gvm_image)
             except NotFound:
-                logger.info(f"Building GVM scanner image from {gvm_scan_path}")
+                # Use in-container path for build context (/app/gvm_scan/Dockerfile)
+                build_path = "/app"
+                dockerfile = f"{Path(gvm_scan_path).name}/Dockerfile"
+                logger.info(f"Building GVM scanner image from {build_path}/{dockerfile}")
                 self.client.images.build(
-                    path=Path(gvm_scan_path).parent.as_posix(),
-                    dockerfile=f"{Path(gvm_scan_path).name}/Dockerfile",
+                    path=build_path,
+                    dockerfile=dockerfile,
                     tag=self.gvm_image,
                     rm=True,
                 )
@@ -1434,10 +1449,12 @@ class ContainerManager:
             try:
                 self.client.images.get(self.github_hunt_image)
             except NotFound:
-                logger.info(f"Building GitHub hunt image from {github_hunt_path}")
+                build_path = "/app"
+                dockerfile = f"{Path(github_hunt_path).name}/Dockerfile"
+                logger.info(f"Building GitHub hunt image from {build_path}/{dockerfile}")
                 self.client.images.build(
-                    path=Path(github_hunt_path).parent.as_posix(),
-                    dockerfile=f"{Path(github_hunt_path).name}/Dockerfile",
+                    path=build_path,
+                    dockerfile=dockerfile,
                     tag=self.github_hunt_image,
                     rm=True,
                 )
@@ -1808,10 +1825,12 @@ class ContainerManager:
             try:
                 self.client.images.get(self.trufflehog_image)
             except NotFound:
-                logger.info(f"Building TruffleHog image from {trufflehog_path}")
+                build_path = "/app"
+                dockerfile = f"{Path(trufflehog_path).name}/Dockerfile"
+                logger.info(f"Building TruffleHog image from {build_path}/{dockerfile}")
                 self.client.images.build(
-                    path=Path(trufflehog_path).parent.as_posix(),
-                    dockerfile=f"{Path(trufflehog_path).name}/Dockerfile",
+                    path=build_path,
+                    dockerfile=dockerfile,
                     tag=self.trufflehog_image,
                     rm=True,
                 )
