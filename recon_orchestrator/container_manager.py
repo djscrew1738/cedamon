@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import uuid
+from functools import partial
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -96,6 +97,11 @@ class ContainerManager:
         self.trufflehog_states: dict[str, TrufflehogState] = {}
         self._log_tasks: dict[str, asyncio.Task] = {}
 
+    async def _exec(self, fn, *args, **kwargs):
+        """Run a synchronous Docker call in the default thread pool."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
+
     def _get_container_name(self, project_id: str) -> str:
         """Generate container name for a project"""
         # Sanitize project_id for container name
@@ -110,7 +116,7 @@ class ContainerManager:
             # Check if container is still running
             if state.container_id:
                 try:
-                    container = self.client.containers.get(state.container_id)
+                    container = await self._exec(self.client.containers.get, state.container_id)
                     if container.status == "paused":
                         state.status = ReconStatus.PAUSED
                     elif container.status != "running":
@@ -126,7 +132,7 @@ class ContainerManager:
 
                         # Auto-cleanup: remove finished container
                         try:
-                            container.remove()
+                            await self._exec(container.remove)
                             logger.info(f"Auto-removed finished container for project {project_id}")
                         except Exception as e:
                             logger.warning(f"Failed to auto-remove container: {e}")
@@ -147,7 +153,7 @@ class ContainerManager:
         # Check if there's an orphan container
         container_name = self._get_container_name(project_id)
         try:
-            container = self.client.containers.get(container_name)
+            container = await self._exec(self.client.containers.get, container_name)
             if container.status in ("running", "paused"):
                 return ReconState(
                     project_id=project_id,
@@ -172,6 +178,8 @@ class ContainerManager:
     ) -> ReconState:
         """Start a recon container for a project"""
 
+        logger.info(f"start_recon called project_id={project_id} user_id={user_id}")
+
         # Check if already running or paused
         current_state = await self.get_status(project_id)
         if current_state.status in (ReconStatus.RUNNING, ReconStatus.PAUSED):
@@ -184,11 +192,11 @@ class ContainerManager:
         # Clean up any existing container
         container_name = self._get_container_name(project_id)
         try:
-            old_container = self.client.containers.get(container_name)
-            old_container.remove(force=True)
-            logger.info(f"Removed old container {container_name}")
+            old_container = await self._exec(self.client.containers.get, container_name)
+            await self._exec(old_container.remove, force=True)
+            logger.info(f"Removed old container {container_name} for project {project_id}")
         except NotFound:
-            pass
+            logger.info(f"No existing container to remove for project {project_id}")
 
         # Create new state
         state = ReconState(
@@ -200,23 +208,30 @@ class ContainerManager:
 
         try:
             # Ensure recon image exists
+            logger.info(f"Checking recon image {self.recon_image} for project {project_id}")
             try:
-                self.client.images.get(self.recon_image)
+                await self._exec(self.client.images.get, self.recon_image)
+                logger.info(f"Recon image {self.recon_image} found for project {project_id}")
             except NotFound:
-                # Use the in-container path (/app/recon) for the build context.
-                # images.build() reads from the local (container) filesystem,
+                # Use the project-root in-container path (/app) for the build context
+                # so that COPY instructions in recon/Dockerfile (e.g. COPY graph_db/ /app/graph_db/)
+                # resolve correctly. images.build() reads from the local (container) filesystem,
                 # not the Docker host — but recon_path is a HOST path used for
                 # volume mounts in spawned sibling containers.
-                build_path = "/app/recon"
-                logger.info(f"Building recon image from {build_path}")
-                self.client.images.build(
-                    path=build_path,
-                    tag=self.recon_image,
-                    rm=True,
-                )
+                build_path = "/app"
+                dockerfile = "recon/Dockerfile"
+                logger.info(f"Building recon image {self.recon_image} from {build_path}/{dockerfile} for project {project_id}")
+                await self._exec(self.client.images.build, path=build_path, dockerfile=dockerfile, tag=self.recon_image, rm=True)
+                logger.info(f"Recon image {self.recon_image} built for project {project_id}")
+
+            logger.info(
+                f"Spawning recon container {container_name} for project {project_id} "
+                f"image={self.recon_image} volumes={len(['docker.sock', 'recon', 'graph_db', 'tmp', 'js_uploads', 'js_custom', 'nuclei_templates'])}"
+            )
 
             # Start container with environment variables
-            container = self.client.containers.run(
+            container = await self._exec(
+                self.client.containers.run,
                 self.recon_image,
                 name=container_name,
                 detach=True,
@@ -268,7 +283,10 @@ class ContainerManager:
 
             state.container_id = container.id
             state.status = ReconStatus.RUNNING
-            logger.info(f"Started recon container {container.id} for project {project_id}")
+            logger.info(
+                f"Started recon container {container.id[:12]} for project {project_id} "
+                f"name={container.name} image={self.recon_image}"
+            )
 
         except Exception as e:
             state.status = ReconStatus.ERROR
@@ -378,12 +396,12 @@ class ContainerManager:
 
         if state.container_id:
             try:
-                container = self.client.containers.get(state.container_id)
+                container = await self._exec(self.client.containers.get, state.container_id)
                 # Unpause before stopping for Docker version compatibility
                 if container.status == "paused":
-                    container.unpause()
-                container.stop(timeout=timeout)
-                container.remove()
+                    await self._exec(container.unpause)
+                await self._exec(container.stop, timeout=timeout)
+                await self._exec(container.remove)
                 state.status = ReconStatus.IDLE
                 state.completed_at = datetime.now(timezone.utc)
                 logger.info(f"Stopped recon container for project {project_id}")
@@ -394,7 +412,7 @@ class ContainerManager:
                 state.error = f"Failed to stop: {e}"
 
         # Clean up any sub-containers (naabu, httpx, nuclei, etc.)
-        cleaned = self._cleanup_sub_containers()
+        cleaned = await self._exec(self._cleanup_sub_containers)
         if cleaned > 0:
             logger.info(f"Cleaned up {cleaned} sub-container(s) for project {project_id}")
 
@@ -447,13 +465,21 @@ class ContainerManager:
         """Stream logs from a recon container"""
         state = await self.get_status(project_id)
 
+        # The container may still be starting (Docker image build, etc.).
+        # Wait for it to become available instead of immediately erroring.
         if not state.container_id:
-            yield ReconLogEvent(
-                log="No container found for this project",
-                timestamp=datetime.now(timezone.utc),
-                level="error",
-            )
-            return
+            for attempt in range(30):  # up to 30 seconds
+                await asyncio.sleep(1)
+                state = await self.get_status(project_id)
+                if state.container_id:
+                    break
+            else:
+                yield ReconLogEvent(
+                    log="No container found for this project (timeout after 30s)",
+                    timestamp=datetime.now(timezone.utc),
+                    level="error",
+                )
+                return
 
         current_phase: Optional[str] = None
         current_phase_num: Optional[int] = None
@@ -719,15 +745,23 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.partial_recon_states.setdefault(project_id, {})[run_id] = state
+        logger.info(
+            f"start_partial_recon project_id={project_id} tool_id={tool_id} run_id={run_id} "
+            f"container_name={container_name}"
+        )
 
         try:
             # Ensure recon image exists
+            logger.info(f"Checking recon image {self.recon_image} for partial recon {run_id}")
             try:
-                self.client.images.get(self.recon_image)
+                await self._exec(self.client.images.get, self.recon_image)
+                logger.info(f"Recon image {self.recon_image} found for partial recon {run_id}")
             except NotFound:
-                build_path = "/app/recon"
-                logger.info(f"Building recon image from {build_path}")
-                self.client.images.build(path=build_path, tag=self.recon_image, rm=True)
+                build_path = "/app"
+                dockerfile = "recon/Dockerfile"
+                logger.info(f"Building recon image {self.recon_image} from {build_path}/{dockerfile} for partial recon {run_id}")
+                await self._exec(self.client.images.build, path=build_path, dockerfile=dockerfile, tag=self.recon_image, rm=True)
+                logger.info(f"Recon image {self.recon_image} built for partial recon {run_id}")
 
             # Write config JSON to /tmp/redamon/ (shared volume)
             import json
@@ -736,9 +770,16 @@ class ContainerManager:
             config_path = config_dir / f"partial_{project_id}_{run_id}.json"
             with open(config_path, "w") as f:
                 json.dump(config, f)
+            logger.info(f"Wrote partial recon config to {config_path} for run {run_id}")
+
+            logger.info(
+                f"Spawning partial recon container {container_name} for project {project_id} "
+                f"tool_id={tool_id} run_id={run_id}"
+            )
 
             # Start container with the partial_recon.py entry point
-            container = self.client.containers.run(
+            container = await self._exec(
+                self.client.containers.run,
                 self.recon_image,
                 name=container_name,
                 detach=True,
@@ -781,7 +822,10 @@ class ContainerManager:
 
             state.container_id = container.id
             state.status = PartialReconStatus.RUNNING
-            logger.info(f"Started partial recon container {container.id} for project {project_id}, tool {tool_id}, run {run_id}")
+            logger.info(
+                f"Started partial recon container {container.id[:12]} for project {project_id}, "
+                f"tool {tool_id}, run {run_id}"
+            )
 
         except Exception as e:
             state.status = PartialReconStatus.ERROR
@@ -840,13 +884,20 @@ class ContainerManager:
         """
         state = await self.get_partial_recon_status(project_id, run_id)
 
+        # The container may still be starting — wait for it.
         if not state.container_id:
-            yield ReconLogEvent(
-                log="No partial recon container found for this project",
-                timestamp=datetime.now(timezone.utc),
-                level="error",
-            )
-            return
+            for attempt in range(30):
+                await asyncio.sleep(1)
+                state = await self.get_partial_recon_status(project_id, run_id)
+                if state.container_id:
+                    break
+            else:
+                yield ReconLogEvent(
+                    log="No partial recon container found for this project (timeout after 30s)",
+                    timestamp=datetime.now(timezone.utc),
+                    level="error",
+                )
+                return
 
         current_phase: Optional[str] = "Partial Recon"
         current_phase_num: Optional[int] = 1
@@ -1235,12 +1286,18 @@ class ContainerManager:
         state = await self.get_gvm_status(project_id)
 
         if not state.container_id:
-            yield GvmLogEvent(
-                log="No GVM container found for this project",
-                timestamp=datetime.now(timezone.utc),
-                level="error",
-            )
-            return
+            for attempt in range(30):
+                await asyncio.sleep(1)
+                state = await self.get_gvm_status(project_id)
+                if state.container_id:
+                    break
+            else:
+                yield GvmLogEvent(
+                    log="No GVM container found for this project (timeout after 30s)",
+                    timestamp=datetime.now(timezone.utc),
+                    level="error",
+                )
+                return
 
         current_phase: Optional[str] = None
         current_phase_num: Optional[int] = None
@@ -1619,12 +1676,18 @@ class ContainerManager:
         state = await self.get_github_hunt_status(project_id)
 
         if not state.container_id:
-            yield GithubHuntLogEvent(
-                log="No GitHub hunt container found for this project",
-                timestamp=datetime.now(timezone.utc),
-                level="error",
-            )
-            return
+            for attempt in range(30):
+                await asyncio.sleep(1)
+                state = await self.get_github_hunt_status(project_id)
+                if state.container_id:
+                    break
+            else:
+                yield GithubHuntLogEvent(
+                    log="No GitHub hunt container found for this project (timeout after 30s)",
+                    timestamp=datetime.now(timezone.utc),
+                    level="error",
+                )
+                return
 
         current_phase: Optional[str] = None
         current_phase_num: Optional[int] = None
@@ -1995,12 +2058,18 @@ class ContainerManager:
         state = await self.get_trufflehog_status(project_id)
 
         if not state.container_id:
-            yield TrufflehogLogEvent(
-                log="No TruffleHog container found for this project",
-                timestamp=datetime.now(timezone.utc),
-                level="error",
-            )
-            return
+            for attempt in range(30):
+                await asyncio.sleep(1)
+                state = await self.get_trufflehog_status(project_id)
+                if state.container_id:
+                    break
+            else:
+                yield TrufflehogLogEvent(
+                    log="No TruffleHog container found for this project (timeout after 30s)",
+                    timestamp=datetime.now(timezone.utc),
+                    level="error",
+                )
+                return
 
         current_phase: Optional[str] = None
         current_phase_num: Optional[int] = None
