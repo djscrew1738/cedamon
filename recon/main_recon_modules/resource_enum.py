@@ -1610,10 +1610,17 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     # Add to recon_data
     recon_data['resource_enum'] = resource_enum_result
 
-    # Save incrementally
+    # Save incrementally (atomic write)
     if output_file:
-        with open(output_file, 'w') as f:
-            json.dump(recon_data, f, indent=2)
+        tmp_file = output_file.with_name(f".{output_file.name}.tmp")
+        try:
+            with open(tmp_file, 'w') as f:
+                json.dump(recon_data, f, indent=2, default=str)
+            tmp_file.replace(output_file)
+        except Exception:
+            if tmp_file.exists():
+                tmp_file.unlink(missing_ok=True)
+            raise
 
     # Print summary
     print(f"\n{'=' * 70}")
@@ -1692,7 +1699,11 @@ if __name__ == "__main__":
             settings = get_settings()
 
             with open(recon_file, 'r') as f:
-                recon_data = json.load(f)
+                try:
+                    recon_data = json.load(f)
+                except (json.JSONDecodeError, PermissionError) as e:
+                    print(f"[!][ResourceEnum] Failed to load recon file: {e}")
+                    sys.exit(1)
 
             result = run_resource_enum(recon_data, output_file=recon_file, settings=settings)
             print(f"\n[+][ResourceEnum] Results saved to: {recon_file}")

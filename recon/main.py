@@ -394,7 +394,10 @@ _save_lock = threading.Lock()
 
 
 def save_recon_file(data: dict, output_file: Path, pretty: bool = False):
-    """Save recon data to JSON file (thread-safe).
+    """Save recon data to JSON file atomically (thread-safe).
+
+    Writes to a temp file first, then renames into place so a crash
+    mid-write never corrupts the output file.
 
     Args:
         data: Recon data dict to serialize.
@@ -403,12 +406,19 @@ def save_recon_file(data: dict, output_file: Path, pretty: bool = False):
                 final save — intermediate saves use compact JSON which is
                 2-3x faster to serialize and produces ~60% smaller files.
     """
+    tmp_file = output_file.with_name(f".{output_file.name}.tmp")
     with _save_lock:
-        with open(output_file, 'w') as f:
-            if pretty:
-                json.dump(data, f, indent=2)
-            else:
-                json.dump(data, f, separators=(',', ':'))
+        try:
+            with open(tmp_file, 'w') as f:
+                if pretty:
+                    json.dump(data, f, indent=2, default=str)
+                else:
+                    json.dump(data, f, separators=(',', ':'), default=str)
+            tmp_file.replace(output_file)
+        except Exception:
+            if tmp_file.exists():
+                tmp_file.unlink(missing_ok=True)
+            raise
 
 
 def _maybe_run_ai_surface(result: dict, settings: dict, output_file: Path) -> dict:

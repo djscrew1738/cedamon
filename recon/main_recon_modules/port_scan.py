@@ -771,10 +771,17 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         # Add to recon_data
         recon_data["port_scan"] = naabu_results
 
-        # Save incrementally
+        # Save incrementally (atomic write)
         if output_file:
-            with open(output_file, 'w') as f:
-                json.dump(recon_data, f, indent=2, default=str)
+            tmp_file = output_file.with_name(f".{output_file.name}.tmp")
+            try:
+                with open(tmp_file, 'w') as f:
+                    json.dump(recon_data, f, indent=2, default=str)
+                tmp_file.replace(output_file)
+            except Exception:
+                if tmp_file.exists():
+                    tmp_file.unlink(missing_ok=True)
+                raise
             fix_file_ownership(output_file)
             print(f"[✓][Naabu] Results saved to {output_file}")
 
@@ -818,7 +825,11 @@ def enrich_recon_file(recon_file: Path) -> dict:
     print(f"[*][Naabu] Loading recon file: {recon_file}")
 
     with open(recon_file, 'r') as f:
-        recon_data = json.load(f)
+        try:
+            recon_data = json.load(f)
+        except (json.JSONDecodeError, PermissionError) as e:
+            print(f"[!][Naabu] Corrupt or unreadable recon file {recon_file}: {e}")
+            return {}
 
     enriched = run_port_scan(recon_data, output_file=recon_file, settings=settings)
 

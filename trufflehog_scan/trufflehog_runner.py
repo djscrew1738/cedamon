@@ -184,63 +184,80 @@ class TrufflehogRunner:
             print(f"[!] Error parsing finding: {e}")
             return None
 
-    def _run_command(self, cmd: list[str]) -> None:
-        """Execute a single TruffleHog command and collect findings."""
+    def _run_command(self, cmd: list[str], retries: int = 2) -> None:
+        """Execute a single TruffleHog command and collect findings, with retry."""
+        import time as time_module
+
         # Log command without token
         safe_cmd = [c if not c.startswith("--token=") else "--token=***" for c in cmd]
         print(f"[*] Running: {' '.join(safe_cmd)}")
 
-        try:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
+        for attempt in range(1, retries + 1):
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
 
-            # Read JSONL output line by line
-            for line in process.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    result = json.loads(line)
-                    finding = self._parse_finding(result)
-                    if finding:
-                        self.findings.append(finding)
-                        # Log each finding
-                        verified_tag = " [VERIFIED]" if finding["verified"] else ""
-                        print(
-                            f"[+] Found: {finding['detector_name']}{verified_tag} "
-                            f"in {finding['file']} ({finding['repository']})"
-                        )
-                        # Save incrementally
-                        self._save_incremental()
-                except json.JSONDecodeError:
-                    # Not JSON — likely a status/progress message from TruffleHog
-                    if line.strip():
-                        print(f"[~] {line}")
+                # Read JSONL output line by line
+                for line in process.stdout:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        result = json.loads(line)
+                        finding = self._parse_finding(result)
+                        if finding:
+                            self.findings.append(finding)
+                            # Log each finding
+                            verified_tag = " [VERIFIED]" if finding["verified"] else ""
+                            print(
+                                f"[+] Found: {finding['detector_name']}{verified_tag} "
+                                f"in {finding['file']} ({finding['repository']})"
+                            )
+                            # Save incrementally
+                            self._save_incremental()
+                    except json.JSONDecodeError:
+                        # Not JSON — likely a status/progress message from TruffleHog
+                        if line.strip():
+                            print(f"[~] {line}")
 
-            # Wait for process to complete
-            process.wait()
+                # Wait for process to complete
+                process.wait()
 
-            # Read stderr
-            stderr_output = process.stderr.read()
-            if stderr_output:
-                for err_line in stderr_output.strip().split("\n"):
-                    if err_line.strip():
-                        print(f"[~] {err_line.strip()}")
+                # Read stderr
+                stderr_output = process.stderr.read()
+                if stderr_output:
+                    for err_line in stderr_output.strip().split("\n"):
+                        if err_line.strip():
+                            print(f"[~] {err_line.strip()}")
 
-            if process.returncode != 0:
+                if process.returncode == 0:
+                    return  # Success
+
                 print(f"[!] TruffleHog exited with code {process.returncode}")
+                if attempt < retries:
+                    wait = 2 ** attempt
+                    print(f"[*] Retrying in {wait}s (attempt {attempt + 1}/{retries})...")
+                    time_module.sleep(wait)
+                else:
+                    print(f"[!] All {retries} attempts failed for: {' '.join(safe_cmd)}")
 
-        except FileNotFoundError:
-            print("[!] ERROR: trufflehog binary not found. Ensure it is installed at /usr/local/bin/trufflehog")
-            raise
-        except Exception as e:
-            print(f"[!] Error running TruffleHog: {e}")
-            raise
+            except FileNotFoundError:
+                print("[!] ERROR: trufflehog binary not found. Ensure it is installed at /usr/local/bin/trufflehog")
+                raise
+            except Exception as e:
+                print(f"[!] Error running TruffleHog: {e}")
+                if attempt < retries:
+                    wait = 2 ** attempt
+                    print(f"[*] Retrying in {wait}s (attempt {attempt + 1}/{retries})...")
+                    time_module.sleep(wait)
+                else:
+                    print(f"[!] All {retries} attempts failed for: {' '.join(safe_cmd)}")
+                    raise
 
     def _save_incremental(self) -> None:
         """Save current results incrementally using atomic temp-file rename."""
@@ -285,14 +302,21 @@ class TrufflehogRunner:
             print(f"\n[*] Scanning repository set {i}/{len(commands)}...")
             self._run_command(cmd)
 
-        # Save final results
+        # Save final results (atomic write)
         output_data = self._build_output()
         output_data["status"] = "completed"
         output_data["scan_end_time"] = datetime.now().isoformat()
         output_data["duration_seconds"] = round(time.time() - self._start_epoch, 2)
 
-        with open(self.output_file, "w") as f:
-            json.dump(output_data, f, indent=2, default=str)
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self.output_dir), suffix=".tmp"
+            )
+            with os.fdopen(fd, "w") as f:
+                json.dump(output_data, f, indent=2, default=str)
+            os.replace(tmp_path, self.output_file)
+        except Exception as e:
+            print(f"[!] Error saving final results: {e}")
 
         print(f"\n[+] Final results saved to {self.output_file}")
         return self.findings

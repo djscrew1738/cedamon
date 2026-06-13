@@ -536,8 +536,16 @@ class GitHubSecretHunter:
             "findings": []
         }
 
-        with open(self.output_file, 'w') as f:
-            json.dump(initial_data, f, indent=2)
+        # Write initial file atomically
+        tmp_file = self.output_file.with_suffix('.tmp_init')
+        try:
+            with open(tmp_file, 'w') as f:
+                json.dump(initial_data, f, indent=2, default=str)
+            tmp_file.replace(self.output_file)
+        except Exception:
+            if tmp_file.exists():
+                tmp_file.unlink(missing_ok=True)
+            raise
 
         print(f"[*] Output file initialized: {self.output_file}")
 
@@ -849,8 +857,16 @@ class GitHubSecretHunter:
             "findings": self.findings
         }
 
-        with open(self.output_file, 'w') as f:
-            json.dump(results, f, indent=2)
+        # Save final results atomically
+        tmp_file = self.output_file.with_suffix('.tmp_final')
+        try:
+            with open(tmp_file, 'w') as f:
+                json.dump(results, f, indent=2, default=str)
+            tmp_file.replace(self.output_file)
+        except Exception:
+            if tmp_file.exists():
+                tmp_file.unlink(missing_ok=True)
+            raise
 
         print(f"\n[*] Final results saved to: {self.output_file}")
 

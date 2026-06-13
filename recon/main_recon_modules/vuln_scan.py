@@ -1093,15 +1093,26 @@ def enrich_recon_file(recon_file: Path) -> dict:
     settings = get_settings()
 
     # Load existing data
-    with open(recon_file, 'r') as f:
-        recon_data = json.load(f)
+    try:
+        with open(recon_file, 'r') as f:
+            recon_data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, PermissionError) as e:
+        print(f"[!][Nuclei] Failed to load recon file: {e}")
+        return {}
 
     # Run nuclei scan
     enriched_data = run_vuln_scan(recon_data, output_file=recon_file, settings=settings)
 
-    # Save enriched data
-    with open(recon_file, 'w') as f:
-        json.dump(enriched_data, f, indent=2)
+    # Save enriched data (atomic write)
+    tmp_file = recon_file.with_name(f".{recon_file.name}.tmp")
+    try:
+        with open(tmp_file, 'w') as f:
+            json.dump(enriched_data, f, indent=2, default=str)
+        tmp_file.replace(recon_file)
+    except Exception:
+        if tmp_file.exists():
+            tmp_file.unlink(missing_ok=True)
+        raise
 
     print(f"[+][Nuclei] Enriched data saved to: {recon_file}")
 
