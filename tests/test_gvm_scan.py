@@ -9,9 +9,12 @@ Unit tests for GVM scan workflow improvements:
 """
 
 import sys
+import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import xml.etree.ElementTree as ET
 
@@ -24,8 +27,10 @@ from gvm_scan.main import (
     _merge_batch_results,
     _deduplicate_vulnerabilities,
     _run_phase,
+    _run_batch_parallel,
 )
 from gvm_scan.ready_probe import _parse_feeds
+from gvm_scan.gvm_scanner import save_vuln_results, load_recon_file
 
 
 class TestGvmBatching(unittest.TestCase):
@@ -440,6 +445,176 @@ class TestGvmReadyProbe(unittest.TestCase):
         self.assertEqual(syncing_count, 0)
         self.assertEqual(len(feeds), 1)
         self.assertFalse(feeds[0]["syncing"])
+
+
+class TestLoadReconFile(unittest.TestCase):
+    """Test load_recon_file error handling improvements."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.project_id = "test_proj"
+        self.recon_file = self.tmpdir / f"recon_{self.project_id}.json"
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_load_recon_file_not_found(self):
+        """FileNotFoundError raised for missing file."""
+        with self.assertRaises(FileNotFoundError):
+            load_recon_file("nonexistent", recon_dir=self.tmpdir)
+
+    def test_load_recon_file_empty(self):
+        """ValueError raised for empty file."""
+        self.recon_file.write_text("")
+        with self.assertRaises(ValueError, msg="Recon file .* is empty"):
+            load_recon_file(self.project_id, recon_dir=self.tmpdir)
+
+    def test_load_recon_file_whitespace_only(self):
+        """ValueError raised for whitespace-only file."""
+        self.recon_file.write_text("   \n\n  ")
+        with self.assertRaises(ValueError, msg="Recon file .* is empty"):
+            load_recon_file(self.project_id, recon_dir=self.tmpdir)
+
+    def test_load_recon_file_invalid_json(self):
+        """ValueError raised for malformed JSON."""
+        self.recon_file.write_text("{not json}")
+        with self.assertRaises(ValueError, msg="Invalid JSON"):
+            load_recon_file(self.project_id, recon_dir=self.tmpdir)
+
+    def test_load_recon_file_null_value(self):
+        """ValueError raised when file contains only null."""
+        self.recon_file.write_text("null")
+        with self.assertRaises(ValueError, msg="empty or contains only null"):
+            load_recon_file(self.project_id, recon_dir=self.tmpdir)
+
+    def test_load_recon_file_valid(self):
+        """Valid JSON content is returned correctly."""
+        data = {"targets": ["10.0.0.1"]}
+        self.recon_file.write_text(json.dumps(data))
+        result = load_recon_file(self.project_id, recon_dir=self.tmpdir)
+        self.assertEqual(result, data)
+
+
+class TestSaveVulnResults(unittest.TestCase):
+    """Test save_vuln_results atomic write and non-serializable guard."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.project_id = "test_proj"
+        self.results = {"vulnerabilities": [{"host": "10.0.0.1", "port": "22"}]}
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_save_atomic_creates_final_file(self):
+        """Final file written atomically via tmp+replace."""
+        result_path = save_vuln_results(
+            self.results, self.project_id, output_dir=self.tmpdir
+        )
+        expected = self.tmpdir / f"gvm_{self.project_id}.json"
+        self.assertEqual(result_path, expected)
+        self.assertTrue(expected.exists())
+        # Temp file should not exist
+        self.assertFalse(expected.with_suffix(".json.tmp").exists())
+
+    def test_save_atomic_content_matches(self):
+        """Content of saved file is correct."""
+        result_path = save_vuln_results(
+            self.results, self.project_id, output_dir=self.tmpdir
+        )
+        loaded = json.loads(result_path.read_text())
+        self.assertEqual(loaded, self.results)
+
+    def test_save_non_serializable_default_str(self):
+        """default=str serializes non-serializable types like datetime."""
+        from datetime import datetime
+        results = {"timestamp": datetime(2026, 6, 12, 22, 0, 0)}
+        path = save_vuln_results(results, self.project_id, output_dir=self.tmpdir)
+        loaded = json.loads(path.read_text())
+        self.assertIn("2026-06-12", loaded["timestamp"])
+
+    def test_save_creates_output_dir(self):
+        """Output directory created if missing."""
+        deep_dir = self.tmpdir / "nested" / "gvm" / "output"
+        path = save_vuln_results(self.results, self.project_id, output_dir=deep_dir)
+        self.assertTrue(path.exists())
+
+    @patch("gvm_scan.gvm_scanner.json.dump")
+    def test_save_cleans_tmp_on_failure(self, mock_dump):
+        """Temp file removed if json.dump fails."""
+        mock_dump.side_effect = TypeError("boom")
+        with self.assertRaises(TypeError):
+            save_vuln_results(
+                {"bad": object()}, self.project_id, output_dir=self.tmpdir
+            )
+        # Temp file should be cleaned up
+        tmp_files = list(self.tmpdir.glob("*.json.tmp"))
+        self.assertEqual(tmp_files, [])
+
+
+class TestRunBatchParallel(unittest.TestCase):
+    """Test _run_batch_parallel retry logic and timing metrics."""
+
+    def setUp(self):
+        self.batch = ["10.0.0.1"]
+        self.kwargs = dict(
+            batch=self.batch,
+            batch_index=1,
+            total_batches=1,
+            scan_type="ip_scan",
+            cleanup=False,
+        )
+
+    @patch("gvm_scan.main.GVMScanner")
+    def test_duration_seconds_present_on_success(self, mock_scanner_cls):
+        """duration_seconds field present in successful batch result."""
+        mock_instance = mock_scanner_cls.return_value
+        mock_instance.connect.return_value = True
+        mock_instance.scan_targets.return_value = {"vulnerabilities": []}
+
+        result = _run_batch_parallel(**self.kwargs)
+        self.assertIn("duration_seconds", result)
+        self.assertIsInstance(result["duration_seconds"], (int, float))
+        self.assertGreaterEqual(result["duration_seconds"], 0)
+
+    @patch("gvm_scan.main.GVMScanner")
+    def test_duration_seconds_present_on_failure(self, mock_scanner_cls):
+        """duration_seconds field present even when batch fails."""
+        mock_instance = mock_scanner_cls.return_value
+        mock_instance.connect.return_value = True
+        mock_instance.scan_targets.side_effect = RuntimeError("scan failed")
+
+        result = _run_batch_parallel(**self.kwargs)
+        self.assertIn("error", result)
+        self.assertIn("duration_seconds", result)
+
+    @patch("gvm_scan.main.GVMScanner")
+    def test_retries_on_connection_failure(self, mock_scanner_cls):
+        """Retries on connection failure, succeeds eventually."""
+        mock_instance = mock_scanner_cls.return_value
+        # Fail connection twice, succeed on third
+        mock_instance.connect.side_effect = [False, False, True]
+        mock_instance.scan_targets.return_value = {"vulnerabilities": []}
+
+        result = _run_batch_parallel(**self.kwargs)
+        self.assertNotIn("error", result)
+        # connect called 3 times (2 fails + 1 success)
+        self.assertEqual(mock_instance.connect.call_count, 3)
+
+    @patch("gvm_scan.main.GVMScanner")
+    def test_retries_exhaustion_returns_error(self, mock_scanner_cls):
+        """Error returned when all retries exhausted."""
+        mock_instance = mock_scanner_cls.return_value
+        mock_instance.connect.return_value = True
+        mock_instance.scan_targets.side_effect = RuntimeError("persistent failure")
+
+        result = _run_batch_parallel(**self.kwargs)
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], "persistent failure")
+        # 3 attempts total (initial + 2 retries)
+        self.assertEqual(mock_instance.scan_targets.call_count, 3)
 
 
 if __name__ == "__main__":

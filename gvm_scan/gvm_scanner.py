@@ -991,6 +991,11 @@ def load_recon_file(project_id: str, recon_dir: Path = None) -> Dict:
 
     Returns:
         Recon data dictionary
+
+    Raises:
+        FileNotFoundError: Recon file does not exist
+        PermissionError: Permission denied reading the file
+        ValueError: File is empty or contains invalid JSON
     """
     if recon_dir is None:
         recon_dir = PROJECT_ROOT / "recon" / "output"
@@ -1000,8 +1005,26 @@ def load_recon_file(project_id: str, recon_dir: Path = None) -> Dict:
     if not recon_file.exists():
         raise FileNotFoundError(f"Recon file not found: {recon_file}")
 
-    with open(recon_file, 'r') as f:
-        return json.load(f)
+    try:
+        with open(recon_file, 'r') as f:
+            content = f.read().strip()
+    except PermissionError:
+        raise PermissionError(f"Permission denied reading recon file: {recon_file}")
+
+    if not content:
+        raise ValueError(f"Recon file {recon_file} is empty")
+
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Invalid JSON in recon file {recon_file}: {e}"
+        ) from e
+
+    if not data:
+        raise ValueError(f"Recon file {recon_file} is empty or contains only null")
+
+    return data
 
 
 def save_vuln_results(
@@ -1010,7 +1033,10 @@ def save_vuln_results(
     output_dir: Path = None
 ) -> Path:
     """
-    Save vulnerability scan results to JSON file.
+    Save vulnerability scan results to JSON file atomically.
+
+    Writes to a temporary file first, then renames to the final path to
+    prevent partial / corrupt output on disk-full or unexpected crash.
 
     Args:
         results: Scan results dictionary
@@ -1025,9 +1051,19 @@ def save_vuln_results(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / f"gvm_{project_id}.json"
+    tmp_file = output_file.with_suffix(".json.tmp")
 
-    with open(output_file, 'w') as f:
-        json.dump(results, f, indent=2)
+    try:
+        with open(tmp_file, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+        # Atomic rename on POSIX — prevents readers from seeing partial writes
+        tmp_file.replace(output_file)
+    except (OSError, TypeError) as e:
+        # Clean up temp file on failure
+        if tmp_file.exists():
+            tmp_file.unlink(missing_ok=True)
+        print(f"[!] Failed to save results: {e}")
+        raise
 
     print(f"[+] Results saved to: {output_file}")
     return output_file
@@ -1076,7 +1112,16 @@ def update_graph_from_gvm_results(
                 project_id=project_id
             )
 
-            print("[+] Graph update completed successfully")
+            # Log breakdown for observability
+            if isinstance(stats, dict) and "error" not in stats:
+                print("[+] Graph update completed successfully")
+                for key in ("vulnerabilities_created", "vulnerabilities_merged",
+                            "cves_created", "cves_merged", "host_links_created"):
+                    val = stats.get(key, 0)
+                    if val:
+                        print(f"    • {key}: {val}")
+            elif isinstance(stats, dict) and "error" in stats:
+                print(f"[!] Graph update returned error: {stats['error']}")
             return stats
 
     except Exception as e:

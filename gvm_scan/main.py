@@ -18,6 +18,7 @@ Usage:
 import os
 import sys
 import json
+import time
 import concurrent.futures as cf
 from pathlib import Path
 from datetime import datetime
@@ -165,52 +166,83 @@ def _run_batch_parallel(
     Each batch gets an independent GMP connection so multiple batches can
     run concurrently without socket contention.
 
+    Retries failed batches up to MAX_RETRIES times with exponential backoff
+    to cope with transient GVM timeouts.
+
     Returns:
         Batch results dict. On failure, returns an error dict (never raises).
     """
+    MAX_RETRIES = 2
     kind = "IPs" if scan_type == "ip_scan" else "Hostnames"
-    print(f"\n[*] [{kind} batch {batch_index}/{total_batches}] Starting scan "
-          f"of {len(batch)} target(s)...")
 
-    scanner = GVMScanner()
-    if not scanner.connect():
-        print(f"    [!] Batch {batch_index}: failed to connect to GVM")
-        return {
-            "batch_index": batch_index,
-            "scan_type": scan_type,
-            "error": "Failed to connect to GVM",
-            "vulnerabilities": [],
-            "hosts_scanned": 0,
-            "severity_summary": {},
-            "vulnerability_count": 0,
-        }
+    for attempt in range(MAX_RETRIES + 1):
+        if attempt > 0:
+            backoff = 2 ** (attempt - 1)
+            print(f"    [!] Retrying batch {batch_index}/{total_batches} "
+                  f"(attempt {attempt+1}/{MAX_RETRIES+1}) after {backoff}s...")
+            time.sleep(backoff)
 
-    try:
-        batch_results = scanner.scan_targets(
-            targets=batch,
-            target_name=f"{kind}_batch_{batch_index}_of_{total_batches}",
-            cleanup=cleanup,
-        )
-        batch_results["scan_type"] = scan_type
-        batch_results["batch_index"] = batch_index
-        if scan_type == "ip_scan":
-            batch_results["target_ips"] = batch
-        else:
-            batch_results["target_hostnames"] = batch
-        return batch_results
-    except Exception as e:
-        print(f"    [!] Batch {batch_index} failed: {e}")
-        return {
-            "batch_index": batch_index,
-            "scan_type": scan_type,
-            "error": str(e),
-            "vulnerabilities": [],
-            "hosts_scanned": 0,
-            "severity_summary": {},
-            "vulnerability_count": 0,
-        }
-    finally:
-        scanner.disconnect()
+        start_time = time.monotonic()
+
+        print(f"\n[*] [{kind} batch {batch_index}/{total_batches}] "
+              f"Scanning {len(batch)} target(s) "
+              f"({'' if attempt == 0 else f'attempt {attempt+1}'})...")
+
+        scanner = GVMScanner()
+        if not scanner.connect():
+            print(f"    [!] Batch {batch_index}: failed to connect to GVM"
+                  f"{' (will retry)' if attempt < MAX_RETRIES else ''}")
+            # Use existing disconnect to clean up partial connection state
+            scanner.disconnect()
+            continue
+
+        try:
+            batch_results = scanner.scan_targets(
+                targets=batch,
+                target_name=f"{kind}_batch_{batch_index}_of_{total_batches}",
+                cleanup=cleanup,
+            )
+            duration = time.monotonic() - start_time
+            batch_results["scan_type"] = scan_type
+            batch_results["batch_index"] = batch_index
+            batch_results["duration_seconds"] = round(duration, 1)
+            if scan_type == "ip_scan":
+                batch_results["target_ips"] = batch
+            else:
+                batch_results["target_hostnames"] = batch
+            print(f"    [+] Batch {batch_index} finished in {duration:.1f}s")
+            return batch_results
+        except Exception as e:
+            print(f"    [!] Batch {batch_index} failed"
+                  f" (attempt {attempt+1}/{MAX_RETRIES+1}): {e}")
+            if attempt < MAX_RETRIES:
+                scanner.disconnect()
+                continue
+            duration = time.monotonic() - start_time
+            return {
+                "batch_index": batch_index,
+                "scan_type": scan_type,
+                "error": str(e),
+                "vulnerabilities": [],
+                "hosts_scanned": 0,
+                "severity_summary": {},
+                "vulnerability_count": 0,
+                "duration_seconds": round(duration, 1),
+            }
+        finally:
+            scanner.disconnect()
+
+    # Should not be reached, but satisfies the type checker
+    return {
+        "batch_index": batch_index,
+        "scan_type": scan_type,
+        "error": "Exhausted retries",
+        "vulnerabilities": [],
+        "hosts_scanned": 0,
+        "severity_summary": {},
+        "vulnerability_count": 0,
+        "duration_seconds": 0,
+    }
 
 
 def _merge_batch_results(results: dict, batch_results: dict):
