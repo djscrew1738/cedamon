@@ -118,6 +118,8 @@
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   font-family: var(--font-sans);
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .input:focus {
@@ -142,6 +144,8 @@
   transition: background var(--transition-fast);
   font-family: var(--font-sans);
   margin-top: var(--space-1);
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .submitButton:hover:not(:disabled) {
@@ -174,4 +178,34 @@
 .version {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+}
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 480px) {
+  .page {
+    padding: 0;
+  }
+
+  .card {
+    max-width: 100%;
+    min-height: 100vh;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: none;
+  }
+
+  .header {
+    padding: var(--space-8) var(--space-4) var(--space-3);
+  }
+
+  .body {
+    padding: var(--space-3) var(--space-4) var(--space-6);
+  }
+
+  .footer {
+    padding: var(--space-3) var(--space-4) var(--space-8);
+  }
 }

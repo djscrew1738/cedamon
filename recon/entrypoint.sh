@@ -56,7 +56,7 @@ fi
 if [ "${USE_TOR_FOR_RECON}" = "true" ] || [ "${USE_TOR_FOR_RECON}" = "1" ]; then
     echo -e "${YELLOW}[*] Tor anonymity requested - checking Tor availability...${NC}"
 
-    # Check if Tor is already running (external Tor service)
+    # Check if Tor is already running (external Tor service on host or tor container)
     if nc -z 127.0.0.1 9050 2>/dev/null; then
         echo -e "${GREEN}[+] External Tor SOCKS proxy detected on port 9050${NC}"
     else
@@ -68,20 +68,24 @@ if [ "${USE_TOR_FOR_RECON}" = "true" ] || [ "${USE_TOR_FOR_RECON}" = "1" ]; then
             tor &
             TOR_PID=$!
 
-            # Wait for Tor to start (max 30 seconds)
-            echo -e "${YELLOW}[*] Waiting for Tor to establish circuit...${NC}"
-            for i in {1..30}; do
+            # Wait for Tor to start (max 15 seconds - fail fast so scans can start)
+            echo -e "${YELLOW}[*] Waiting for Tor to establish circuit (up to 15s)...${NC}"
+            for i in {1..15}; do
                 if nc -z 127.0.0.1 9050 2>/dev/null; then
                     echo -e "${GREEN}[+] Tor SOCKS proxy ready on port 9050${NC}"
                     break
                 fi
                 sleep 1
-                echo -n "."
+                if [ $((i % 10)) -eq 0 ]; then
+                    echo -n "${i}s"
+                else
+                    echo -n "."
+                fi
             done
             echo ""
 
             if ! nc -z 127.0.0.1 9050 2>/dev/null; then
-                echo -e "${RED}[!] Tor failed to start within 30 seconds${NC}"
+                echo -e "${RED}[!] Tor failed to start within 15 seconds${NC}"
                 echo -e "${YELLOW}    Continuing without Tor anonymity${NC}"
             fi
         else
@@ -90,9 +94,25 @@ if [ "${USE_TOR_FOR_RECON}" = "true" ] || [ "${USE_TOR_FOR_RECON}" = "1" ]; then
         fi
     fi
 
-    # Check proxychains availability
+    # Set system-wide proxy environment variables
+    # All HTTP/HTTPS traffic from Python and other tools will be routed through Tor
+    # Use socks5h:// so DNS resolution also goes through Tor (prevents DNS leaks)
+    export HTTP_PROXY="socks5h://127.0.0.1:9050"
+    export HTTPS_PROXY="socks5h://127.0.0.1:9050"
+    export ALL_PROXY="socks5h://127.0.0.1:9050"
+    export NO_PROXY="localhost,127.0.0.1,::1"
+    # Also set lowercase variants for tools/libraries that only check those
+    export http_proxy="socks5h://127.0.0.1:9050"
+    export https_proxy="socks5h://127.0.0.1:9050"
+    export all_proxy="socks5h://127.0.0.1:9050"
+    export no_proxy="localhost,127.0.0.1,::1"
+
+    echo -e "${GREEN}[+] System proxy env vars set - all HTTP/S traffic routed through Tor${NC}"
+    echo -e "${GREEN}[+] Internal traffic (localhost, 127.0.0.1) excluded from proxy${NC}"
+
+    # Check proxychains availability (for tools without native SOCKS support)
     if command -v proxychains4 &> /dev/null; then
-        echo -e "${GREEN}[+] Proxychains4 available${NC}"
+        echo -e "${GREEN}[+] Proxychains4 available - binary tools can be wrapped${NC}"
     else
         echo -e "${YELLOW}[!] Proxychains4 not found - some tools may not use Tor${NC}"
     fi
@@ -129,7 +149,8 @@ fi
 # =============================================================================
 echo -e "${YELLOW}[*] Checking ProjectDiscovery Docker images...${NC}"
 
-# List of images used by recon modules
+# Core images used on (nearly) every scan. Optional tools (amass, uncover,
+# graphql-cop, zaproxy) are pulled on-demand by their helpers when enabled.
 IMAGES=(
     "projectdiscovery/naabu:latest"
     "projectdiscovery/httpx:latest"
@@ -137,26 +158,34 @@ IMAGES=(
     "projectdiscovery/nuclei:latest"
     "projectdiscovery/subfinder:latest"
     "sxcurity/gau:latest"
-    "caffix/amass:latest"
     "frost19k/puredns:latest"
     "jauderho/hakrawler:latest"
-    "projectdiscovery/uncover:latest"
-    "dolevf/graphql-cop:1.14"
-    "ghcr.io/zaproxy/zaproxy:stable"
 )
 
+PULL_IMAGES=()
 for IMAGE in "${IMAGES[@]}"; do
     if docker images -q "$IMAGE" 2>/dev/null | grep -q .; then
         echo -e "${GREEN}[+] $IMAGE already pulled${NC}"
     else
-        echo -e "${YELLOW}[*] Pulling $IMAGE...${NC}"
-        if [[ "$IMAGE" == "sxcurity/gau:latest" ]] && [[ "$(uname -m)" =~ ^(arm64|aarch64)$ ]]; then
-            docker pull --platform linux/amd64 "$IMAGE" 2>/dev/null || echo -e "${RED}[!] Failed to pull $IMAGE${NC}"
-        else
-            docker pull "$IMAGE" 2>/dev/null || echo -e "${RED}[!] Failed to pull $IMAGE${NC}"
-        fi
+        PULL_IMAGES+=("$IMAGE")
     fi
 done
+
+if [ ${#PULL_IMAGES[@]} -gt 0 ]; then
+    echo -e "${YELLOW}[*] Pulling ${#PULL_IMAGES[@]} images in parallel...${NC}"
+    for IMAGE in "${PULL_IMAGES[@]}"; do
+        (
+            if [[ "$IMAGE" == "sxcurity/gau:latest" ]] && [[ "$(uname -m)" =~ ^(arm64|aarch64)$ ]]; then
+                docker pull --platform linux/amd64 "$IMAGE" > /dev/null 2>&1
+            else
+                docker pull "$IMAGE" > /dev/null 2>&1
+            fi &&
+                echo -e "${GREEN}[+] $IMAGE pulled successfully${NC}" ||
+                echo -e "${RED}[!] Failed to pull $IMAGE${NC}"
+        ) &
+    done
+    wait
+fi
 
 # =============================================================================
 # Execute the command

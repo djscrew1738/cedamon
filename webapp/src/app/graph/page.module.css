@@ -47,3 +47,11 @@
   margin: 0;
   max-width: 400px;
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .body {
+    flex-direction: column;
+  }
+}

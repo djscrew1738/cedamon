@@ -6,8 +6,10 @@ Functions for looking up CVEs from NVD and Vulners APIs based on detected techno
 
 import re
 import time
+import threading
 import requests
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 
@@ -263,9 +265,8 @@ def split_server_header(header: str) -> List[str]:
         products.append(token)
 
     if products:
-        # Remove extracted tokens from remaining
-        for p in products:
-            remaining = remaining.replace(p, ' ')
+        # Remove all extracted tokens in a single pass via regex alternation
+        remaining = re.sub('|'.join(re.escape(p) for p in products), ' ', remaining)
 
     # Now find slash/colon-delimited products in the remaining string
     # Match: "Name/version" or "Multi-Word_Name/version"
@@ -489,26 +490,52 @@ def lookup_cves_nvd(
             keyword += f" {version}"
         params["keywordSearch"] = keyword
 
-    try:
-        response = requests.get(NVD_API_URL, params=params, headers=headers, timeout=30)
-        if key_rotator:
-            key_rotator.tick()
+    # Rate-limit retry: exponential backoff up to 30s
+    max_retries = 3
+    base_delay = 2.0  # start at 2s
 
-        # Handle rate limiting (NVD returns 403 or 429 when rate limited)
-        if response.status_code == 403:
-            print(f"[!][CVE] NVD API rate limited. Configure NVD API Key in Global Settings → Tool API Keys for higher limits.")
-            return cves
-        if response.status_code == 404:
-            # 404 can occur with invalid CPE format or when service is unavailable
-            print(f"[!][CVE] NVD API returned 404 for {product}. Skipping CVE lookup.")
-            return cves
-        if response.status_code == 429:
-            print(f"[!][CVE] NVD API rate limited (429). Waiting...")
-            time.sleep(6)  # Wait 6 seconds and continue
-            return cves
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(NVD_API_URL, params=params, headers=headers, timeout=30)
+            if key_rotator:
+                key_rotator.tick()
 
-        response.raise_for_status()
-        data = response.json()
+            # Handle rate limiting (NVD returns 403 or 429 when rate limited)
+            if response.status_code == 403:
+                print(f"[!][CVE] NVD API rate limited. Configure NVD API Key in Global Settings → Tool API Keys for higher limits.")
+                return cves
+            if response.status_code == 404:
+                # 404 can occur with invalid CPE format or when service is unavailable
+                print(f"[!][CVE] NVD API returned 404 for {product}. Skipping CVE lookup.")
+                return cves
+
+            if response.status_code == 429:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt) + 0.5  # 2.5s, 4.5s, 8.5s
+                    print(f"[!][CVE] NVD API rate limited (429). Retrying in {delay:.0f}s (attempt {attempt+1}/{max_retries})...")
+                    time.sleep(delay)
+                    continue
+                else:
+                    print(f"[!][CVE] NVD API rate limited (429). Giving up after {max_retries} retries.")
+                    return cves
+
+            response.raise_for_status()
+            data = response.json()
+            break  # success → exit retry loop
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt) + 0.5
+                print(f"[!][CVE] NVD API {type(e).__name__}: {e}. Retrying in {delay:.0f}s (attempt {attempt+1}/{max_retries})...")
+                time.sleep(delay)
+                continue
+            else:
+                print(f"[!][CVE] NVD API {type(e).__name__}: giving up after {max_retries} retries.")
+                return cves
+
+        except Exception as e:
+            print(f"[!][CVE] NVD API error: {str(e)[:80]}")
+            return cves
 
         for vuln in data.get("vulnerabilities", []):
             cve_data = vuln.get("cve", {})
@@ -544,10 +571,7 @@ def lookup_cves_nvd(
                 "source": "nvd",
                 "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
             })
-            
-    except Exception as e:
-        print(f"[!][CVE] NVD API error: {str(e)[:80]}")
-    
+
     return cves
 
 
@@ -700,46 +724,80 @@ def run_cve_lookup(
         print("[!][CVE] No technologies with versions found")
         return {"technology_cves": {"summary": {"total_cves": 0}}}
     
-    # Lookup CVEs
+    # Lookup CVEs (parallel with rate limiting)
     cve_results = {}
     all_cves = []
-    
-    for i, tech in enumerate(tech_to_lookup, 1):
+
+    # Even without API keys, use parallel workers to overlap I/O wait time.
+    # NVD without key allows ~1 req/6s — multiple workers fill the pipeline
+    # and the shared jitter below keeps us under the limit.
+    max_workers = min(len(tech_to_lookup), 5)
+
+    # Shared jitter: small random delay between worker starts to avoid
+    # thundering-herd on rate-limited endpoints.
+    _jitter_lock = threading.Lock()
+    _jitter_counter = [0]
+
+    cve_lock = threading.Lock()
+    _cve_progress = [0]  # mutable counter for closure
+
+    def _lookup_one(tech: str) -> tuple:
+        """Look up CVEs for a single technology. Thread-safe on shared state."""
         name, version = parse_technology_string(tech)
         name = normalize_product_name(name)
-        
-        print(f"[*][CVE] [{i}/{len(tech_to_lookup)}] {tech}...", end=" ", flush=True)
-        
+
+        # Stagger worker starts: each worker waits a bit longer than the last
+        # This prevents all workers from hitting the API simultaneously
+        with _jitter_lock:
+            _jitter_counter[0] += 1
+            stagger = _jitter_counter[0] * 0.75  # 0.75s, 1.5s, 2.25s, ...
+        if stagger > 0:
+            time.sleep(stagger)
+
+        with cve_lock:
+            _cve_progress[0] += 1
+            i = _cve_progress[0]
+            print(f"[*][CVE] [{i}/{len(tech_to_lookup)}] {tech}...", end=" ", flush=True)
+
         if source == "vulners" and vulners_api_key:
             cves = lookup_cves_vulners(name, version, vulners_api_key, key_rotator=vulners_key_rotator)
         else:
             cves = lookup_cves_nvd(name, version, max_cves, nvd_api_key, key_rotator=nvd_key_rotator)
-        
+
         # Filter by min CVSS
         if min_cvss > 0:
             cves = [c for c in cves if (c.get("cvss") or 0) >= min_cvss]
-        
+
         cves.sort(key=lambda x: x.get("cvss") or 0, reverse=True)
         cves = cves[:max_cves]
-        
-        if cves:
-            cve_results[tech] = {
-                "technology": tech,
-                "product": name,
-                "version": version,
-                "cve_count": len(cves),
-                "critical": len([c for c in cves if c.get("severity") == "CRITICAL"]),
-                "high": len([c for c in cves if c.get("severity") == "HIGH"]),
-                "cves": cves,
-            }
-            all_cves.extend(cves)
-            print(f"✓ {len(cves)} CVEs found")
-        else:
-            print("no CVEs")
-        
-        # Rate limiting for NVD API
-        if source == "nvd" and i < len(tech_to_lookup):
-            time.sleep(6)
+
+        with cve_lock:
+            if cves:
+                print(f"✓ {len(cves)} CVEs found for {tech}")
+            else:
+                print(f"no CVEs for {tech}")
+
+        return tech, name, version, cves
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_lookup_one, tech): tech for tech in tech_to_lookup}
+        for future in as_completed(futures):
+            try:
+                tech, name, version, cves = future.result()
+                if cves:
+                    with cve_lock:
+                        cve_results[tech] = {
+                            "technology": tech,
+                            "product": name,
+                            "version": version,
+                            "cve_count": len(cves),
+                            "critical": len([c for c in cves if c.get("severity") == "CRITICAL"]),
+                            "high": len([c for c in cves if c.get("severity") == "HIGH"]),
+                            "cves": cves,
+                        }
+                        all_cves.extend(cves)
+            except Exception as e:
+                print(f"[!][CVE] Lookup failed for {futures[future]}: {e}")
     
     # Count unique CVEs
     unique_cve_ids = set()

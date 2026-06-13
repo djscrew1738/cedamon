@@ -530,12 +530,38 @@ Webapp UI → PostgreSQL (Prisma) → /api/projects/{id} → gvm_scan/project_se
 | Setting | DB Column | Type | Default | Description |
 |---------|-----------|------|---------|-------------|
 | Scan Profile | `gvm_scan_config` | String | `Full and fast` | GVM scan configuration preset (see Scan Configurations section) |
+| Scan Preset | `gvm_scan_preset` | String | `default` | Named performance preset: `default`, `fast`, `thorough` |
 | Scan Targets Strategy | `gvm_scan_targets` | String | `both` | What to scan: `both`, `ips_only`, `hostnames_only` |
 | Task Timeout | `gvm_task_timeout` | Int | `14400` | Max seconds per scan task (0 = unlimited) |
 | Poll Interval | `gvm_poll_interval` | Int | `30` | Seconds between scan status checks |
 | Cleanup After Scan | `gvm_cleanup_after_scan` | Boolean | `true` | Delete GVM targets/tasks after scan completion |
+| Port List | `gvm_port_list` | String | `All IANA assigned TCP and UDP` | GVM port list used for the scan target |
+| Target Batch Size | `gvm_target_batch_size` | Int | `5` | Number of hosts grouped into a single GVM task |
+| Max Hosts | `gvm_max_hosts` | Int | `0` | Concurrently scanned hosts (`0` = GVM default) |
+| Max Checks | `gvm_max_checks` | Int | `0` | Concurrently executed NVTs (`0` = GVM default) |
 
 Default values are defined in `gvm_scan/project_settings.py` (`DEFAULT_GVM_SETTINGS`) and served to the frontend via the orchestrator `/defaults` endpoint.
+
+### Scan Presets
+
+The `SCAN_PRESET` setting lets users quickly switch between performance profiles without tuning each knob:
+
+| Preset | Port List | Poll Interval | Batch Size | Max Hosts | Max Checks | Use Case |
+|--------|-----------|---------------|------------|-----------|------------|----------|
+| `default` | Uses explicit `PORT_LIST` / `MAX_HOSTS` / `MAX_CHECKS` values | as configured | as configured | as configured | as configured | User-defined behavior |
+| `fast` | `All TCP and Nmap top 100 UDP` | `10` | `10` | `20` | `10` | Quick first-pass scan |
+| `thorough` | `All IANA assigned TCP and UDP` | `30` | `1` | GVM default | GVM default | Deep, per-host coverage |
+
+Presets only override values that are not explicitly set (`default`) or that default to `0` (`MAX_HOSTS`/`MAX_CHECKS`). Explicit user values are preserved.
+
+### Feed-Sync Readiness Gate
+
+Before a scan is started the scanner now waits for GVM to finish importing feeds and loading scan configs. The orchestrator exposes this state via:
+
+- `GET /health` → `gvm_ready` boolean
+- `container_manager.is_gvm_ready()` → probes `gvmd` over its Unix socket
+
+A one-off readiness probe container (`gvm_scan/ready_probe.py`) checks `get_feeds()` for `currently_syncing` elements and verifies that `get_scan_configs()` returns at least one config. Results are cached for 60 seconds to avoid repeatedly spawning probe containers.
 
 ### Environment Variables (Connection & Runtime)
 

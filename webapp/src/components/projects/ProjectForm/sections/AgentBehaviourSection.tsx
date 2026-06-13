@@ -85,7 +85,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                 className="textInput"
                 value={data.agentInformationalSystemPrompt}
                 onChange={(e) => updateField('agentInformationalSystemPrompt', e.target.value)}
-                placeholder="Custom system prompt for the informational/recon phase..."
+                placeholder="Custom prompt overrides the built-in informational phase guidance. Leave empty to use the default."
                 rows={2}
               />
               <span className={styles.fieldHint}>Injected during the informational phase. Leave empty for default.</span>
@@ -96,7 +96,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                 className="textInput"
                 value={data.agentExplSystemPrompt}
                 onChange={(e) => updateField('agentExplSystemPrompt', e.target.value)}
-                placeholder="Custom system prompt for the exploitation phase..."
+                placeholder="Custom prompt overrides the built-in exploitation phase guidance. Leave empty to use the default."
                 rows={2}
               />
               <span className={styles.fieldHint}>Injected during the exploitation phase. Leave empty for default.</span>
@@ -107,7 +107,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                 className="textInput"
                 value={data.agentPostExplSystemPrompt}
                 onChange={(e) => updateField('agentPostExplSystemPrompt', e.target.value)}
-                placeholder="Custom system prompt for the post-exploitation phase..."
+                placeholder="Custom prompt overrides the built-in post-exploitation phase guidance. Leave empty to use the default."
                 rows={2}
               />
               <span className={styles.fieldHint}>Injected during the post-exploitation phase. Leave empty for default.</span>
@@ -205,7 +205,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             const maxConcurrent = (data as any).fireteamMaxConcurrent ?? 5
             const maxMembers = (data as any).fireteamMaxMembers ?? 5
             const memberMaxIter = (data as any).fireteamMemberMaxIterations ?? 10
-            const timeoutSec = (data as any).fireteamTimeoutSec ?? 3600
+            const timeoutSec = (data as any).fireteamTimeoutSec ?? 7200
             const propensity = (data as any).fireteamPropensity ?? 3
             const allowedPhasesRaw = (data as any).fireteamAllowedPhases ?? ['informational', 'exploitation', 'post_exploitation']
             const allowedPhases: string[] = Array.isArray(allowedPhasesRaw)
@@ -325,6 +325,26 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           }}
                         />
                         <span className={styles.fieldHint}>60-7200. Hard wall-clock ceiling for the whole fireteam.</span>
+                      </div>
+                      <div className={styles.fieldGroup}>
+                        <label className={styles.fieldLabel}>Confirmation timeout (seconds)</label>
+                        <input
+                          type="number"
+                          className="textInput"
+                          value={(data as any).fireteamConfirmationTimeoutSec ?? 600}
+                          min={30}
+                          max={3600}
+                          onChange={(e) => {
+                            const raw = e.target.value
+                            updateField('fireteamConfirmationTimeoutSec' as any, (raw === '' ? '' : parseInt(raw)) as any)
+                          }}
+                          onBlur={(e) => {
+                            const n = parseInt(e.target.value)
+                            const v = Number.isFinite(n) ? Math.max(30, Math.min(3600, n)) : 600
+                            updateField('fireteamConfirmationTimeoutSec' as any, v as any)
+                          }}
+                        />
+                        <span className={styles.fieldHint}>30-3600. How long a member waits for operator approval before auto-rejecting.</span>
                       </div>
                     </div>
                     <div className={styles.fieldGroup}>

@@ -533,7 +533,6 @@ function resolveModel(model: string): Resolved {
     return { kind: 'custom', providerId: model.slice('custom/'.length) }
   }
   const prefixMap: Record<string, string> = {
-    'openrouter/': 'openrouter',
     'bedrock/': 'bedrock',
     'deepseek/': 'deepseek',
     'gemini/': 'gemini',
@@ -583,19 +582,6 @@ describe('resolveModel', () => {
       kind: 'builtin',
       providerType: 'openai',
       modelId: 'gpt-5.2',
-    })
-  })
-
-  test('resolves OpenRouter models', () => {
-    expect(resolveModel('openrouter/anthropic/claude-3.5-sonnet')).toEqual({
-      kind: 'builtin',
-      providerType: 'openrouter',
-      modelId: 'anthropic/claude-3.5-sonnet',
-    })
-    expect(resolveModel('openrouter/meta-llama/llama-4-maverick')).toEqual({
-      kind: 'builtin',
-      providerType: 'openrouter',
-      modelId: 'meta-llama/llama-4-maverick',
     })
   })
 

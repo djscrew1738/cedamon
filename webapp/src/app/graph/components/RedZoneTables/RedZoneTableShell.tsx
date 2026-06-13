@@ -132,6 +132,10 @@ export const RedZoneTableShell = memo(function RedZoneTableShell({
         </div>
       </div>
 
+      <div className={styles.scrollHint} aria-hidden="true">
+        ← Swipe table to see more columns →
+      </div>
+
       <div className={styles.body}>
         {isLoading ? (
           <div className={styles.stateContainer}>

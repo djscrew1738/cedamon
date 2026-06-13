@@ -10,15 +10,10 @@ export function extractTextFromChildren(children: any): string {
   return ''
 }
 
-/** Format prefixed model names for display (e.g. "openrouter/meta-llama/llama-4" → "llama-4 (OR)") */
 export function formatModelDisplay(model: string): string {
   if (model.startsWith('openai_compat/')) {
     const parts = model.slice('openai_compat/'.length).split('/')
     return `${parts[parts.length - 1]} (OA-Compat)`
-  }
-  if (model.startsWith('openrouter/')) {
-    const parts = model.slice('openrouter/'.length).split('/')
-    return `${parts[parts.length - 1]} (OR)`
   }
   if (model.startsWith('bedrock/')) {
     const simplified = model.slice('bedrock/'.length).replace(/^[^.]+\./, '').replace(/-\d{8}-v\d+:\d+$/, '')
@@ -105,6 +100,36 @@ export const KNOWN_ATTACK_PATH_CONFIG: Record<string, { label: string; shortLabe
     shortLabel: 'PATH',
     color: 'var(--accent-teal, #14b8a6)',
     bgColor: 'rgba(20, 184, 166, 0.15)',
+  },
+  llm_security: {
+    label: 'GenAI / LLM Security',
+    shortLabel: 'LLM',
+    color: 'var(--accent-violet, #8b5cf6)',
+    bgColor: 'rgba(139, 92, 246, 0.15)',
+  },
+  cicd_pipeline: {
+    label: 'CI/CD Pipeline Attacks',
+    shortLabel: 'CI/CD',
+    color: 'var(--accent-amber, #f59e0b)',
+    bgColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  browser_exploitation: {
+    label: 'Browser & Electron Exploitation',
+    shortLabel: 'BRWSR',
+    color: 'var(--accent-cyan, #06b6d4)',
+    bgColor: 'rgba(6, 182, 212, 0.15)',
+  },
+  container_k8s: {
+    label: 'Container & Kubernetes Security',
+    shortLabel: 'K8S',
+    color: 'var(--accent-indigo, #6366f1)',
+    bgColor: 'rgba(99, 102, 241, 0.15)',
+  },
+  hybrid_identity: {
+    label: 'Hybrid Identity & Federation Attacks',
+    shortLabel: 'IDENT',
+    color: 'var(--accent-pink, #ec4899)',
+    bgColor: 'rgba(236, 72, 153, 0.15)',
   },
 }
 

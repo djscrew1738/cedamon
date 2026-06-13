@@ -287,12 +287,23 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
           size={14}
           style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 150ms' }}
         />
-        graphql-cop External Scanner
-        <span className={styles.badgeActive} style={{ fontSize: '9px' }}>Active</span>
-        <span style={{
-          fontSize: '9px', padding: '1px 6px', borderRadius: '3px',
-          backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', fontWeight: 500,
-        }}>
+        graphql-cop external scanner
+        <span
+          title="Off by default; enable with the toggle below"
+          style={{
+            fontSize: '9px', padding: '1px 6px', borderRadius: '3px',
+            backgroundColor: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', fontWeight: 500,
+          }}
+        >
+          opt-in
+        </span>
+        <span
+          title="field_suggestions, introspection, graphiql, get_method, get_mutation, post_csrf, trace_mode, unhandled_error, alias_overloading, batch_query, directive_overloading, circular_introspection"
+          style={{
+            fontSize: '9px', padding: '1px 6px', borderRadius: '3px',
+            backgroundColor: 'rgba(99, 102, 241, 0.15)', color: '#818cf8', fontWeight: 500,
+          }}
+        >
           12 checks
         </span>
         {copEnabled && (
@@ -304,11 +315,27 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
         <>
           <p className={styles.sectionDescription} style={{ marginTop: '8px' }}>
             External Docker-based misconfig scanner (<code>dolevf/graphql-cop:1.14</code>).
-            Runs 12 checks per endpoint including alias/batch/directive DoS probes, GraphiQL
-            detection, trace/debug disclosure, GET-method CSRF, unhandled errors, and field
-            suggestions. Traffic is <strong>active</strong> &mdash; DoS probes auto-disable in
-            stealth mode. Introspection test is off by default to dedupe with the native scanner above.
+            Runs 12 checks per endpoint across three groups: information disclosure (field
+            suggestions, GraphiQL/Playground, trace mode, unhandled errors, introspection),
+            CSRF / transport issues (GET queries/mutations, POST url-encoded), and resource
+            exhaustion / DoS (alias overloading, query batching, directive overloading,
+            circular introspection). Traffic is <strong>active</strong>. The introspection
+            check is off by default to avoid duplicating the native Introspection Test above.
           </p>
+
+          <div style={{
+            marginTop: '10px', padding: '8px 12px', borderRadius: '4px',
+            backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
+            fontSize: '11px', color: '#f87171',
+          }}>
+            <strong>Per-test toggles filter findings, not network traffic.</strong>{' '}
+            Because the pinned graphql-cop v1.14 image ignores the <code>-e</code> exclusion
+            flag, disabled tests still send probes. In stealth mode DoS findings are
+            suppressed and rate limits drop, but the DoS packets still fly. To completely
+            stop graphql-cop traffic, disable the master <em>Enable graphql-cop</em> toggle
+            below. True traffic-level exclusion requires a v1.15+ image (unreleased on
+            DockerHub as of this build).
+          </div>
 
           <div className={styles.toggleRow}>
             <div>
@@ -370,16 +397,16 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
 
               <h4 className={styles.subSectionTitle} style={{ marginTop: '16px', fontSize: '12px' }}>
-                Checks to Run
+                Checks to Report
               </h4>
               <p className={styles.fieldHint} style={{ marginBottom: '8px' }}>
-                Each toggle maps to one graphql-cop test.{' '}
-                <strong>Filters findings from the report only &mdash; DoS traffic still fires</strong>{' '}
-                until graphql-cop ships <code>-e</code> support on DockerHub (patched in git main v1.15, unreleased).
-                To fully suppress a test&apos;s traffic, disable the master <em>Enable graphql-cop</em> toggle above.
+                Each toggle controls whether findings from a graphql-cop test appear in the report.
+                In the pinned v1.14 image, disabled tests still send probes (see warning above).
               </p>
 
-              {/* Info-leak + CSRF checks (low-noise) */}
+              <h5 className={styles.subSectionTitle} style={{ marginTop: '12px', fontSize: '11px', opacity: 0.9 }}>
+                Information disclosure
+              </h5>
               <div className={styles.toggleRow}>
                 <div>
                   <span className={styles.toggleLabel}>Field Suggestions (LOW &mdash; info leak)</span>
@@ -412,6 +439,30 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </div>
               <div className={styles.toggleRow}>
                 <div>
+                  <span className={styles.toggleLabel}>Trace Mode (INFO &mdash; info leak)</span>
+                  <p className={styles.toggleDescription}>Apollo tracing extension disclosure.</p>
+                </div>
+                <Toggle
+                  checked={(data as any).graphqlCopTestTraceMode ?? true}
+                  onChange={(checked) => updateField('graphqlCopTestTraceMode' as any, checked)}
+                />
+              </div>
+              <div className={styles.toggleRow}>
+                <div>
+                  <span className={styles.toggleLabel}>Unhandled Errors (INFO &mdash; info leak)</span>
+                  <p className={styles.toggleDescription}>Exception stack traces returned to client.</p>
+                </div>
+                <Toggle
+                  checked={(data as any).graphqlCopTestUnhandledError ?? true}
+                  onChange={(checked) => updateField('graphqlCopTestUnhandledError' as any, checked)}
+                />
+              </div>
+
+              <h5 className={styles.subSectionTitle} style={{ marginTop: '14px', fontSize: '11px', opacity: 0.9 }}>
+                CSRF / transport
+              </h5>
+              <div className={styles.toggleRow}>
+                <div>
                   <span className={styles.toggleLabel}>GET Method Query Support (MEDIUM &mdash; CSRF)</span>
                   <p className={styles.toggleDescription}>Queries allowed via GET enable CSRF attacks.</p>
                 </div>
@@ -440,36 +491,20 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
                   onChange={(checked) => updateField('graphqlCopTestPostCsrf' as any, checked)}
                 />
               </div>
-              <div className={styles.toggleRow}>
-                <div>
-                  <span className={styles.toggleLabel}>Trace Mode (INFO &mdash; info leak)</span>
-                  <p className={styles.toggleDescription}>Apollo tracing extension disclosure.</p>
-                </div>
-                <Toggle
-                  checked={(data as any).graphqlCopTestTraceMode ?? true}
-                  onChange={(checked) => updateField('graphqlCopTestTraceMode' as any, checked)}
-                />
-              </div>
-              <div className={styles.toggleRow}>
-                <div>
-                  <span className={styles.toggleLabel}>Unhandled Errors (INFO &mdash; info leak)</span>
-                  <p className={styles.toggleDescription}>Exception stack traces returned to client.</p>
-                </div>
-                <Toggle
-                  checked={(data as any).graphqlCopTestUnhandledError ?? true}
-                  onChange={(checked) => updateField('graphqlCopTestUnhandledError' as any, checked)}
-                />
-              </div>
 
               <div style={{
-                marginTop: '12px', padding: '8px 12px', borderRadius: '4px',
+                marginTop: '16px', padding: '8px 12px', borderRadius: '4px',
                 backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
                 fontSize: '11px', color: '#f87171',
               }}>
-                <strong>DoS probes below &mdash; noisy traffic.</strong> Toggling these off hides their findings
-                but the packets still fly (see note above). Auto-disabled only in stealth mode.
+                <strong>DoS / resource exhaustion</strong> &mdash; toggling these off hides their findings
+                but the probes still run. In stealth mode the findings are suppressed; disable the
+                master <em>Enable graphql-cop</em> toggle to stop the traffic entirely.
               </div>
 
+              <h5 className={styles.subSectionTitle} style={{ marginTop: '12px', fontSize: '11px', opacity: 0.9 }}>
+                DoS / resource exhaustion
+              </h5>
               <div className={styles.toggleRow}>
                 <div>
                   <span className={styles.toggleLabel}>Alias Overloading (HIGH &mdash; DoS)</span>

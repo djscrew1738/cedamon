@@ -636,3 +636,67 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 900px) {
+  .toolbar {
+    flex-wrap: wrap;
+    gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-2);
+    height: auto;
+    min-height: 32px;
+  }
+
+  .actionsRight {
+    flex: 1;
+    gap: var(--space-1);
+  }
+
+  .actionGroup {
+    gap: var(--space-1);
+  }
+
+  .targetSection .projectBadge span,
+  .targetSection .subdomainList {
+    display: none;
+  }
+
+  .divider {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar {
+    padding: var(--space-1) var(--space-1-5);
+    gap: var(--space-1);
+  }
+
+  .sectionLabel {
+    display: none;
+  }
+
+  .reconButton span,
+  .gvmButton span,
+  .githubHuntButton span,
+  .aiButton span {
+    display: none;
+  }
+
+  .reconButton,
+  .gvmButton,
+  .githubHuntButton,
+  .aiButton {
+    padding: var(--space-1);
+    gap: 0;
+  }
+
+  .logsButton,
+  .downloadButton,
+  .pauseButton,
+  .stopButton {
+    width: 24px;
+    height: 24px;
+  }
+}

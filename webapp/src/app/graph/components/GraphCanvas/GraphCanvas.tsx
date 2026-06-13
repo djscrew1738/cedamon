@@ -69,7 +69,13 @@ export const GraphCanvas = memo(function GraphCanvas({
   }
 
   if (!data || data.nodes.length === 0) {
-    return null
+    return (
+      <div className={styles.wrapper}>
+        <div className={styles.empty}>
+          No graph data found for this project. Run recon to populate the graph.
+        </div>
+      </div>
+    )
   }
 
   if (effective3D) {

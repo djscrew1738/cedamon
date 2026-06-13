@@ -113,10 +113,6 @@ class TestParseModelProviderXaiMistral(unittest.TestCase):
             ("openai", "gpt-4o"),
         )
         self.assertEqual(
-            parse_model_provider("openrouter/anthropic/claude-sonnet-4"),
-            ("openrouter", "anthropic/claude-sonnet-4"),
-        )
-        self.assertEqual(
             parse_model_provider("bedrock/anthropic.claude-v2"),
             ("bedrock", "anthropic.claude-v2"),
         )

@@ -176,8 +176,14 @@ def _run_uncover_docker(
     """
     output_file = os.path.join(temp_dir, "uncover_output.jsonl")
 
+    # Import proxy helpers (lazy — only when this function runs)
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+
     cmd = [
         "docker", "run", "--rm",
+    ]
+    cmd.extend(get_proxy_env_flags())
+    cmd.extend([
         "-v", f"{temp_dir}:/config:ro",
         "-v", f"{temp_dir}:/output",
         docker_image,
@@ -188,7 +194,7 @@ def _run_uncover_docker(
         "-l", str(max_results),
         "-timeout", "60",
         "-o", "/output/uncover_output.jsonl",
-    ]
+    ])
 
     for q in queries:
         cmd.extend(["-q", q])

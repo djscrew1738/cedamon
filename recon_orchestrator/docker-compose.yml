@@ -17,6 +17,7 @@ services:
       - ${HOST_RECON_PATH:-../recon}:/app/recon:ro
       # Recon output directory (read-write for download)
       - ${HOST_RECON_PATH:-../recon}/output:/app/recon/output:rw
+      - ../graph_db:/app/graph_db:ro
     environment:
       # Host paths are auto-detected from container mounts (no hardcoded paths needed)
       - RECON_IMAGE=redamon-recon:latest

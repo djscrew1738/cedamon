@@ -30,7 +30,6 @@ def parse_model_provider(model_name: str) -> tuple[str, str]:
 
     Prefix convention:
       - "custom/<configId>"   → ("custom", "<configId>")
-      - "openrouter/<model>"  → ("openrouter", "<model>")
       - "bedrock/<model>"     → ("bedrock", "<model>")
       - "deepseek/<model>"    → ("deepseek", "<model>")
       - "gemini/<model>"      → ("gemini", "<model>")
@@ -49,8 +48,6 @@ def parse_model_provider(model_name: str) -> tuple[str, str]:
         return ("custom", model_name[len("custom/"):])
     elif model_name.startswith("openai_compat/"):
         return ("openai_compat", model_name[len("openai_compat/"):])
-    elif model_name.startswith("openrouter/"):
-        return ("openrouter", model_name[len("openrouter/"):])
     elif model_name.startswith("bedrock/"):
         return ("bedrock", model_name[len("bedrock/"):])
     elif model_name.startswith("deepseek/"):
@@ -78,7 +75,6 @@ def setup_llm(
     *,
     openai_api_key: str | None = None,
     anthropic_api_key: str | None = None,
-    openrouter_api_key: str | None = None,
     deepseek_api_key: str | None = None,
     gemini_api_key: str | None = None,
     glm_api_key: str | None = None,
@@ -149,7 +145,7 @@ def setup_llm(
                 bedrock_kwargs["aws_secret_access_key"] = custom_llm_config.get("awsSecretKey") or None
             llm = ChatBedrockConverse(**bedrock_kwargs)
         else:
-            # openai_compatible (default) — also handles openai/openrouter custom entries
+            # openai_compatible (default) — also handles openai custom entries
             kwargs = dict(
                 model=custom_llm_config.get("modelIdentifier", api_model),
                 api_key=custom_llm_config.get("apiKey") or "ollama",
@@ -184,22 +180,6 @@ def setup_llm(
             api_key=openai_compat_api_key or "ollama",
             base_url=openai_compat_base_url,
             temperature=0,
-        )
-
-    elif provider == "openrouter":
-        if not openrouter_api_key:
-            raise ValueError(
-                f"OpenRouter API key is required for model '{model_name}'"
-            )
-        llm = ChatOpenAI(
-            model=api_model,
-            api_key=openrouter_api_key,
-            base_url="https://openrouter.ai/api/v1",
-            temperature=0,
-            default_headers={
-                "HTTP-Referer": "https://redamon.dev",
-                "X-Title": "RedAmon Agent",
-            },
         )
 
     elif provider == "deepseek":
@@ -378,7 +358,6 @@ def apply_project_settings(orchestrator, project_id: str) -> None:
         # Build kwargs from DB providers (no env-var fallback)
         openai_p = _resolve_provider_key(user_providers, "openai")
         anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-        openrouter_p = _resolve_provider_key(user_providers, "openrouter")
         bedrock_p = _resolve_provider_key(user_providers, "bedrock")
         deepseek_p = _resolve_provider_key(user_providers, "deepseek")
         gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -393,7 +372,6 @@ def apply_project_settings(orchestrator, project_id: str) -> None:
                 new_model,
                 openai_api_key=(openai_p or {}).get("apiKey"),
                 anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-                openrouter_api_key=(openrouter_p or {}).get("apiKey"),
                 deepseek_api_key=(deepseek_p or {}).get("apiKey"),
                 gemini_api_key=(gemini_p or {}).get("apiKey"),
                 glm_api_key=(glm_p or {}).get("apiKey"),

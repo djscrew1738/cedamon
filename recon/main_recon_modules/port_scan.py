@@ -245,7 +245,7 @@ def build_naabu_command(targets_file: str, output_file: str, settings: dict, use
         use_proxy: Whether to use Tor proxy
 
     Returns:
-        List of command arguments
+        Tuple of (command arguments, use_proxy flag)
     """
     # Extract settings from passed dict
     NAABU_DOCKER_IMAGE = settings.get('NAABU_DOCKER_IMAGE', 'projectdiscovery/naabu:latest')
@@ -261,6 +261,10 @@ def build_naabu_command(targets_file: str, output_file: str, settings: dict, use
     NAABU_SKIP_HOST_DISCOVERY = settings.get('NAABU_SKIP_HOST_DISCOVERY', True)
     NAABU_VERIFY_PORTS = settings.get('NAABU_VERIFY_PORTS', True)
     NAABU_PASSIVE_MODE = settings.get('NAABU_PASSIVE_MODE', False)
+
+    # Phase-specific Tor handling
+    NAABU_USE_TOR = settings.get('NAABU_USE_TOR', False)
+    NAABU_TOR_TOP_PORTS = settings.get('NAABU_TOR_TOP_PORTS', '100')
 
     # Convert container paths to host paths for sibling container volume mounts
     targets_host_path = get_host_path(str(Path(targets_file).parent))
@@ -287,14 +291,25 @@ def build_naabu_command(targets_file: str, output_file: str, settings: dict, use
     cmd.append("-json")
     cmd.append("-silent")
 
+    # When proxying through Tor, SYN scans do not work reliably and CONNECT
+    # scans are required. Also shrink the port list to keep runtime reasonable.
+    effective_scan_type = NAABU_SCAN_TYPE
+    effective_top_ports = NAABU_TOP_PORTS
+    if use_proxy:
+        effective_scan_type = 'c'
+        if not NAABU_CUSTOM_PORTS:
+            effective_top_ports = NAABU_TOR_TOP_PORTS
+            print(f"[*][Naabu] Tor mode: limiting scan to top {effective_top_ports} ports "
+                  f"and CONNECT scan type")
+
     # Port configuration
     if NAABU_CUSTOM_PORTS:
         cmd.extend(["-p", NAABU_CUSTOM_PORTS])
-    elif NAABU_TOP_PORTS:
-        cmd.extend(["-top-ports", str(NAABU_TOP_PORTS)])
+    elif effective_top_ports:
+        cmd.extend(["-top-ports", str(effective_top_ports)])
 
     # Scan type
-    cmd.extend(["-scan-type", NAABU_SCAN_TYPE])
+    cmd.extend(["-scan-type", effective_scan_type])
 
     # Performance settings
     cmd.extend(["-rate", str(NAABU_RATE_LIMIT)])
@@ -322,7 +337,7 @@ def build_naabu_command(targets_file: str, output_file: str, settings: dict, use
     if use_proxy:
         cmd.extend(["-proxy", "127.0.0.1:9050"])
 
-    return cmd
+    return cmd, use_proxy
 
 
 # =============================================================================
@@ -530,6 +545,7 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             ("NAABU_VERIFY_PORTS", "Behavior"),
             ("NAABU_PASSIVE_MODE", "Behavior"),
             ("USE_TOR_FOR_RECON", "Anonymity"),
+            ("NAABU_USE_TOR", "Anonymity"),
         ],
     )
 
@@ -542,6 +558,17 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     NAABU_EXCLUDE_CDN = settings.get('NAABU_EXCLUDE_CDN', False)
     NAABU_PASSIVE_MODE = settings.get('NAABU_PASSIVE_MODE', False)
     USE_TOR_FOR_RECON = settings.get('USE_TOR_FOR_RECON', False)
+    NAABU_USE_TOR = settings.get('NAABU_USE_TOR', False)
+    NAABU_TOR_TOP_PORTS = settings.get('NAABU_TOR_TOP_PORTS', '100')
+    PORT_SCAN_TIMEOUT = settings.get('PORT_SCAN_TIMEOUT', 600)
+    PORT_SCAN_STALL_TIMEOUT = settings.get('PORT_SCAN_STALL_TIMEOUT', 120)
+
+    # Clean up stale recon containers left by previous scans before starting.
+    # This prevents volume/lock collisions and frees proxy bandwidth.
+    try:
+        cleanup_orphan_containers(project_id=settings.get('PROJECT_ID'))
+    except Exception as e:
+        print(f"[!][Naabu] Could not clean orphan containers: {e}")
 
     # Check Docker
     if not is_docker_installed():
@@ -557,14 +584,19 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         print("[!][Naabu] Failed to get Docker image")
         return recon_data
 
-    # Check Tor if enabled
+    # Determine whether this phase should use Tor.
+    # Default is NAABU_USE_TOR=False even when USE_TOR_FOR_RECON=True, because
+    # SYN/CONNECT port scans through Tor are unreliable and extremely slow.
     use_proxy = False
-    if USE_TOR_FOR_RECON:
-        if is_tor_running():
-            print("[✓][Naabu] Tor proxy detected — enabling anonymous scanning")
+    if USE_TOR_FOR_RECON and NAABU_USE_TOR:
+        if is_tor_healthy():
             use_proxy = True
+            print("[✓][Naabu] Tor circuit healthy — anonymous port scan enabled")
         else:
-            print("[!][Naabu] Tor not running — scanning without proxy")
+            print("[!][Naabu] Tor requested but circuit not healthy — using direct connection")
+    elif USE_TOR_FOR_RECON and not NAABU_USE_TOR:
+        print("[*][Naabu] Port scan running without Tor (NAABU_USE_TOR=false) for speed; "
+              "HTTP/vuln scans will still use Tor")
 
     # Extract targets
     print("[*][Naabu] Extracting targets from recon data...")
@@ -597,12 +629,18 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
         # Set output file
         naabu_output = scan_temp_dir / "naabu_output.json"
 
-        # Build and run command
-        cmd = build_naabu_command(str(targets_file), str(naabu_output), settings, use_proxy)
+        # Build command. build_naabu_command may force CONNECT scan + reduced
+        # ports when proxying through Tor.
+        cmd, _ = build_naabu_command(str(targets_file), str(naabu_output), settings, use_proxy)
+
+        # Effective settings after Tor/proxy adjustments
+        effective_scan_type = 'c' if use_proxy else NAABU_SCAN_TYPE
+        effective_top_ports = NAABU_TOR_TOP_PORTS if (use_proxy and not NAABU_CUSTOM_PORTS) else NAABU_TOP_PORTS
 
         print(f"[*][Naabu] Starting scan...")
-        print(f"[*][Naabu] Scan type: {'SYN' if NAABU_SCAN_TYPE == 's' else 'CONNECT'}")
-        print(f"[*][Naabu] Ports: {NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f'top {NAABU_TOP_PORTS}'}")
+        print(f"[*][Naabu] Proxy mode: {'Tor (anonymous)' if use_proxy else 'direct (fast)'}")
+        print(f"[*][Naabu] Scan type: {'SYN' if effective_scan_type == 's' else 'CONNECT'}")
+        print(f"[*][Naabu] Ports: {NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f'top {effective_top_ports}'}")
         print(f"[*][Naabu] Rate limit: {NAABU_RATE_LIMIT} pps")
         print(f"[*][Naabu] Threads: {settings.get('NAABU_THREADS', 25)}")
         print(f"[*][Naabu] Timeout: {settings.get('NAABU_TIMEOUT', 10000)}ms")
@@ -616,38 +654,50 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
         start_time = datetime.now()
 
-        # Execute scan with fallback mechanism
+        # Execute scan with fallback mechanism (SYN -> CONNECT) when not using Tor.
+        # Tor mode already forces CONNECT and reduced ports in build_naabu_command.
         scan_succeeded = False
         actual_scan_type = NAABU_SCAN_TYPE
+        stderr_log = ""
 
-        for attempt, scan_type in enumerate([NAABU_SCAN_TYPE, 'c'] if NAABU_SCAN_TYPE == 's' else [NAABU_SCAN_TYPE]):
+        attempts = [NAABU_SCAN_TYPE]
+        if not use_proxy and NAABU_SCAN_TYPE == 's':
+            attempts.append('c')
+
+        for attempt, scan_type in enumerate(attempts):
             if attempt > 0:
-                # Retry with CONNECT scan after SYN scan failed
                 print(f"[*][Naabu] Retrying with CONNECT scan...")
                 settings_copy = settings.copy()
                 settings_copy['NAABU_SCAN_TYPE'] = 'c'
-                cmd = build_naabu_command(str(targets_file), str(naabu_output), settings_copy, use_proxy)
+                cmd, _ = build_naabu_command(str(targets_file), str(naabu_output), settings_copy, use_proxy)
                 actual_scan_type = 'c'
 
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
+            try:
+                returncode, stdout, stderr, duration_sec = run_monitored_subprocess(
+                    cmd,
+                    output_path=naabu_output,
+                    timeout=PORT_SCAN_TIMEOUT,
+                    stall_timeout=PORT_SCAN_STALL_TIMEOUT,
+                    label="naabu",
+                )
+                stderr_log = stderr
+            except subprocess.TimeoutExpired:
+                print(f"[!][Naabu] Scan aborted: timeout or stall detected")
+                break
 
-            _, stderr = process.communicate(timeout=1800)  # 30 min timeout
+            # Surface useful diagnostics on failure
+            if stderr_log and returncode != 0 and not naabu_output.exists():
+                print(f"[!][Naabu] stderr: {stderr_log[:300]}")
 
             # Check for SIGSEGV crash (common in SYN mode)
-            if 'SIGSEGV' in stderr or 'segmentation' in stderr.lower():
+            if 'SIGSEGV' in stderr_log or 'segmentation' in stderr_log.lower():
                 print(f"[!][Naabu] Scan crashed (SIGSEGV) — binary error")
                 if scan_type == 's' and attempt == 0:
                     print(f"[*][Naabu] SYN scan requires raw sockets — will try CONNECT scan")
-                    continue  # Try CONNECT scan
-                else:
-                    break  # No more fallbacks
+                    continue
+                break
 
-            if process.returncode == 0 or naabu_output.exists():
+            if returncode == 0 or naabu_output.exists():
                 # SYN scan succeeded but found 0 ports — firewall may be
                 # silently dropping SYN probes.  Retry with CONNECT scan
                 # which uses full TCP handshake and works through most firewalls.
@@ -660,11 +710,11 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                 scan_succeeded = True
                 break
 
-            if stderr and attempt == 0 and scan_type == 's':
-                print(f"[!][Naabu] SYN scan failed: {stderr[:150] if stderr else 'Unknown error'}")
-                continue  # Try CONNECT scan
+            if stderr_log and attempt == 0 and scan_type == 's':
+                print(f"[!][Naabu] SYN scan failed: {stderr_log[:150] if stderr_log else 'Unknown error'}")
+                continue
 
-            print(f"[!][Naabu] Scan failed: {stderr[:200] if stderr else 'Unknown error'}")
+            print(f"[!][Naabu] Scan failed: {stderr_log[:200] if stderr_log else 'Unknown error'}")
             break
 
         end_time = datetime.now()
@@ -688,7 +738,7 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                 "docker_image": NAABU_DOCKER_IMAGE,
                 "scan_type": "syn" if actual_scan_type == "s" else "connect",
                 "scan_type_fallback": actual_scan_type != NAABU_SCAN_TYPE,
-                "ports_config": NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f"top-{NAABU_TOP_PORTS}",
+                "ports_config": NAABU_CUSTOM_PORTS if NAABU_CUSTOM_PORTS else f"top-{NAABU_TOR_TOP_PORTS if (use_proxy and not NAABU_CUSTOM_PORTS) else NAABU_TOP_PORTS}",
                 "rate_limit": NAABU_RATE_LIMIT,
                 "passive_mode": NAABU_PASSIVE_MODE,
                 "proxy_used": use_proxy,

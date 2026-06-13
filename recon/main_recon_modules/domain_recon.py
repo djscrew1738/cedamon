@@ -21,7 +21,7 @@ import dns.resolver
 import dns.reversename
 from pathlib import Path
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 import sys
 
 # Add project root to path for imports
@@ -29,6 +29,14 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from helpers.ai_signal_catalog import match_ai_txt_hint, match_ai_ns_hint
+from recon.helpers.domain_recon.alterx_helpers import discover_alterx_subdomains
+from recon.helpers.domain_recon.asnmap_helpers import discover_asnmap_assets
+from recon.helpers.domain_recon.bbot_helpers import discover_bbot_assets
+from recon.helpers.domain_recon.chaos_helpers import discover_chaos_subdomains
+from recon.helpers.domain_recon.cloud_enum_helpers import discover_cloud_enum_assets
+from recon.helpers.domain_recon.cloudlist_helpers import discover_cloudlist_assets
+from recon.helpers.domain_recon.dnsx_helpers import discover_dnsx_records
+from recon.helpers.domain_recon.tlsx_helpers import discover_tlsx_assets
 
 # Settings are passed from main.py to avoid multiple database queries
 
@@ -272,14 +280,20 @@ def run_subfinder(domain: str, settings: dict = None) -> set:
 
     print(f"[*][Subfinder] Running passive enumeration...")
 
+    # Import proxy helpers (lazy — only when this function runs)
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+
     command = [
         'docker', 'run', '--rm',
+    ]
+    command.extend(get_proxy_env_flags())
+    command.extend([
         docker_image,
         '-d', domain,
         '-json', '-silent',
         '-timeout', '30',
         '-max-time', '10',
-    ]
+    ])
 
     subdomains = set()
     try:
@@ -360,13 +374,19 @@ def run_amass(domain: str, settings: dict = None) -> set:
 
     brute_wordlists = settings.get('AMASS_BRUTE_WORDLISTS', ['default'])
 
+    # Import proxy helpers (lazy — only when this function runs)
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+
     command = [
         'docker', 'run', '--rm',
+    ]
+    command.extend(get_proxy_env_flags())
+    command.extend([
         '-v', f'{amass_temp}:/root/.config/amass',
         docker_image,
         'enum', '-d', domain,
         '-timeout', str(timeout_min),
-    ]
+    ])
 
     if active:
         command.append('-active')
@@ -681,15 +701,21 @@ def run_puredns_resolve(subdomains: list, domain: str, settings: dict = None) ->
     with open(input_file, 'w') as f:
         f.write('\n'.join(subdomains))
 
+    # Import proxy helpers (lazy — only when this function runs)
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+
     command = [
         'docker', 'run', '--rm',
+    ]
+    command.extend(get_proxy_env_flags())
+    command.extend([
         '-v', f'{data_dir}:/data',
         docker_image,
         'resolve', f'/data/{input_file.name}',
         '-r', '/data/resolvers.txt',
         '--write', f'/data/{output_file.name}',
         '-q',
-    ]
+    ])
 
     if threads > 0:
         command.extend(['-t', str(threads)])
@@ -793,39 +819,64 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
                 ("PUREDNS_SKIP_VALIDATION", "Puredns wildcard filter"),
                 ("DNS_MAX_WORKERS", "DNS resolution"),
                 ("DNS_RECORD_PARALLELISM", "DNS resolution"),
+                ("ALTERX_ENABLED", "Alterx permutation"),
+                ("ALTERX_ENRICH", "Alterx permutation"),
+                ("ALTERX_LIMIT", "Alterx permutation"),
+                ("BBOT_ENABLED", "BBOT OSINT"),
+                ("CHAOS_ENABLED", "Chaos subdomain dataset"),
+                ("ASNMAP_ENABLED", "ASNmap IP/CIDR mapping"),
+                ("DNSX_ENABLED", "DNSx enrichment"),
+                ("TLSX_ENABLED", "TLSx certificate intelligence"),
+                ("CLOUD_ENUM_ENABLED", "cloud_enum public cloud brute-force"),
+                ("CLOUDLIST_ENABLED", "Cloudlist credential-based cloud assets"),
             ],
         )
 
     # Setup
     pc_prefix = get_proxychains_prefix(anonymous)
 
-    # Subdomain Discovery — fan-out all 5 tools in parallel
-    print(f"[*][Discovery] Launching 5 discovery tools in parallel...")
-    with ThreadPoolExecutor(max_workers=5, thread_name_prefix="discovery") as executor:
+    # Subdomain Discovery — fan-out all discovery tools in parallel
+    # Overall timeout prevents the entire scan from hanging if one tool stalls.
+    _overall_discovery_timeout = (settings or {}).get(
+        "DISCOVERY_OVERALL_TIMEOUT", 900
+    )
+    print(f"[*][Discovery] Launching discovery tools in parallel "
+          f"(overall timeout={_overall_discovery_timeout}s)...")
+    with ThreadPoolExecutor(max_workers=7, thread_name_prefix="discovery") as executor:
         futures = {
             executor.submit(query_crtsh, domain, anonymous, settings): "crtsh",
             executor.submit(query_hackertarget, domain, anonymous, settings): "hackertarget",
             executor.submit(run_subfinder, domain, settings): "subfinder",
             executor.submit(run_amass, domain, settings): "amass",
             executor.submit(run_knockpy, domain, pc_prefix, bruteforce, settings): "knockpy",
+            executor.submit(discover_chaos_subdomains, domain, settings or {}): "chaos",
+            executor.submit(discover_cloud_enum_assets, domain, settings or {}): "cloud_enum",
         }
 
         discovery_results = {}
-        for future in as_completed(futures):
-            label = futures[future]
-            try:
-                discovery_results[label] = future.result()
-            except Exception as e:
-                print(f"[!][{label}] Failed: {e}")
-                # crtsh/hackertarget return dict, others return set
-                discovery_results[label] = {} if label in ("crtsh", "hackertarget") else set()
+        try:
+            for future in as_completed(futures, timeout=_overall_discovery_timeout):
+                label = futures[future]
+                try:
+                    discovery_results[label] = future.result()
+                except Exception as e:
+                    print(f"[!][{label}] Failed: {e}")
+                    # crtsh/hackertarget return dict, others return set
+                    discovery_results[label] = {} if label in ("crtsh", "hackertarget") else set()
+        except TimeoutError:
+            print(f"[!][Discovery] Overall timeout ({_overall_discovery_timeout}s) reached — "
+                  f"cancelling remaining tasks and proceeding with partial results")
+            for future in futures:
+                future.cancel()
 
     print(f"[+][Discovery] All discovery tools complete — merging results")
 
     # Fan-in: combine results from all tools
     # crtsh and hackertarget return {subdomain: set_of_sources}
-    # subfinder, amass, knockpy return set of subdomains
+    # subfinder, amass, knockpy, chaos return set of subdomains
+    # cloud_enum returns list of public cloud asset dicts
     sourced_subs = {}  # domain -> set of source labels
+    cloud_enum_assets: list = list(discovery_results.get("cloud_enum", []))
     for s, sources in discovery_results.get("crtsh", {}).items():
         sourced_subs.setdefault(s, set()).update(sources)
     for s, sources in discovery_results.get("hackertarget", {}).items():
@@ -836,6 +887,9 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
         sourced_subs.setdefault(s, set()).add("amass")
     for s in discovery_results.get("knockpy", set()):
         sourced_subs.setdefault(s, set()).add("knockpy")
+    for s in discovery_results.get("chaos", set()):
+        sourced_subs.setdefault(s, set()).add("chaos")
+    # cloud_enum assets are already collected in cloud_enum_assets above
 
     filtered_subs = []
     external_domain_entries = []
@@ -853,6 +907,45 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
     if len(all_subs) < pre_filter_count:
         print(f"[+][Puredns] Wildcard filtering: {pre_filter_count} → {len(all_subs)} subdomains")
 
+    # BBOT comprehensive OSINT (after puredns, before DNS resolution)
+    bbot_assets: dict = {}
+    if (settings or {}).get('BBOT_ENABLED', True):
+        try:
+            bbot_assets = discover_bbot_assets(domain, settings or {})
+            bbot_subs = bbot_assets.get("subdomains", [])
+            if bbot_subs:
+                pre_bbot = len(all_subs)
+                all_subs = sorted(set(all_subs) | set(bbot_subs))
+                print(f"[+][BBOT] Added {len(all_subs) - pre_bbot} new subdomain(s)")
+        except Exception as e:
+            print(f"[!][BBOT] Discovery failed: {e}")
+
+    # Alterx subdomain permutation (after bbot, before DNS resolution)
+    alterx_new = []
+    if (settings or {}).get('ALTERX_ENABLED', True):
+        try:
+            alterx_new = discover_alterx_subdomains(domain, all_subs, settings or {})
+            if alterx_new:
+                all_subs = sorted(set(all_subs) | set(alterx_new))
+        except Exception as e:
+            print(f"[!][Alterx] Permutation discovery failed: {e}")
+
+    # Cloudlist credential-based cloud asset enumeration
+    cloudlist_assets: list = []
+    if (settings or {}).get('CLOUDLIST_ENABLED', False):
+        try:
+            cloudlist_assets = discover_cloudlist_assets(settings or {})
+        except Exception as e:
+            print(f"[!][Cloudlist] Cloud asset enumeration failed: {e}")
+
+    # DNSx enrichment (after puredns/bbot/alterx, before full DNS resolution)
+    dnsx_records: list = []
+    if (settings or {}).get('DNSX_ENABLED', True):
+        try:
+            dnsx_records = discover_dnsx_records(all_subs + [domain], settings or {})
+        except Exception as e:
+            print(f"[!][DNSx] DNS enrichment failed: {e}")
+
     # Build result structure
     result = {
         "metadata": {
@@ -865,6 +958,11 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
         "domain": domain,
         "subdomains": all_subs,
         "subdomain_count": len(all_subs),
+        "alterx_new_subdomains": alterx_new,
+        "bbot_assets": bbot_assets,
+        "cloudlist_assets": cloudlist_assets,
+        "cloud_enum_assets": cloud_enum_assets,
+        "dnsx_records": dnsx_records,
         "dns": {},
         "external_domains": external_domain_entries,
     }
@@ -877,17 +975,60 @@ def discover_subdomains(domain: str, anonymous: bool = False, bruteforce: bool =
 
     # Build subdomain status map from DNS results
     subdomain_status_map = {}
+    resolved_hosts = []
+    resolved_ips = []
     if result["dns"]:
         dns_subs = result["dns"].get("subdomains", {})
         for s in all_subs:
             info = result["dns"].get("domain", {}) if s == domain else dns_subs.get(s, {})
             if info.get("has_records", False):
                 subdomain_status_map[s] = "resolved"
+                resolved_hosts.append(s)
+                resolved_ips.extend(info.get("records", {}).get("A", []))
+                resolved_ips.extend(info.get("records", {}).get("AAAA", []))
+        # Include root domain
+        root_info = result["dns"].get("domain", {})
+        resolved_ips.extend(root_info.get("records", {}).get("A", []))
+        resolved_ips.extend(root_info.get("records", {}).get("AAAA", []))
     else:
         # DNS step was skipped (resolve=False) — assume all are resolved
         for s in all_subs:
             subdomain_status_map[s] = "resolved"
+            resolved_hosts.append(s)
     result["subdomain_status_map"] = subdomain_status_map
+
+    # ASNmap enrichment (IP/CIDR mapping) - runs after DNS resolution
+    asnmap_assets: list = []
+    if (settings or {}).get('ASNMAP_ENABLED', True):
+        try:
+            unique_ips = sorted(set(ip for ip in resolved_ips if ip))
+            asnmap_assets = discover_asnmap_assets(domain, unique_ips, settings or {})
+        except Exception as e:
+            print(f"[!][ASNmap] ASN mapping failed: {e}")
+
+    # TLSx certificate intelligence - runs after DNS resolution
+    tlsx_assets: dict = {}
+    if (settings or {}).get('TLSX_ENABLED', True):
+        try:
+            tlsx_ports = list(settings.get('TLSX_PORTS', ['443', '8443']))
+            tlsx_hosts = []
+            for host in resolved_hosts:
+                for port in tlsx_ports:
+                    tlsx_hosts.append(f"{host}:{port}")
+            if tlsx_hosts:
+                tlsx_assets = discover_tlsx_assets(domain, tlsx_hosts, settings or {})
+                tlsx_subs = tlsx_assets.get("subdomains", [])
+                if tlsx_subs:
+                    pre_tlsx = len(all_subs)
+                    all_subs = sorted(set(all_subs) | set(tlsx_subs))
+                    print(f"[+][TLSx] Added {len(all_subs) - pre_tlsx} new subdomain(s) from certificates")
+        except Exception as e:
+            print(f"[!][TLSx] TLS certificate scanning failed: {e}")
+
+    result["asnmap_assets"] = asnmap_assets
+    result["tlsx_assets"] = tlsx_assets
+    result["subdomains"] = all_subs
+    result["subdomain_count"] = len(all_subs)
 
     # Save JSON output (use project_id for filename if provided, fallback to domain)
     if save_output:

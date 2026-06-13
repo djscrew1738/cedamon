@@ -419,6 +419,10 @@ def verify_gau_urls(
             "-rl", str(rate_limit),
         ]
 
+        # Inject proxy env vars when Tor is enabled
+        from recon.helpers.docker_helpers import get_proxy_env_flags
+        cmd.extend(get_proxy_env_flags(net_host=True))
+
         if use_proxy:
             cmd.extend(["-proxy", "socks5://127.0.0.1:9050"])
 
@@ -512,6 +516,10 @@ def detect_gau_methods(
             "-rl", str(rate_limit),
         ]
 
+        # Inject proxy env vars when Tor is enabled
+        from recon.helpers.docker_helpers import get_proxy_env_flags
+        cmd.extend(get_proxy_env_flags(net_host=True))
+
         if use_proxy:
             cmd.extend(["-proxy", "socks5://127.0.0.1:9050"])
 
@@ -590,6 +598,10 @@ def detect_gau_methods(
                 "-timeout", str(timeout),
                 "-rl", str(rate_limit),
             ]
+
+            # Inject proxy env vars when Tor is enabled
+            from recon.helpers.docker_helpers import get_proxy_env_flags
+            get_cmd.extend(get_proxy_env_flags(net_host=True))
 
             if use_proxy:
                 get_cmd.extend(["-proxy", "socks5://127.0.0.1:9050"])

@@ -183,7 +183,7 @@ EXPOSE 9050
 ENV TARGET_DOMAIN=""
 ENV SUBDOMAIN_LIST=""
 ENV SCAN_MODULES="domain_discovery,port_scan,http_probe,resource_enum,vuln_scan"
-ENV USE_TOR_FOR_RECON="false"
+ENV USE_TOR_FOR_RECON="true"
 ENV USE_BRUTEFORCE_FOR_SUBDOMAINS="false"
 ENV UPDATE_GRAPH_DB="false"
 ENV USER_ID="default_user"

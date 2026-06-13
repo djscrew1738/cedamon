@@ -252,9 +252,14 @@ def build_subjack_command(
     check_mail: bool = False,
     verbose: bool = False,
     resolver_list: Optional[str] = None,
+    anonymous: bool = True,
 ) -> list[str]:
     """
     Build the subjack argv.
+
+    When *anonymous* is True (default) and Tor is running, the command is
+    prefixed with ``proxychains4 -q`` so all HTTP connections are routed
+    through the Tor SOCKS proxy.
 
     Flags (verified against upstream README of haccer/subjack):
         -w <wordlist>  Path to subdomain list
@@ -272,13 +277,19 @@ def build_subjack_command(
 
     Note: subjack has NO -c flag; fingerprints are compiled into the binary.
     """
-    cmd: list[str] = [
+    # Prepend proxychains when Tor is enabled (routes HTTP through SOCKS5)
+    cmd: list[str] = []
+    if anonymous:
+        from recon.helpers.docker_helpers import get_proxychains_prefix
+        cmd.extend(get_proxychains_prefix())
+
+    cmd.extend([
         "subjack",
         "-w", targets_file,
         "-t", str(threads),
         "-timeout", str(timeout),
         "-o", output_file,
-    ]
+    ])
     if ssl:
         cmd.append("-ssl")
     if all_urls:

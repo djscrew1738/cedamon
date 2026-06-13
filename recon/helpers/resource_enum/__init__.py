@@ -9,6 +9,7 @@ This package contains helper functions for resource enumeration:
 - gau_helpers: GAU passive URL discovery from web archives
 - kiterunner_helpers: Kiterunner API endpoint bruteforcing
 - katana_helpers: Katana active web crawling
+- waymore_helpers: Passive URL discovery from web archives
 - endpoint_helpers: Endpoint organization and structuring
 """
 
@@ -51,6 +52,12 @@ from .katana_helpers import (
     run_katana_crawler,
     fetch_forms_from_urls,
     pull_katana_docker_image,
+)
+
+# waymore helpers
+from .waymore_helpers import (
+    run_waymore_discovery,
+    merge_waymore_into_by_base_url,
 )
 
 # Hakrawler helpers
@@ -133,6 +140,9 @@ __all__ = [
     "run_katana_crawler",
     "fetch_forms_from_urls",
     "pull_katana_docker_image",
+    # waymore
+    "run_waymore_discovery",
+    "merge_waymore_into_by_base_url",
     # Hakrawler
     "run_hakrawler_crawler",
     "pull_hakrawler_docker_image",

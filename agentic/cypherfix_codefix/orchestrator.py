@@ -455,7 +455,6 @@ class CodeFixOrchestrator:
 
         openai_p = _resolve_provider_key(user_providers, "openai")
         anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-        openrouter_p = _resolve_provider_key(user_providers, "openrouter")
         bedrock_p = _resolve_provider_key(user_providers, "bedrock")
         deepseek_p = _resolve_provider_key(user_providers, "deepseek")
         gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -469,7 +468,6 @@ class CodeFixOrchestrator:
             model,
             openai_api_key=(openai_p or {}).get("apiKey"),
             anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-            openrouter_api_key=(openrouter_p or {}).get("apiKey"),
             deepseek_api_key=(deepseek_p or {}).get("apiKey"),
             gemini_api_key=(gemini_p or {}).get("apiKey"),
             glm_api_key=(glm_p or {}).get("apiKey"),

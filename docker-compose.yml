@@ -73,7 +73,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 10s
     networks:
       - redamon
 
@@ -226,7 +226,7 @@ services:
     volumes:
       - gvm_psql_data:/var/lib/postgresql
       - gvm_psql_socket:/var/run/postgresql
-    entrypoint: ["/bin/sh", "-c", "rm -f /var/run/postgresql/.s.PGSQL.5432.lock /var/run/postgresql/.s.PGSQL.5432 /var/lib/postgresql/17/main/postmaster.pid && echo 'Cleaned stale PG locks'"]
+    entrypoint: ["/bin/sh", "-c", "if [ -S /var/run/postgresql/.s.PGSQL.5432 ]; then echo 'Postgres socket present - skipping stale-lock cleanup'; exit 0; fi; rm -f /var/run/postgresql/.s.PGSQL.5432.lock /var/run/postgresql/.s.PGSQL.5432 /var/lib/postgresql/17/main/postmaster.pid && echo 'Cleaned stale PG locks'"]
 
     logging:
       driver: "json-file"
@@ -254,11 +254,11 @@ services:
     deploy:
       resources:
         limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
     logging:
       driver: "json-file"
       options:
@@ -296,11 +296,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1G
+          cpus: '1.5'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 256M
+          cpus: '0.5'
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -446,6 +446,7 @@ services:
       - ./recon_orchestrator:/app
       - ./recon:/app/recon:ro
       - ./recon/output:/app/recon/output:rw
+      - ./graph_db:/app/graph_db:ro
       - ./gvm_scan:/app/gvm_scan:ro
       - ./gvm_scan/output:/app/gvm_scan/output:rw
       - ./github_secret_hunt:/app/github_secret_hunt:ro
@@ -571,7 +572,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 180s
+      start_period: 60s
     networks:
       redamon:
       pentest-net:
@@ -651,8 +652,8 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 60s
-      timeout: 60s
+      interval: 15s
+      timeout: 10s
       retries: 3
       start_period: 30s
     networks:
@@ -825,7 +826,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 20s
     networks:
       - redamon
 

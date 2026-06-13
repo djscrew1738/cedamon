@@ -4461,9 +4461,9 @@ flowchart LR
 | `FIRETEAM_TIMEOUT_SEC` | `1800` | Wall-clock ceiling per wave (gather timeout) |
 | `FIRETEAM_CONFIRMATION_TIMEOUT_SEC` | `600` | Per-member confirmation wait before auto-reject |
 | `FIRETEAM_ALLOWED_PHASES` | `["informational","exploitation","post_exploitation"]` | Phases in which the agent may deploy a fireteam |
-| `INFORMATIONAL_SYSTEM_PROMPT` | `""` | Custom system prompt injected during informational phase |
-| `EXPL_SYSTEM_PROMPT` | `""` | Custom system prompt injected during exploitation phase |
-| `POST_EXPL_SYSTEM_PROMPT` | `""` | Custom system prompt injected during post-exploitation phase |
+| `INFORMATIONAL_SYSTEM_PROMPT` | built-in default | Custom system prompt injected during informational phase (empty string falls back to built-in default) |
+| `EXPL_SYSTEM_PROMPT` | built-in default | Custom system prompt injected during exploitation phase (empty string falls back to built-in default) |
+| `POST_EXPL_SYSTEM_PROMPT` | built-in default | Custom system prompt injected during post-exploitation phase (empty string falls back to built-in default) |
 | `CYPHER_MAX_RETRIES` | `3` | Neo4j text-to-Cypher retry limit |
 | `CREATE_GRAPH_IMAGE_ON_INIT` | `false` | Export LangGraph structure as PNG on startup |
 | `TOOL_PHASE_MAP` | *(see below)* | Per-tool phase access control (DB-driven) |

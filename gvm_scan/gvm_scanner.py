@@ -99,7 +99,12 @@ class GVMScanner:
         self.scan_config_name = scan_config or get_setting('SCAN_CONFIG', 'Full and fast')
         self.task_timeout = task_timeout if task_timeout is not None else get_setting('TASK_TIMEOUT', 14400)
         self.poll_interval = poll_interval if poll_interval is not None else get_setting('POLL_INTERVAL', 30)
-        
+
+        # Performance/concurrency settings
+        self.port_list_name = get_setting('PORT_LIST', 'All IANA assigned TCP and UDP')
+        self.max_hosts = get_setting('MAX_HOSTS', 0) or None
+        self.max_checks = get_setting('MAX_CHECKS', 0) or None
+
         # Connection state
         self._connection = None
         self.gmp = None
@@ -111,20 +116,22 @@ class GVMScanner:
         self.xml_format_id: Optional[str] = None
         self.port_list_id: Optional[str] = None
     
-    def connect(self, max_retries: int = 60, retry_interval: int = 30) -> bool:
+    def connect(self, max_retries: int = 30, retry_interval: int = 5) -> bool:
         """
-        Establish connection to GVMD with retry logic.
+        Establish connection to GVMD with exponential-backoff retry logic.
 
         Waits for gvmd to be fully ready (feeds imported, scan configs loaded).
         On first boot this can take 20-30 minutes.
 
         Args:
             max_retries: Maximum number of connection attempts (default: 30)
-            retry_interval: Seconds between retries (default: 30)
+            retry_interval: Initial seconds between retries; doubled each attempt
+                            up to a cap of 30s (default: 5)
 
         Returns:
             True if connected successfully
         """
+        backoff_cap = 30
         for attempt in range(1, max_retries + 1):
             try:
                 # Clean up any previous failed connection
@@ -147,11 +154,12 @@ class GVMScanner:
                 # Authenticate with GVM
                 self.gmp.authenticate(self.username, self.password)
 
-                # Cache commonly needed IDs
-                self._cache_scanner_id()
-                self._cache_config_id()
-                self._cache_report_format_id()
-                self._cache_port_list_id()
+                # Wait for feed sync before assuming GVM is usable.  This gives
+                # clearer feedback than repeated config-not-found retries.
+                self._wait_for_feed_sync(max_wait=120)
+
+                # Cache commonly needed IDs (parallelised to reduce startup time)
+                self._cache_all_ids()
 
                 self.connected = True
                 print(f"[+] Connected to GVM at {self.socket_path}")
@@ -173,15 +181,17 @@ class GVMScanner:
                     else:
                         reason = error_msg
 
+                    # Exponential backoff: double each attempt, capped
+                    wait = min(retry_interval * (2 ** (attempt - 1)), backoff_cap)
                     print(
                         f"[*] Waiting for GVM to be ready... "
                         f"(attempt {attempt}/{max_retries}, {reason})"
                     )
                     print(
-                        f"    Retrying in {retry_interval}s... "
+                        f"    Retrying in {wait}s... "
                         f"(first boot takes ~10-15 min for feed sync)"
                     )
-                    time.sleep(retry_interval)
+                    time.sleep(wait)
                 else:
                     print(f"[!] Failed to connect to GVM after {max_retries} attempts: {error_msg}")
                     self.connected = False
@@ -199,7 +209,87 @@ class GVMScanner:
         self._connection = None
         self.connected = False
         self.gmp = None
-    
+
+    def _wait_for_feed_sync(self, max_wait: int = 120):
+        """
+        Wait until GVM feeds are no longer syncing and scan configs are loaded.
+
+        Uses adaptive polling: fast (2s) at first, slowing to 15s over time.
+
+        Args:
+            max_wait: Maximum seconds to wait before raising RuntimeError.
+                      The outer connect() retry loop will try again.
+
+        Raises:
+            RuntimeError: If feeds are not ready within max_wait seconds.
+        """
+        start = time.time()
+        while True:
+            try:
+                feeds = self.gmp.get_feeds()
+                syncing = feeds.findall(".//currently_syncing")
+                configs = self.gmp.get_scan_configs()
+                config_count_text = configs.findtext(".//config_count", "0")
+                try:
+                    config_count = int(config_count_text or "0")
+                except (ValueError, TypeError):
+                    config_count = 0
+
+                if not syncing and config_count > 0:
+                    print(
+                        f"    [+] GVM feed sync complete "
+                        f"({config_count} scan config(s) available)"
+                    )
+                    return
+
+                elapsed = int(time.time() - start)
+                if elapsed > max_wait:
+                    raise RuntimeError(
+                        f"GVM feed sync not ready after {max_wait}s "
+                        f"(syncing={len(syncing)}, configs={config_count})"
+                    )
+
+                # Adaptive poll interval: fast at first, slow down over time
+                interval = min(max(2, 15 - elapsed // 10), 15)
+                print(
+                    f"    [*] Waiting for GVM feed sync... "
+                    f"syncing={len(syncing)}, configs={config_count}, "
+                    f"elapsed={elapsed}s"
+                )
+                time.sleep(interval)
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                # If we can't query feeds, treat it as transient and let the
+                # outer connect() retry loop handle it.
+                raise RuntimeError(f"Feed-sync check failed: {exc}")
+
+    def _cache_all_ids(self):
+        """
+        Cache all commonly needed GVM IDs in parallel.
+
+        The four GMP queries (scanners, scan configs, report formats,
+        port lists) are independent round-trips to gvmd.  Running them
+        sequentially adds 4× latency; parallelising them cuts the wall-clock
+        time to roughly that of the slowest single query.
+        """
+        import concurrent.futures as cf
+
+        with cf.ThreadPoolExecutor(max_workers=4) as pool:
+            f_scanner = pool.submit(self._cache_scanner_id)
+            f_config = pool.submit(self._cache_config_id)
+            f_format = pool.submit(self._cache_report_format_id)
+            f_portlist = pool.submit(self._cache_port_list_id)
+            # Re-raise the first exception (if any) so the caller sees failures
+            for f in (f_scanner, f_config, f_format, f_portlist):
+                try:
+                    f.result()
+                except cf.BrokenThreadPool:
+                    raise
+                except Exception:
+                    # Log but don't abort — a single cache miss may be tolerable
+                    pass
+
     def _cache_scanner_id(self):
         """Get and cache OpenVAS scanner ID."""
         scanners = self.gmp.get_scanners()
@@ -239,13 +329,14 @@ class GVMScanner:
         self.xml_format_id = "a994b278-1f62-11e1-96ac-406186ea4fc5"
     
     def _cache_port_list_id(self):
-        """Get and cache port list ID (All IANA assigned TCP and UDP)."""
+        """Get and cache port list ID (default from project settings)."""
         port_lists = self.gmp.get_port_lists()
-        # Prefer "All IANA assigned TCP and UDP" for comprehensive scanning
+        # User-selected port list takes priority, then sane fallbacks.
         preferred_lists = [
+            self.port_list_name,
             "All IANA assigned TCP and UDP",
             "All IANA assigned TCP",
-            "All TCP and Nmap top 1000 UDP",
+            "All TCP and Nmap top 100 UDP",
         ]
         
         for preferred in preferred_lists:
@@ -307,24 +398,31 @@ class GVMScanner:
     def create_task(self, name: str, target_id: str, comment: str = "") -> str:
         """
         Create a scan task in GVM.
-        
+
         Args:
             name: Task name
             target_id: ID of target to scan
             comment: Optional description
-            
+
         Returns:
             Task ID
         """
         if not target_id:
             raise ValueError("create_task requires a target_id argument")
-            
+
+        preferences = {}
+        if self.max_hosts:
+            preferences["max_hosts"] = self.max_hosts
+        if self.max_checks:
+            preferences["max_checks"] = self.max_checks
+
         response = self.gmp.create_task(
             name=name,
             config_id=self.config_id,
             target_id=target_id,
             scanner_id=self.scanner_id,
-            comment=comment or f"RedAmon scan - {datetime.now().isoformat()}"
+            comment=comment or f"RedAmon scan - {datetime.now().isoformat()}",
+            preferences=preferences if preferences else None,
         )
         # Extract ID from XML response
         task_id = response.get('id') if hasattr(response, 'get') else None

@@ -849,6 +849,9 @@ def build_httpx_command(targets_file: str, output_file: str, settings: dict, use
     targets_filename = Path(targets_file).name
     output_filename = Path(output_file).name
 
+    # Import proxy helpers (lazy — only when this function runs)
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+
     # Build Docker command
     cmd = [
         "docker", "run", "--rm",
@@ -862,6 +865,7 @@ def build_httpx_command(targets_file: str, output_file: str, settings: dict, use
         "-v", f"{targets_host_path}:/targets:ro",
         "-v", f"{output_host_path}:/output",
     ]
+    cmd.extend(get_proxy_env_flags(net_host=True))
 
     # Add image
     cmd.append(HTTPX_DOCKER_IMAGE)

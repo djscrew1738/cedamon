@@ -117,7 +117,7 @@ class TestListSkills(unittest.TestCase):
             "vulnerabilities", "tooling", "scan_modes", "frameworks",
             "technologies", "protocols", "coordination", "general",
             "cloud", "mobile", "api_security", "wireless",
-            "network", "active_directory", "social_engineering", "reporting",
+            "network", "active_directory", "social_engineering", "reporting", "post_exploitation",
         }
         skills = list_skills()
         for skill in skills:

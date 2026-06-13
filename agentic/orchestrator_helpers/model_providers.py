@@ -2,7 +2,7 @@
 Model provider discovery for RedAmon Agent.
 
 Fetches available models from configured AI providers (OpenAI, Anthropic,
-OpenRouter, AWS Bedrock) and returns them in a unified format for the frontend.
+AWS Bedrock) and returns them in a unified format for the frontend.
 Provider keys come from user settings in the database (passed as params).
 """
 
@@ -104,54 +104,6 @@ async def fetch_anthropic_models(api_key: str = "") -> list[dict]:
 
     return models
 
-
-# ---------------------------------------------------------------------------
-# OpenRouter
-# ---------------------------------------------------------------------------
-async def fetch_openrouter_models(api_key: str = "") -> list[dict]:
-    """Fetch models from the OpenRouter API."""
-    # OpenRouter model listing is public, but we only show it if a key is configured
-    if not api_key:
-        return []
-
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get("https://openrouter.ai/api/v1/models")
-        resp.raise_for_status()
-
-    data = resp.json().get("data", [])
-
-    models = []
-    for m in data:
-        mid = m.get("id", "")
-        name = m.get("name", mid)
-        ctx = m.get("context_length")
-
-        # Only include models that accept text input and produce text output
-        arch = m.get("architecture", {})
-        input_mods = arch.get("input_modalities", [])
-        output_mods = arch.get("output_modalities", [])
-        if "text" not in input_mods or "text" not in output_mods:
-            continue
-
-        # Build pricing description
-        pricing = m.get("pricing", {})
-        prompt_cost = pricing.get("prompt", "0")
-        completion_cost = pricing.get("completion", "0")
-        try:
-            p_cost = float(prompt_cost) * 1_000_000
-            c_cost = float(completion_cost) * 1_000_000
-            price_desc = f"${p_cost:.2f}/${c_cost:.2f} per 1M tokens"
-        except (ValueError, TypeError):
-            price_desc = ""
-
-        models.append(_model(
-            id=f"openrouter/{mid}",
-            name=name,
-            context_length=ctx,
-            description=price_desc,
-        ))
-
-    return models
 
 
 # ---------------------------------------------------------------------------
@@ -533,8 +485,6 @@ async def fetch_all_models(
             tasks_db[f"OpenAI ({pname})"] = fetch_openai_models(api_key=p.get("apiKey", ""))
         elif ptype == "anthropic":
             tasks_db[f"Anthropic ({pname})"] = fetch_anthropic_models(api_key=p.get("apiKey", ""))
-        elif ptype == "openrouter":
-            tasks_db[f"OpenRouter ({pname})"] = fetch_openrouter_models(api_key=p.get("apiKey", ""))
         elif ptype == "deepseek":
             tasks_db[f"DeepSeek ({pname})"] = fetch_deepseek_models(api_key=p.get("apiKey", ""))
         elif ptype == "gemini":

@@ -1,0 +1,76 @@
+# =============================================================================
+# RedAmon — Production Hardening Overlay
+# =============================================================================
+# Usage:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+# This file layers production-hardening overrides on top of the main compose:
+#   - Removes unnecessary host port bindings (DBs accessible only inside the
+#     Docker network, not from the host).
+#   - Adds no-new-privileges and read-only root filesystem where safe.
+#   - Uses tmpfs for ephemeral writes in containers that only persist data
+#     through mounted volumes.
+#
+# You should still:
+#   1. Copy .env.example → .env and fill in strong secrets.
+#   2. Run ./scripts/check-env.sh before every deploy.
+#   3. Keep the host OS, Docker Engine, and base images up to date.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Databases — internal network only; no host port exposure
+  # ---------------------------------------------------------------------------
+  postgres:
+    ports: !reset []
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  neo4j:
+    ports: !reset []
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
+  # Backend services — read-only root fs, ephemeral /tmp
+  # ---------------------------------------------------------------------------
+  webapp:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  agent:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=500m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  recon-orchestrator:
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
+  # Kali sandbox — runs as root inside for tool compatibility,
+  # but prevents privilege escalation
+  # ---------------------------------------------------------------------------
+  kali-sandbox:
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
+  # GVM stack — keep existing caps (NET_ADMIN, NET_RAW) but add baseline
+  # ---------------------------------------------------------------------------
+  gvm-ospd:
+    security_opt:
+      - no-new-privileges:true

@@ -489,3 +489,102 @@
   color: var(--text-primary);
   background: var(--bg-hover, rgba(255,255,255,0.06));
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 900px) {
+  .tabBar {
+    height: auto;
+    min-height: 32px;
+    padding: 0 var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: var(--space-0-5);
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    padding: var(--space-1) var(--space-2);
+    font-size: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .searchWrapper {
+    width: 120px;
+  }
+
+  .tunnelBadges {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .tabBar {
+    padding: 0 var(--space-1);
+  }
+
+  .tab {
+    padding: var(--space-1) var(--space-1-5);
+    font-size: 9px;
+  }
+
+  .searchWrapper {
+    width: 90px;
+  }
+
+  .rowCount {
+    display: none;
+  }
+
+  .exportBtn span {
+    display: none;
+  }
+}
+
+/* ─── Mobile table-view dropdown ─── */
+
+@media (max-width: 768px) {
+  .tableDropdownMenu {
+    position: fixed;
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    min-width: auto;
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 6px;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .tableDropdownItem,
+  .tableDropdownItemActive {
+    padding: 12px 14px;
+    font-size: var(--text-sm);
+    min-height: 44px;
+  }
+
+  .tableDropdownHeader {
+    padding: 10px 14px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tableDropdownMenu {
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+  }
+}

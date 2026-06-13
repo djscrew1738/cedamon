@@ -42,6 +42,8 @@ def _crawl_single_url(
     # targets. See recon/helpers/resource_enum/katana_helpers.py for the long
     # comment on why sibling docker containers can't see 127.0.0.1 otherwise.
     cmd = ["docker", "run", "--rm", "--net=host", "-i"]
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+    cmd.extend(get_proxy_env_flags(net_host=True))
 
     cmd.append(docker_image)
 

@@ -294,6 +294,15 @@
   font-weight: 500;
 }
 
+/* Vulnerability findings in verbose scan logs. Bright green background +
+   left border so critical/high findings are impossible to miss. */
+.logVulnerability {
+  background: rgba(34, 197, 94, 0.12);
+  border-left: 3px solid #22c55e;
+  padding-left: calc(var(--space-2) - 3px);
+  font-weight: 600;
+}
+
 /* Scroll to bottom button */
 .scrollToBottom {
   position: absolute;
@@ -325,4 +334,34 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .drawer {
+    width: 100vw !important;
+    border-left: none;
+  }
+
+  .statusText {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-2);
+  }
+
+  .statusBar {
+    padding: var(--space-1-5) var(--space-2);
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .logsContainer {
+    padding: var(--space-1);
+    font-size: 10px;
+  }
 }

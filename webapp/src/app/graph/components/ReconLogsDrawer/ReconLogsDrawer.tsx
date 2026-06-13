@@ -6,6 +6,22 @@ import { RECON_PHASES } from '@/lib/recon-types'
 import type { ReconLogEvent, ReconStatus } from '@/lib/recon-types'
 import styles from './ReconLogsDrawer.module.css'
 
+// Highlight the union target-list breakdown emitted by build_target_urls
+// (e.g. "[*][Targets] Merged 50 URLs: 2 additional httpx URLs + 48 unprobed
+// subdomains"). Easy to spot when scrolling through verbose scan logs.
+const isTargetsLine = (logText: string) =>
+  logText.includes('[Targets]') &&
+  (logText.includes('Merged ') || logText.includes('No targets'))
+
+// Highlight vulnerability findings in bright green so they stand out in
+// verbose scan logs. Matches RedAmon summaries (e.g. "[+][Nuclei] Vuln
+// findings: ..."), severity counts, Nmap NSE VULN lines, Nuclei severity
+// tags (e.g. "[critical]"), and literal CVE identifiers.
+export const isVulnerabilityLine = (logText: string) =>
+  /\[\+\].*\b(?:vulns?|vulnerabilit(?:y|ies)|VULN|VULNERABLE|CVE-\d{4}-\d+)|VULN:|\b(?:CRITICAL|HIGH|MEDIUM|LOW):\s*\d+|\[(?:critical|high|medium|low)\]/i.test(
+    logText
+  )
+
 interface ReconLogsDrawerProps {
   isOpen: boolean
   onClose: () => void
@@ -150,12 +166,6 @@ export function ReconLogsDrawer({
     }
   }
 
-  // Highlight the union target-list breakdown emitted by build_target_urls
-  // (e.g. "[*][Targets] Merged 50 URLs: 2 additional httpx URLs + 48 unprobed
-  // subdomains"). Easy to spot when scrolling through verbose scan logs.
-  const isTargetsLine = (logText: string) =>
-    logText.includes('[Targets]') &&
-    (logText.includes('Merged ') || logText.includes('No targets'))
 
   return (
     <div className={`${styles.drawer} ${isOpen ? styles.drawerOpen : ''}`}>
@@ -257,6 +267,8 @@ export function ReconLogsDrawer({
                 key={index}
                 className={`${styles.logLine} ${getLogClassName(log.level)}${
                   isTargetsLine(log.log) ? ` ${styles.logTargets}` : ''
+                }${
+                  isVulnerabilityLine(log.log) ? ` ${styles.logVulnerability}` : ''
                 }`}
               >
                 <span className={styles.logTimestamp}>

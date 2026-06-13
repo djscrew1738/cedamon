@@ -127,3 +127,51 @@ hr {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ─── Responsive images ─── */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ─── Responsive tables: horizontal scroll on small screens ─── */
+.tableWrapper,
+[class*="tableWrapper"] {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Responsive breakpoints utilities ─── */
+
+/* Hide on mobile */
+.hideMobile {
+  display: revert;
+}
+
+/* Show only on mobile */
+.showMobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .hideMobile {
+    display: none !important;
+  }
+
+  .showMobile {
+    display: revert;
+  }
+
+  /* Ensure form elements don't zoom on mobile */
+  input, select, textarea, button {
+    font-size: 16px;
+  }
+}
+
+/* ─── Safe area insets for modern mobile devices ─── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safeAreaBottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

@@ -18,7 +18,6 @@ Usage:
 import os
 import sys
 import json
-import time
 from pathlib import Path
 from datetime import datetime
 
@@ -33,9 +32,17 @@ TARGET_DOMAIN = os.environ.get("TARGET_DOMAIN", "")
 
 # GVM project settings (fetched from webapp API or defaults)
 try:
-    from gvm_scan.project_settings import get_setting, load_project_settings
+    from gvm_scan.project_settings import (
+        get_setting,
+        load_project_settings,
+        _settings as _cached_settings,
+    )
 except ImportError:
-    from project_settings import get_setting, load_project_settings
+    from project_settings import (
+        get_setting,
+        load_project_settings,
+        _settings as _cached_settings,
+    )
 
 from gvm_scan.gvm_scanner import (
     GVMScanner,
@@ -108,6 +115,80 @@ def check_recon_has_live_targets(recon_data: dict) -> tuple:
     return True, None
 
 
+def _apply_scan_preset(settings: dict) -> dict:
+    """
+    Apply named scan presets to the mutable settings dictionary.
+
+    Presets override performance-related defaults when the user has not set
+    explicit values.  Explicit values are preserved.
+    """
+    preset = settings.get('SCAN_PRESET', 'default')
+    if preset == 'fast':
+        settings.setdefault('SCAN_CONFIG', 'Full and fast')
+        settings['PORT_LIST'] = 'All TCP and Nmap top 100 UDP'
+        settings['POLL_INTERVAL'] = 10
+        settings['TARGET_BATCH_SIZE'] = 10
+        if not settings.get('MAX_HOSTS'):
+            settings['MAX_HOSTS'] = 20
+        if not settings.get('MAX_CHECKS'):
+            settings['MAX_CHECKS'] = 10
+    elif preset == 'thorough':
+        settings.setdefault('SCAN_CONFIG', 'Full and fast')
+        settings['PORT_LIST'] = 'All IANA assigned TCP and UDP'
+        settings['POLL_INTERVAL'] = 30
+        settings['TARGET_BATCH_SIZE'] = 1
+        settings['MAX_HOSTS'] = settings.get('MAX_HOSTS') or 0
+        settings['MAX_CHECKS'] = settings.get('MAX_CHECKS') or 0
+    # 'default' keeps the explicit values loaded from the API/fallbacks
+    return settings
+
+
+def _chunked(items: list, size: int):
+    """Yield successive chunks of at most ``size`` items."""
+    for i in range(0, len(items), max(1, size)):
+        yield items[i:i + size]
+
+
+def _run_batch(
+    scanner: GVMScanner,
+    batch: list,
+    batch_index: int,
+    total_batches: int,
+    scan_type: str,
+    cleanup: bool,
+    results: dict,
+    save_incremental,
+    output_file: Path,
+):
+    """Scan a single batch of targets and update the shared results dict."""
+    kind = "IPs" if scan_type == "ip_scan" else "Hostnames"
+    print(f"\n[*] {kind} batch {batch_index}/{total_batches}: "
+          f"{len(batch)} target(s)")
+
+    batch_results = scanner.scan_targets(
+        targets=batch,
+        target_name=f"{kind}_batch_{batch_index}_of_{total_batches}",
+        cleanup=cleanup,
+    )
+    batch_results["scan_type"] = scan_type
+    if scan_type == "ip_scan":
+        batch_results["target_ips"] = batch
+    else:
+        batch_results["target_hostnames"] = batch
+    results["scans"].append(batch_results)
+
+    if "severity_summary" in batch_results:
+        for sev, count in batch_results["severity_summary"].items():
+            results["summary"][sev] += count
+    results["summary"]["total_vulnerabilities"] += batch_results.get(
+        "vulnerability_count", 0
+    )
+    results["summary"]["hosts_scanned"] += batch_results.get("hosts_scanned", 0)
+
+    save_incremental()
+    print(f"    [+] Progress saved to {output_file}")
+
+
 def run_vulnerability_scan(
     domain: str = TARGET_DOMAIN,
     project_id: str = PROJECT_ID,
@@ -122,19 +203,33 @@ def run_vulnerability_scan(
     Returns:
         Complete vulnerability scan results
     """
+    # Apply scan presets to the cached settings before reading values.
+    if _cached_settings is not None:
+        _apply_scan_preset(_cached_settings)
+
     # Read scan settings from project settings (fetched from webapp API)
     scan_config = get_setting('SCAN_CONFIG', 'Full and fast')
     scan_targets = get_setting('SCAN_TARGETS', 'both')
     task_timeout = get_setting('TASK_TIMEOUT', 14400)
     poll_interval = get_setting('POLL_INTERVAL', 30)
     cleanup = get_setting('CLEANUP_AFTER_SCAN', True)
+    port_list = get_setting('PORT_LIST', 'All IANA assigned TCP and UDP')
+    batch_size = int(get_setting('TARGET_BATCH_SIZE', 5))
+    max_hosts = get_setting('MAX_HOSTS', 0)
+    max_checks = get_setting('MAX_CHECKS', 0)
+    scan_preset = get_setting('SCAN_PRESET', 'default')
 
     print("\n" + "=" * 70)
     print("           RedAmon - GVM Vulnerability Scanner")
     print("=" * 70)
     print(f"  Target Domain: {domain}")
+    print(f"  Scan Preset:   {scan_preset}")
     print(f"  Scan Config:   {scan_config}")
+    print(f"  Port List:     {port_list}")
     print(f"  Scan Strategy: {scan_targets}")
+    print(f"  Batch Size:    {batch_size}")
+    print(f"  Max Hosts:     {max_hosts or 'GVM default'}")
+    print(f"  Max Checks:    {max_checks or 'GVM default'}")
     print(f"  Task Timeout:  {task_timeout}s")
     print(f"  Poll Interval: {poll_interval}s")
     print(f"  Cleanup After: {cleanup}")
@@ -254,73 +349,57 @@ def run_vulnerability_scan(
     
     try:
         # =====================================================================
-        # PHASE 1: Scan IPs (one at a time for incremental saving)
+        # PHASE 1: Scan IPs in batches
         # =====================================================================
         if scan_targets in ("both", "ips_only") and ips:
             ip_list = list(ips)
-            print(f"\n[*] PHASE 1: Scanning {len(ip_list)} IP addresses (individually)...")
+            batches = list(_chunked(ip_list, batch_size))
+            print(f"\n[*] PHASE 1: Scanning {len(ip_list)} IP addresses "
+                  f"in {len(batches)} batch(es)...")
             print("-" * 50)
-            
-            for i, ip in enumerate(ip_list, 1):
-                print(f"\n[*] IP {i}/{len(ip_list)}: {ip}")
-                
-                ip_results = scanner.scan_targets(
-                    targets=[ip],
-                    target_name=f"IP_{ip.replace('.', '_')}",
-                    cleanup=cleanup
+
+            for i, batch in enumerate(batches, 1):
+                _run_batch(
+                    scanner=scanner,
+                    batch=batch,
+                    batch_index=i,
+                    total_batches=len(batches),
+                    scan_type="ip_scan",
+                    cleanup=cleanup,
+                    results=results,
+                    save_incremental=save_incremental,
+                    output_file=output_file,
                 )
-                ip_results["scan_type"] = "ip_scan"
-                ip_results["target_ip"] = ip
-                results["scans"].append(ip_results)
-                
-                # Update summary
-                if "severity_summary" in ip_results:
-                    for sev, count in ip_results["severity_summary"].items():
-                        results["summary"][sev] += count
-                results["summary"]["total_vulnerabilities"] += ip_results.get("vulnerability_count", 0)
-                results["summary"]["hosts_scanned"] += ip_results.get("hosts_scanned", 0)
-                
-                # Save after each IP
-                save_incremental()
-                print(f"    [+] Progress saved to {output_file}")
-        
+
         # =====================================================================
-        # PHASE 2: Scan Hostnames (one at a time for incremental saving)
+        # PHASE 2: Scan Hostnames in batches
         # Reconnect to GVM to avoid stale socket after long Phase 1 scans
         # =====================================================================
         if scan_targets in ("both", "hostnames_only") and hostnames:
             if scan_targets == "both" and ips:
                 print("\n[*] Reconnecting to GVM before Phase 2...")
                 scanner.disconnect()
-                time.sleep(30)  # Give GVM time to release resources
-                if not scanner.connect(max_retries=10, retry_interval=15):
+                # Connect with exponential backoff from 2s — no hard sleep needed
+                if not scanner.connect(max_retries=8, retry_interval=2):
                     raise RuntimeError("Failed to reconnect to GVM before Phase 2")
             hostname_list = list(hostnames)
-            print(f"\n[*] PHASE 2: Scanning {len(hostname_list)} hostnames (individually)...")
+            batches = list(_chunked(hostname_list, batch_size))
+            print(f"\n[*] PHASE 2: Scanning {len(hostname_list)} hostnames "
+                  f"in {len(batches)} batch(es)...")
             print("-" * 50)
-            
-            for i, hostname in enumerate(hostname_list, 1):
-                print(f"\n[*] Hostname {i}/{len(hostname_list)}: {hostname}")
-                
-                hostname_results = scanner.scan_targets(
-                    targets=[hostname],
-                    target_name=f"Host_{hostname.replace('.', '_')}",
-                    cleanup=cleanup
-                )
-                hostname_results["scan_type"] = "hostname_scan"
-                hostname_results["target_hostname"] = hostname
-                results["scans"].append(hostname_results)
-                
-                # Update summary
-                if "severity_summary" in hostname_results:
-                    for sev, count in hostname_results["severity_summary"].items():
-                        results["summary"][sev] += count
-                results["summary"]["total_vulnerabilities"] += hostname_results.get("vulnerability_count", 0)
-                results["summary"]["hosts_scanned"] += hostname_results.get("hosts_scanned", 0)
 
-                # Save after each hostname
-                save_incremental()
-                print(f"    [+] Progress saved to {output_file}")
+            for i, batch in enumerate(batches, 1):
+                _run_batch(
+                    scanner=scanner,
+                    batch=batch,
+                    batch_index=i,
+                    total_batches=len(batches),
+                    scan_type="hostname_scan",
+                    cleanup=cleanup,
+                    results=results,
+                    save_incremental=save_incremental,
+                    output_file=output_file,
+                )
         
         # Final save
         save_vuln_results(results, project_id)

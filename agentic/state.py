@@ -45,11 +45,11 @@ ApprovalDecision = Literal["approve", "modify", "abort"]
 QuestionFormat = Literal["text", "single_choice", "multi_choice"]
 
 # Attack path types for dynamic routing
-# Known types: "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", "sql_injection", "xss", "ssrf", "rce", "path_traversal"
+# Known types: "cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", "sql_injection", "xss", "ssrf", "rce", "path_traversal", "llm_security", "cicd_pipeline", "browser_exploitation", "container_k8s", "hybrid_identity"
 # Unclassified types: "<descriptive_term>-unclassified" (e.g., "file_upload-unclassified", "xxe-unclassified")
 AttackPathType = str  # Validated by AttackPathClassification.attack_path_type validator
 
-KNOWN_ATTACK_PATHS = {"cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", "sql_injection", "xss", "ssrf", "rce", "path_traversal"}
+KNOWN_ATTACK_PATHS = {"cve_exploit", "brute_force_credential_guess", "phishing_social_engineering", "denial_of_service", "sql_injection", "xss", "ssrf", "rce", "path_traversal", "llm_security", "cicd_pipeline", "browser_exploitation", "container_k8s", "hybrid_identity"}
 _UNCLASSIFIED_RE = re.compile(r'^[a-z][a-z0-9_]*-unclassified$')
 
 
@@ -677,7 +677,7 @@ class AttackPathClassification(BaseModel):
         description="Required phase for this request: 'informational' for recon, 'exploitation' for attacks"
     )
     attack_path_type: str = Field(
-        description="The classified attack path type: 'cve_exploit', 'brute_force_credential_guess', 'phishing_social_engineering', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'user_skill:<id>', or '<term>-unclassified'"
+        description="The classified attack path type: 'cve_exploit', 'brute_force_credential_guess', 'phishing_social_engineering', 'denial_of_service', 'sql_injection', 'xss', 'ssrf', 'rce', 'path_traversal', 'llm_security', 'cicd_pipeline', 'browser_exploitation', 'container_k8s', 'hybrid_identity', 'user_skill:<id>', or '<term>-unclassified'"
     )
     secondary_attack_path: Optional[str] = Field(
         default=None,

@@ -43,6 +43,26 @@ DEFAULT_GVM_SETTINGS: dict[str, Any] = {
 
     # Cleanup targets and tasks after scan completion
     'CLEANUP_AFTER_SCAN': True,
+
+    # Port list to use for the scan target.
+    # Available options depend on the loaded GVM data objects; common values:
+    # - "All IANA assigned TCP and UDP" (thorough, default)
+    # - "All IANA assigned TCP"
+    # - "All TCP and Nmap top 100 UDP" (quick preset)
+    'PORT_LIST': 'All IANA assigned TCP and UDP',
+
+    # Number of targets grouped into a single GVM task.  Higher values reduce
+    # GVM task/target creation overhead but make per-task runtime longer.
+    'TARGET_BATCH_SIZE': 5,
+
+    # Scanner concurrency preferences (0 or unset = use GVM default).
+    # Lower values make scans gentler; higher values speed up scanning.
+    'MAX_HOSTS': 0,
+    'MAX_CHECKS': 0,
+
+    # Scan preset that overrides the above defaults when set to a named profile.
+    # Supported: "default", "fast", "thorough"
+    'SCAN_PRESET': 'default',
 }
 
 
@@ -76,6 +96,13 @@ def fetch_gvm_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['TASK_TIMEOUT'] = project.get('gvmTaskTimeout', DEFAULT_GVM_SETTINGS['TASK_TIMEOUT'])
     settings['POLL_INTERVAL'] = project.get('gvmPollInterval', DEFAULT_GVM_SETTINGS['POLL_INTERVAL'])
     settings['CLEANUP_AFTER_SCAN'] = project.get('gvmCleanupAfterScan', DEFAULT_GVM_SETTINGS['CLEANUP_AFTER_SCAN'])
+
+    # Performance / batching settings (optional UI fields)
+    settings['PORT_LIST'] = project.get('gvmPortList', DEFAULT_GVM_SETTINGS['PORT_LIST'])
+    settings['TARGET_BATCH_SIZE'] = project.get('gvmTargetBatchSize', DEFAULT_GVM_SETTINGS['TARGET_BATCH_SIZE'])
+    settings['MAX_HOSTS'] = project.get('gvmMaxHosts', DEFAULT_GVM_SETTINGS['MAX_HOSTS'])
+    settings['MAX_CHECKS'] = project.get('gvmMaxChecks', DEFAULT_GVM_SETTINGS['MAX_CHECKS'])
+    settings['SCAN_PRESET'] = project.get('gvmScanPreset', DEFAULT_GVM_SETTINGS['SCAN_PRESET'])
 
     logger.info(f"Loaded {len(settings)} GVM settings for project {project_id}")
     return settings

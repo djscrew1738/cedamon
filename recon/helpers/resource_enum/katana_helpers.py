@@ -116,6 +116,10 @@ def run_katana_crawler(
         # so the flag is strictly an upgrade.
         cmd = ["docker", "run", "--rm", "--net=host"]
 
+        # Inject proxy env vars when Tor is enabled
+        from recon.helpers.docker_helpers import get_proxy_env_flags
+        cmd.extend(get_proxy_env_flags(net_host=True))
+
         cmd.extend(["-v", "/tmp/redamon:/tmp/redamon"])
 
         cmd.extend([

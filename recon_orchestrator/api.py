@@ -1,6 +1,7 @@
 """
 Recon Orchestrator API - FastAPI service for managing recon containers
 """
+import asyncio
 import json
 import logging
 import os
@@ -40,6 +41,29 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _fetch_project_sync(url: str, api_key: str) -> dict:
+    """Synchronous helper to fetch project JSON from the webapp API."""
+    import urllib.request
+    import json as json_mod
+    req = urllib.request.Request(url)
+    req.add_header("X-Internal-Key", api_key)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                return json_mod.loads(resp.read().decode())
+    except Exception:
+        pass
+    return {}
+
+
+async def _fetch_project_json(webapp_api_url: str, project_id: str) -> dict:
+    """Fetch project JSON without blocking the async event loop."""
+    url = f"{webapp_api_url.rstrip('/')}/api/projects/{project_id}"
+    api_key = os.environ.get("INTERNAL_API_KEY", "")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _fetch_project_sync, url, api_key)
 
 
 def _detect_host_mounts() -> dict[str, str]:
@@ -155,6 +179,19 @@ async def lifespan(app: FastAPI):
     global container_manager
     logger.info("Starting Recon Orchestrator...")
     container_manager = ContainerManager(recon_image=RECON_IMAGE, gvm_image=GVM_IMAGE, github_hunt_image=GITHUB_HUNT_IMAGE, trufflehog_image=TRUFFLEHOG_IMAGE)
+
+    # Pre-build the GVM scanner image in the background so the first scan
+    # doesn't have to wait for a synchronous Docker build.
+    async def _prebuild_gvm_image():
+        try:
+            await container_manager._exec(
+                container_manager.ensure_gvm_scanner_image
+            )
+        except Exception as e:
+            logger.warning(f"Background GVM image pre-build failed: {e}")
+
+    asyncio.create_task(_prebuild_gvm_image())
+
     yield
     logger.info("Shutting down Recon Orchestrator...")
     await container_manager.cleanup()
@@ -188,6 +225,7 @@ async def health_check():
         running_github_hunts=container_manager.get_github_hunt_running_count() if container_manager else 0,
         running_trufflehog_scans=container_manager.get_trufflehog_running_count() if container_manager else 0,
         gvm_available=container_manager.is_gvm_available() if container_manager else False,
+        gvm_ready=await container_manager._exec(container_manager.is_gvm_ready) if container_manager else False,
     )
 
 
@@ -309,69 +347,81 @@ async def start_recon(project_id: str, request: ReconStartRequest):
     if not container_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
-    # RoE time window check: fetch project settings and verify
+    logger.info(
+        f"Start recon requested project_id={project_id} user_id={request.user_id} "
+        f"webapp={request.webapp_api_url}"
+    )
+
+    # RoE time window check: fetch project settings without blocking the event loop
     if request.webapp_api_url:
         try:
-            import urllib.request
-            import json as json_mod
             from datetime import datetime
             try:
                 import zoneinfo
             except ImportError:
                 from backports import zoneinfo
 
-            url = f"{request.webapp_api_url.rstrip('/')}/api/projects/{project_id}"
-            req = urllib.request.Request(url)
-            req.add_header("X-Internal-Key", os.environ.get("INTERNAL_API_KEY", ""))
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    project = json_mod.loads(resp.read().decode())
+            project = await _fetch_project_json(request.webapp_api_url, project_id)
+            if project:
+                # Hard guardrail: deterministic, non-disableable — always blocks government/public domains
+                if not project.get('ipMode', False) and project.get('targetDomain'):
+                    from hard_guardrail import is_hard_blocked
+                    blocked, reason = is_hard_blocked(project['targetDomain'])
+                    if blocked:
+                        logger.warning(
+                            f"Hard guardrail blocked project_id={project_id} domain={project['targetDomain']}: {reason}"
+                        )
+                        raise HTTPException(
+                            status_code=403,
+                            detail=f"Hard guardrail: {reason}"
+                        )
+                    else:
+                        logger.info(f"Hard guardrail passed for project_id={project_id}")
 
-                    # Hard guardrail: deterministic, non-disableable — always blocks government/public domains
-                    if not project.get('ipMode', False) and project.get('targetDomain'):
-                        from hard_guardrail import is_hard_blocked
-                        blocked, reason = is_hard_blocked(project['targetDomain'])
-                        if blocked:
+                if project.get('roeEnabled') and project.get('roeTimeWindowEnabled'):
+                    tz_name = project.get('roeTimeWindowTimezone', 'UTC')
+                    try:
+                        tz = zoneinfo.ZoneInfo(tz_name)
+                        now_local = datetime.now(tz)
+                        day_name = now_local.strftime('%A').lower()
+                        allowed_days = project.get('roeTimeWindowDays', [])
+                        start_time = project.get('roeTimeWindowStartTime', '09:00')
+                        end_time = project.get('roeTimeWindowEndTime', '18:00')
+                        current_time = now_local.strftime('%H:%M')
+
+                        if day_name not in allowed_days:
+                            logger.warning(
+                                f"RoE blocked project_id={project_id}: day={day_name} not in {allowed_days}"
+                            )
                             raise HTTPException(
                                 status_code=403,
-                                detail=f"Hard guardrail: {reason}"
+                                detail=f"RoE time window: testing not allowed on {day_name.capitalize()}. Allowed days: {', '.join(d.capitalize() for d in allowed_days)}"
                             )
-
-                    if project.get('roeEnabled') and project.get('roeTimeWindowEnabled'):
-                        tz_name = project.get('roeTimeWindowTimezone', 'UTC')
-                        try:
-                            tz = zoneinfo.ZoneInfo(tz_name)
-                            now_local = datetime.now(tz)
-                            day_name = now_local.strftime('%A').lower()
-                            allowed_days = project.get('roeTimeWindowDays', [])
-                            start_time = project.get('roeTimeWindowStartTime', '09:00')
-                            end_time = project.get('roeTimeWindowEndTime', '18:00')
-                            current_time = now_local.strftime('%H:%M')
-
-                            if day_name not in allowed_days:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: testing not allowed on {day_name.capitalize()}. Allowed days: {', '.join(d.capitalize() for d in allowed_days)}"
-                                )
-                            # Handle overnight windows (e.g. 22:00 - 06:00)
-                            if start_time <= end_time:
-                                outside = current_time < start_time or current_time > end_time
-                            else:
-                                # Overnight: allowed if AFTER start OR BEFORE end
-                                outside = current_time < start_time and current_time > end_time
-                            if outside:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: current time {current_time} {tz_name} is outside allowed window ({start_time}-{end_time})"
-                                )
-                        except HTTPException:
-                            raise
-                        except Exception as e:
-                            logger.warning(f"RoE time window check failed (proceeding): {e}")
+                        if start_time <= end_time:
+                            outside = current_time < start_time or current_time > end_time
+                        else:
+                            outside = current_time < start_time and current_time > end_time
+                        if outside:
+                            logger.warning(
+                                f"RoE blocked project_id={project_id}: time={current_time} outside window {start_time}-{end_time} {tz_name}"
+                            )
+                            raise HTTPException(
+                                status_code=403,
+                                detail=f"RoE time window: current time {current_time} {tz_name} is outside allowed window ({start_time}-{end_time})"
+                            )
+                        logger.info(
+                            f"RoE time window passed project_id={project_id} day={day_name} time={current_time}"
+                        )
+                    except HTTPException:
+                        raise
+                    except Exception as e:
+                        logger.warning(f"RoE time window check failed for project_id={project_id} (proceeding): {e}")
+            else:
+                logger.warning(f"Could not fetch project settings for RoE check project_id={project_id} (proceeding)")
         except HTTPException:
             raise
         except Exception as e:
-            logger.warning(f"Could not check RoE time window (proceeding): {e}")
+            logger.warning(f"Could not check RoE time window for project_id={project_id} (proceeding): {e}")
 
     try:
         state = await container_manager.start_recon(
@@ -381,11 +431,16 @@ async def start_recon(project_id: str, request: ReconStartRequest):
             recon_path=RECON_PATH,
             custom_templates_path=CUSTOM_TEMPLATES_PATH,
         )
+        logger.info(
+            f"Recon start result project_id={project_id} status={state.status.value} "
+            f"container_id={state.container_id or 'none'}"
+        )
         return state
     except ValueError as e:
+        logger.warning(f"Recon start conflict project_id={project_id}: {e}")
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
-        logger.error(f"Error starting recon: {e}")
+        logger.error(f"Error starting recon project_id={project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -503,69 +558,79 @@ async def start_partial_recon(project_id: str, request: PartialReconStartRequest
     if not container_manager:
         raise HTTPException(status_code=503, detail="Service not initialized")
 
+    logger.info(
+        f"Start partial recon requested project_id={project_id} tool_id={request.tool_id} "
+        f"user_id={request.user_id}"
+    )
+
     # RoE time window + hard guardrail checks (same as full recon)
     if request.webapp_api_url:
         try:
-            import urllib.request
-            import json as json_mod
             from datetime import datetime
             try:
                 import zoneinfo
             except ImportError:
                 from backports import zoneinfo
 
-            url = f"{request.webapp_api_url.rstrip('/')}/api/projects/{project_id}"
-            req = urllib.request.Request(url)
-            req.add_header("X-Internal-Key", os.environ.get("INTERNAL_API_KEY", ""))
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    project = json_mod.loads(resp.read().decode())
+            project = await _fetch_project_json(request.webapp_api_url, project_id)
+            if project:
+                # Hard guardrail check
+                domain = request.graph_inputs.get("domain", "")
+                if domain:
+                    from hard_guardrail import is_hard_blocked
+                    blocked, reason = is_hard_blocked(domain)
+                    if blocked:
+                        logger.warning(
+                            f"Hard guardrail blocked partial recon project_id={project_id} domain={domain}: {reason}"
+                        )
+                        raise HTTPException(status_code=403, detail=f"Hard guardrail: {reason}")
+                    logger.info(f"Hard guardrail passed for partial recon project_id={project_id} domain={domain}")
 
-                    # Hard guardrail check
-                    domain = request.graph_inputs.get("domain", "")
-                    if domain:
-                        from hard_guardrail import is_hard_blocked
-                        blocked, reason = is_hard_blocked(domain)
-                        if blocked:
-                            raise HTTPException(status_code=403, detail=f"Hard guardrail: {reason}")
+                # RoE time window check
+                if project.get('roeEnabled') and project.get('roeTimeWindowEnabled'):
+                    tz_name = project.get('roeTimeWindowTimezone', 'UTC')
+                    try:
+                        tz = zoneinfo.ZoneInfo(tz_name)
+                        now_local = datetime.now(tz)
+                        day_name = now_local.strftime('%A').lower()
+                        allowed_days = project.get('roeTimeWindowDays', [])
+                        start_time = project.get('roeTimeWindowStartTime', '09:00')
+                        end_time = project.get('roeTimeWindowEndTime', '18:00')
+                        current_time = now_local.strftime('%H:%M')
 
-                    # RoE time window check
-                    if project.get('roeEnabled') and project.get('roeTimeWindowEnabled'):
-                        tz_name = project.get('roeTimeWindowTimezone', 'UTC')
-                        try:
-                            tz = zoneinfo.ZoneInfo(tz_name)
-                            now_local = datetime.now(tz)
-                            day_name = now_local.strftime('%A').lower()
-                            allowed_days = project.get('roeTimeWindowDays', [])
-                            start_time = project.get('roeTimeWindowStartTime', '09:00')
-                            end_time = project.get('roeTimeWindowEndTime', '18:00')
-                            current_time = now_local.strftime('%H:%M')
-
-                            if day_name not in allowed_days:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: testing not allowed on {day_name.capitalize()}"
-                                )
-                            if start_time <= end_time:
-                                outside = current_time < start_time or current_time > end_time
-                            else:
-                                outside = current_time < start_time and current_time > end_time
-                            if outside:
-                                raise HTTPException(
-                                    status_code=403,
-                                    detail=f"RoE time window: current time {current_time} {tz_name} outside allowed ({start_time}-{end_time})"
-                                )
-                        except HTTPException:
-                            raise
-                        except Exception as e:
-                            logger.warning(f"RoE check failed (proceeding): {e}")
+                        if day_name not in allowed_days:
+                            logger.warning(
+                                f"RoE blocked partial recon project_id={project_id}: day={day_name}"
+                            )
+                            raise HTTPException(
+                                status_code=403,
+                                detail=f"RoE time window: testing not allowed on {day_name.capitalize()}"
+                            )
+                        if start_time <= end_time:
+                            outside = current_time < start_time or current_time > end_time
+                        else:
+                            outside = current_time < start_time and current_time > end_time
+                        if outside:
+                            logger.warning(
+                                f"RoE blocked partial recon project_id={project_id}: time={current_time} outside {start_time}-{end_time}"
+                            )
+                            raise HTTPException(
+                                status_code=403,
+                                detail=f"RoE time window: current time {current_time} {tz_name} outside allowed ({start_time}-{end_time})"
+                            )
+                        logger.info(
+                            f"RoE time window passed partial recon project_id={project_id} day={day_name} time={current_time}"
+                        )
+                    except HTTPException:
+                        raise
+                    except Exception as e:
+                        logger.warning(f"RoE check failed for partial recon project_id={project_id} (proceeding): {e}")
+            else:
+                logger.warning(f"Could not fetch project settings for partial recon project_id={project_id} (proceeding)")
         except HTTPException:
             raise
         except Exception as e:
-            logger.warning(f"Could not check RoE (proceeding): {e}")
-
-    # Note: settings are fetched by the recon container itself via get_settings()
-    # (uses PROJECT_ID + WEBAPP_API_URL env vars, same as main.py)
+            logger.warning(f"Could not check RoE for partial recon project_id={project_id} (proceeding): {e}")
 
     # Build the config dict for the partial recon container
     config = {
@@ -587,11 +652,16 @@ async def start_partial_recon(project_id: str, request: PartialReconStartRequest
             recon_path=RECON_PATH,
             custom_templates_path=CUSTOM_TEMPLATES_PATH,
         )
+        logger.info(
+            f"Partial recon start result project_id={project_id} tool_id={request.tool_id} "
+            f"run_id={state.run_id} status={state.status.value} container_id={state.container_id or 'none'}"
+        )
         return state
     except ValueError as e:
+        logger.warning(f"Partial recon start conflict project_id={project_id}: {e}")
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
-        logger.error(f"Error starting partial recon: {e}")
+        logger.error(f"Error starting partial recon project_id={project_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -707,18 +777,16 @@ async def get_graph_inputs(project_id: str, tool_id: str, user_id: str = ""):
         webapp_url = "http://localhost:3000"
 
     try:
-        import urllib.request
-        import json as json_mod
-        url = f"{webapp_url}/api/projects/{project_id}"
-        req = urllib.request.Request(url)
-        req.add_header("X-Internal-Key", os.environ.get("INTERNAL_API_KEY", ""))
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status == 200:
-                project = json_mod.loads(resp.read().decode())
-                result["domain"] = project.get("targetDomain", "")
-                result["source"] = "settings"
+        project = await _fetch_project_json(webapp_url, project_id)
+        if project:
+            result["domain"] = project.get("targetDomain", "")
+            result["source"] = "settings"
+            logger.info(
+                f"Graph inputs fallback project_id={project_id} tool_id={tool_id} "
+                f"domain={result['domain']} source=settings"
+            )
     except Exception as e:
-        logger.warning(f"Could not fetch project settings for graph-inputs: {e}")
+        logger.warning(f"Could not fetch project settings for graph-inputs project_id={project_id}: {e}")
 
     return result
 

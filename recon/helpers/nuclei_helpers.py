@@ -110,6 +110,10 @@ def build_nuclei_command(
         "-v", f"{NUCLEI_TEMPLATES_VOLUME}:/root/nuclei-templates",
     ]
 
+    # Inject proxy env vars when Tor is enabled
+    from recon.helpers.docker_helpers import get_proxy_env_flags
+    cmd.extend(get_proxy_env_flags(net_host=True))
+
     # Mount custom templates if any are selected
     host_custom_templates = os.environ.get("HOST_CUSTOM_TEMPLATES_PATH", "")
     if selected_custom_templates and host_custom_templates:

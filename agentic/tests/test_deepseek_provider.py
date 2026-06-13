@@ -6,7 +6,7 @@ Covers:
   - setup_llm() deepseek branch (kwarg validation + ChatOpenAI wiring)
   - fetch_deepseek_models() success path, filter, fallback
   - fetch_all_models() aggregator wires "deepseek" providerType
-  - Existing providers (openai/anthropic/openrouter/bedrock/custom) unaffected
+  - Existing providers (openai/anthropic/bedrock/custom) unaffected
 
 Run with: python -m pytest tests/test_deepseek_provider.py -v
 """
@@ -62,10 +62,6 @@ class TestParseModelProvider(unittest.TestCase):
         self.assertEqual(
             parse_model_provider("custom/abc"),
             ("custom", "abc"),
-        )
-        self.assertEqual(
-            parse_model_provider("openrouter/x/y"),
-            ("openrouter", "x/y"),
         )
         self.assertEqual(
             parse_model_provider("bedrock/anthropic.claude-v2"),

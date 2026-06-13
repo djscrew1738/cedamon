@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database, Code2, Globe, Terminal, FolderTree, Download } from 'lucide-react'
+import { ChevronDown, Bug, KeyRound, Mail, Swords, Loader2, Settings, Zap, Database, Code2, Globe, Terminal, FolderTree, Download, Brain, GitBranch, Container, Shield } from 'lucide-react'
 import type { Project } from '@prisma/client'
 import { useProject } from '@/providers/ProjectProvider'
 import { Toggle } from '@/components/ui/Toggle/Toggle'
@@ -76,6 +76,36 @@ const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
     icon: <FolderTree size={16} />,
   },
   {
+    id: 'llm_security',
+    name: 'GenAI / LLM Security',
+    description: 'Prompt injection, jailbreaking, model extraction, RAG pipeline poisoning, content-filter bypass, and excessive-agency exploits against LLM-powered applications',
+    icon: <Brain size={16} />,
+  },
+  {
+    id: 'cicd_pipeline',
+    name: 'CI/CD Pipeline Attacks',
+    description: 'GitHub Actions / GitLab CI / Jenkins pipeline abuse, pull_request_target exploitation, self-hosted runner compromise, artifact poisoning, and dependency confusion',
+    icon: <GitBranch size={16} />,
+  },
+  {
+    id: 'browser_exploitation',
+    name: 'Browser & Electron Exploitation',
+    description: 'Electron IPC abuse, Chrome extension attacks, DevTools protocol hijacking, DOM clobbering, service worker interception, and postMessage exploitation',
+    icon: <Globe size={16} />,
+  },
+  {
+    id: 'container_k8s',
+    name: 'Container & Kubernetes Security',
+    description: 'Container registry / image-layer analysis, K8s RBAC enumeration, pod breakout, etcd exposure, admission controller abuse, and cluster-wide privilege escalation',
+    icon: <Container size={16} />,
+  },
+  {
+    id: 'hybrid_identity',
+    name: 'Hybrid Identity & Federation Attacks',
+    description: 'AD FS compromise, Azure AD Connect abuse, Kerberos delegation (constrained/unconstrained/RBCD), SAML federation trust attacks, cross-forest pivots, and Entra ID token theft',
+    icon: <Shield size={16} />,
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',
@@ -108,6 +138,11 @@ const DEFAULT_CONFIG: AttackSkillConfig = {
     ssrf: true,
     rce: true,
     path_traversal: true,
+    llm_security: true,
+    cicd_pipeline: true,
+    browser_exploitation: true,
+    container_k8s: true,
+    hybrid_identity: true,
     brute_force_credential_guess: false,
     phishing_social_engineering: false,
     denial_of_service: false,

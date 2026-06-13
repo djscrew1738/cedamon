@@ -234,6 +234,19 @@ class TestBuildNmapCommand(unittest.TestCase):
         idx = cmd.index("--host-timeout")
         self.assertEqual(cmd[idx + 1], "5m")
 
+    def test_script_scan_skipped_for_cdn_when_configured(self):
+        settings = {"NMAP_SCRIPT_SCAN": True, "NMAP_SKIP_SCRIPT_SCAN_FOR_CDN": True}
+        cmd = build_nmap_command("1.2.3.4", "80", "/tmp/out.xml", settings, is_cdn=True)
+        self.assertIn("-sV", cmd)
+        self.assertNotIn("--script", cmd)
+        self.assertNotIn("vuln", cmd)
+
+    def test_script_scan_kept_for_cdn_when_not_configured(self):
+        settings = {"NMAP_SCRIPT_SCAN": True, "NMAP_SKIP_SCRIPT_SCAN_FOR_CDN": False}
+        cmd = build_nmap_command("1.2.3.4", "80", "/tmp/out.xml", settings, is_cdn=True)
+        self.assertIn("--script", cmd)
+        self.assertIn("vuln", cmd)
+
 
 # ─── Tests: parse_nmap_xml ───────────────────────────────────────────────────
 

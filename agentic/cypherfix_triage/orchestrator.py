@@ -43,7 +43,7 @@ class TriageOrchestrator:
 
         # Initialize web search with Tavily key from user settings
         user_settings = settings.get("user_settings", {})
-        tavily_key = user_settings.get("tavilyApiKey", "")
+        tavily_key = user_settings.get("tavilyApiKey", "") or os.getenv('TAVILY_API_KEY', '')
         self.web_search = TriageWebSearchManager(tavily_api_key=tavily_key)
 
         # Initialize LLM
@@ -388,7 +388,6 @@ class TriageOrchestrator:
 
         openai_p = _resolve_provider_key(user_providers, "openai")
         anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-        openrouter_p = _resolve_provider_key(user_providers, "openrouter")
         bedrock_p = _resolve_provider_key(user_providers, "bedrock")
         deepseek_p = _resolve_provider_key(user_providers, "deepseek")
         gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -402,7 +401,6 @@ class TriageOrchestrator:
             model,
             openai_api_key=(openai_p or {}).get("apiKey"),
             anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-            openrouter_api_key=(openrouter_p or {}).get("apiKey"),
             deepseek_api_key=(deepseek_p or {}).get("apiKey"),
             gemini_api_key=(gemini_p or {}).get("apiKey"),
             glm_api_key=(glm_p or {}).get("apiKey"),

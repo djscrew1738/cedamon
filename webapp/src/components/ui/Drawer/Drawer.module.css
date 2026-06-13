@@ -183,3 +183,23 @@
   padding: var(--space-3) var(--space-4);
   opacity: 0;
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .drawerOverlay {
+    width: min(var(--drawer-width), 100vw) !important;
+  }
+
+  .drawerPush.drawerOpen {
+    width: min(var(--drawer-width), 85vw) !important;
+  }
+
+  .drawerHeader {
+    padding: var(--space-2-5) var(--space-3);
+  }
+
+  .drawerContent {
+    padding: var(--space-2-5);
+  }
+}

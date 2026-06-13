@@ -14,6 +14,87 @@ NUCLEI_TEMPLATES_VOLUME = "nuclei-templates"
 
 
 # =============================================================================
+# Tor / Proxy Helpers
+# =============================================================================
+
+def get_proxy_env_flags(net_host: bool = False) -> list[str]:
+    """
+    Return Docker ``-e`` flags for HTTP_PROXY/HTTPS_PROXY env vars when Tor is
+    enabled.  These are injected into sibling-container ``docker run`` commands
+    so that tools without a native ``-proxy`` CLI flag (e.g. subfinder, amass)
+    still route their API calls through Tor.
+
+    Parameters
+    ----------
+    net_host : bool
+        Set to True when the Docker command uses ``--net=host``.  The Tor HTTP
+        proxy is then reachable at ``127.0.0.1:8118`` (the host-mapped port).
+        When False (default), ``socks5h://127.0.0.1:9050`` is used, which
+        requires the Tor container to be on a network reachable from the child
+        container (e.g. ``redamon-network``).
+
+    Returns
+        list of ``-e KEY=VALUE`` strings ready to be ``extend()``-ed into a
+        ``docker run`` argv, or ``[]``.
+    """
+    # Short-circuit if the env var isn't even set
+    use_tor = os.environ.get("USE_TOR_FOR_RECON", "").lower()
+    if use_tor not in ("true", "1"):
+        return []
+
+    # Dynamically import to avoid circular imports at module level
+    from recon.helpers.anonymity import is_tor_running
+    if not is_tor_running():
+        return []
+
+    if net_host:
+        # --net=host containers share the host's network stack, so they can
+        # reach the Tor HTTP proxy (dperson/torproxy) via the host-mapped port.
+        proxy_url = "http://127.0.0.1:8118"
+    else:
+        # Non-host-network containers need SOCKS5 proxy. This works when the
+        # Tor container is on a reachable network (e.g. redamon-network) or
+        # when running on the host directly.
+        proxy_url = "socks5h://127.0.0.1:9050"
+
+    no_proxy = "localhost,127.0.0.1,::1"
+    return [
+        "-e", f"HTTP_PROXY={proxy_url}",
+        "-e", f"HTTPS_PROXY={proxy_url}",
+        "-e", f"ALL_PROXY={proxy_url}",
+        "-e", f"NO_PROXY={no_proxy}",
+        "-e", f"http_proxy={proxy_url}",
+        "-e", f"https_proxy={proxy_url}",
+        "-e", f"all_proxy={proxy_url}",
+        "-e", f"no_proxy={no_proxy}",
+    ]
+
+
+def get_proxychains_prefix() -> list[str]:
+    """
+    Return a ``proxychains4 -q`` prefix list when Tor is running.
+
+    Use this to wrap native-binary invocations (subjack, nmap, etc.) that
+    don't have a SOCKS proxy flag::
+
+        cmd = get_proxychains_prefix() + ["subjack", "-w", ...]
+
+    Returns an empty list when Tor is not available so the caller doesn't
+    need an explicit gate.
+    """
+    use_tor = os.environ.get("USE_TOR_FOR_RECON", "").lower()
+    if use_tor not in ("true", "1"):
+        return []
+    from recon.helpers.anonymity import is_tor_running, get_proxychains_cmd
+    if not is_tor_running():
+        return []
+    pc = get_proxychains_cmd()
+    if not pc:
+        return []
+    return [pc, "-q"]
+
+
+# =============================================================================
 # Generic Docker Utilities
 # =============================================================================
 
@@ -96,8 +177,14 @@ def pull_nuclei_docker_image(docker_image: str) -> bool:
             text=True,
             timeout=300
         )
+        if result.returncode == 0:
+            print(f"[✓][Docker] Pulled {docker_image}")
+        else:
+            err = result.stderr.strip().splitlines()[-1] if result.stderr else "unknown error"
+            print(f"[!][Docker] Failed to pull {docker_image}: {err[:200]}")
         return result.returncode == 0
-    except Exception:
+    except Exception as e:
+        print(f"[!][Docker] Exception pulling {docker_image}: {e}")
         return False
 
 
@@ -219,8 +306,14 @@ def pull_katana_docker_image(docker_image: str) -> bool:
             text=True,
             timeout=300
         )
+        if result.returncode == 0:
+            print(f"[✓][Docker] Pulled Katana image {docker_image}")
+        else:
+            err = result.stderr.strip().splitlines()[-1] if result.stderr else "unknown error"
+            print(f"[!][Docker] Failed to pull Katana image {docker_image}: {err[:200]}")
         return result.returncode == 0
-    except Exception:
+    except Exception as e:
+        print(f"[!][Docker] Exception pulling Katana image {docker_image}: {e}")
         return False
 
 

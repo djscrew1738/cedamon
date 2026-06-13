@@ -338,7 +338,7 @@ export interface PlanCompletePayload {
 export interface PhaseUpdatePayload {
   current_phase: string
   iteration_count: number
-  attack_path_type?: string  // "cve_exploit" | "sql_injection" | "xss" | "ssrf" | "rce" | "path_traversal" | "brute_force_credential_guess" | "phishing_social_engineering" | "denial_of_service" | "user_skill:<id>" | "<term>-unclassified"
+  attack_path_type?: string  // "cve_exploit" | "sql_injection" | "xss" | "ssrf" | "rce" | "path_traversal" | "llm_security" | "cicd_pipeline" | "browser_exploitation" | "container_k8s" | "hybrid_identity" | "brute_force_credential_guess" | "phishing_social_engineering" | "denial_of_service" | "user_skill:<id>" | "<term>-unclassified"
 }
 
 export interface TodoItem {

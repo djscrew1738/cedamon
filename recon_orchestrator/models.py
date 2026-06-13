@@ -58,6 +58,7 @@ class HealthResponse(BaseModel):
     running_github_hunts: int = 0
     running_trufflehog_scans: int = 0
     gvm_available: bool = False
+    gvm_ready: bool = False
 
 
 # =============================================================================

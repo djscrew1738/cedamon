@@ -113,7 +113,7 @@ def build_nmap_targets(recon_data: dict, settings: dict) -> Tuple[List[str], str
 # Command Builder
 # =============================================================================
 
-def build_nmap_command(target_ip: str, ports: str, output_file: str, settings: dict) -> List[str]:
+def build_nmap_command(target_ip: str, ports: str, output_file: str, settings: dict, is_cdn: bool = False) -> List[str]:
     """
     Build nmap CLI command for a single target IP.
 
@@ -122,12 +122,14 @@ def build_nmap_command(target_ip: str, ports: str, output_file: str, settings: d
         ports: Comma-separated port list (e.g. '21,22,80,3306')
         output_file: Path for XML output (-oX)
         settings: Settings dictionary
+        is_cdn: Whether the target is a CDN/WAF-protected IP
 
     Returns:
         List of command arguments
     """
     VERSION_DETECTION = settings.get('NMAP_VERSION_DETECTION', True)
     SCRIPT_SCAN = settings.get('NMAP_SCRIPT_SCAN', True)
+    SKIP_SCRIPT_SCAN_FOR_CDN = settings.get('NMAP_SKIP_SCRIPT_SCAN_FOR_CDN', True)
     TIMING = settings.get('NMAP_TIMING_TEMPLATE', 'T3')
     HOST_TIMEOUT = settings.get('NMAP_HOST_TIMEOUT', 300)
 
@@ -137,8 +139,9 @@ def build_nmap_command(target_ip: str, ports: str, output_file: str, settings: d
     if VERSION_DETECTION:
         cmd.append("-sV")
 
-    # NSE vulnerability scripts
-    if SCRIPT_SCAN:
+    # NSE vulnerability scripts (skip for CDN hosts when configured, because
+    # --script vuln times out against Cloudflare/Shopify/etc. fronting)
+    if SCRIPT_SCAN and not (is_cdn and SKIP_SCRIPT_SCAN_FOR_CDN):
         cmd.extend(["--script", "vuln"])
 
     # XML output
@@ -404,6 +407,7 @@ def run_nmap_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             ("NMAP_ENABLED", "Toggle"),
             ("NMAP_VERSION_DETECTION", "Detection"),
             ("NMAP_SCRIPT_SCAN", "Detection"),
+            ("NMAP_SKIP_SCRIPT_SCAN_FOR_CDN", "Detection"),
             ("NMAP_TIMING_TEMPLATE", "Timing"),
             ("NMAP_HOST_TIMEOUT", "Timing"),
             ("NMAP_TIMEOUT", "Timing"),
@@ -413,6 +417,7 @@ def run_nmap_scan(recon_data: dict, output_file: Path = None, settings: dict = N
 
     NMAP_VERSION_DETECTION = settings.get('NMAP_VERSION_DETECTION', True)
     NMAP_SCRIPT_SCAN = settings.get('NMAP_SCRIPT_SCAN', True)
+    NMAP_SKIP_SCRIPT_SCAN_FOR_CDN = settings.get('NMAP_SKIP_SCRIPT_SCAN_FOR_CDN', True)
     NMAP_TIMING = settings.get('NMAP_TIMING_TEMPLATE', 'T3')
     NMAP_TIMEOUT = settings.get('NMAP_TIMEOUT', 600)
     NMAP_HOST_TIMEOUT = settings.get('NMAP_HOST_TIMEOUT', 300)
@@ -443,6 +448,7 @@ def run_nmap_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     print(f"[*][Nmap] Ports to probe: {port_string}")
     print(f"[*][Nmap] Version detection: {NMAP_VERSION_DETECTION}")
     print(f"[*][Nmap] Script scan (vuln): {NMAP_SCRIPT_SCAN}")
+    print(f"[*][Nmap] Skip script scan for CDN: {NMAP_SKIP_SCRIPT_SCAN_FOR_CDN}")
     print(f"[*][Nmap] Timing: {NMAP_TIMING}")
     print(f"[*][Nmap] Host timeout: {NMAP_HOST_TIMEOUT}")
 
@@ -453,11 +459,14 @@ def run_nmap_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     scan_temp_dir = Path(f"/tmp/redamon/.nmap_scan_{scan_id}")
     scan_temp_dir.mkdir(parents=True, exist_ok=True)
 
+    port_scan_by_ip = port_scan.get("by_ip", {})
+
     def _scan_single_ip(target_ip, idx, total, port_string, nmap_timeout, output_dir):
         """Scan a single IP with nmap and return parsed results."""
         xml_output = str(output_dir / f"nmap_{idx}_{target_ip.replace(':', '_')}.xml")
 
-        cmd = build_nmap_command(target_ip, port_string, xml_output, settings)
+        is_cdn = bool(port_scan_by_ip.get(target_ip, {}).get("is_cdn", False))
+        cmd = build_nmap_command(target_ip, port_string, xml_output, settings, is_cdn=is_cdn)
 
         print(f"[*][Nmap] Scanning {target_ip} ({idx}/{total})...")
 

@@ -54,7 +54,7 @@ class TriageWebSearchManager:
     """Web search tool for enriching triage analysis."""
 
     def __init__(self, tavily_api_key: str = "", key_rotator=None):
-        self.tavily_api_key = tavily_api_key or ""
+        self.tavily_api_key = tavily_api_key or os.getenv('TAVILY_API_KEY', '')
         self.key_rotator = key_rotator  # Optional[KeyRotator]
 
     async def search(self, query: str, max_results: int = 5) -> str:

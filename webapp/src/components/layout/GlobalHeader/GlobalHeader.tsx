@@ -1,9 +1,10 @@
 'use client'
 
+import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Crosshair, FolderOpen, Shield, BookOpen, TrendingUp, FileText, Settings, Users, GitBranch } from 'lucide-react'
+import { Crosshair, FolderOpen, Shield, BookOpen, TrendingUp, FileText, Settings, Users, GitBranch, Menu, X } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { ProjectSelector } from './ProjectSelector'
 import { UserSelector } from './UserSelector'
@@ -15,6 +16,22 @@ export function GlobalHeader() {
   const pathname = usePathname()
   const { isAdmin } = useAuth()
   const { projectId } = useProject()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [pathname])
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [mobileMenuOpen])
 
   const coreNav = [
     { label: 'Red Zone', href: '/graph', icon: <Crosshair size={14} /> },
@@ -26,9 +43,19 @@ export function GlobalHeader() {
     { label: 'Reports', href: '/reports', icon: <FileText size={14} /> },
   ]
 
+  const utilityLinks = [
+    { label: 'Projects', href: '/projects', icon: <FolderOpen size={16} /> },
+    ...(isAdmin ? [{ label: 'Users', href: '/settings/users', icon: <Users size={16} /> }] : []),
+    { label: 'Settings', href: '/settings', icon: <Settings size={16} /> },
+  ]
+
+  const handleNavClick = useCallback(() => {
+    setMobileMenuOpen(false)
+  }, [])
+
   return (
     <header className={styles.header}>
-      <Link href="/graph" className={styles.logo}>
+      <Link href="/graph" className={styles.logo} onClick={handleNavClick}>
         <Image src="/logo.png" alt="RedAmon" width={28} height={28} className={styles.logoImg} />
         <span className={styles.logoText}>
           <span className={styles.logoAccent}>Red</span>Amon
@@ -37,6 +64,7 @@ export function GlobalHeader() {
 
       <div className={styles.spacer} />
 
+      {/* Desktop navigation */}
       <div className={styles.actions}>
         <nav className={styles.coreNav}>
           {coreNav.map(item => {
@@ -106,6 +134,94 @@ export function GlobalHeader() {
           <Settings size={17} />
         </Link>
       </div>
+
+      {/* Mobile hamburger button */}
+      <button
+        className={styles.hamburger}
+        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+        aria-expanded={mobileMenuOpen}
+      >
+        {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+      </button>
+
+      {/* Mobile slide-out menu */}
+      {mobileMenuOpen && (
+        <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)}>
+          <nav className={styles.mobileMenu} onClick={e => e.stopPropagation()}>
+            <div className={styles.mobileHeader}>
+              <span className={styles.mobileTitle}>Navigation</span>
+              <button
+                className={styles.mobileClose}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className={styles.mobileSection}>
+              <span className={styles.mobileSectionTitle}>Core</span>
+              {coreNav.map(item => {
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`${styles.mobileNavItem} ${isActive ? styles.mobileNavItemActive : ''}`}
+                    onClick={handleNavClick}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+
+            <div className={styles.mobileSection}>
+              <span className={styles.mobileSectionTitle}>Utilities</span>
+              {utilityLinks.map(item => {
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`${styles.mobileNavItem} ${isActive ? styles.mobileNavItemActive : ''}`}
+                    onClick={handleNavClick}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+
+            <div className={styles.mobileSection}>
+              <span className={styles.mobileSectionTitle}>Wiki</span>
+              <a
+                href="https://github.com/samugit83/redamon/wiki"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.mobileNavItem}
+                onClick={handleNavClick}
+              >
+                <BookOpen size={16} />
+                <span>Documentation</span>
+              </a>
+            </div>
+
+            <div className={styles.mobileDivider} />
+
+            <div className={styles.mobileBottom}>
+              <ProjectSelector />
+              <div className={styles.mobileRow}>
+                <ThemeToggle />
+                <UserSelector />
+              </div>
+            </div>
+          </nav>
+        </div>
+      )}
     </header>
   )
 }

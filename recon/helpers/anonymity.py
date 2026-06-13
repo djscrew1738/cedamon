@@ -61,6 +61,65 @@ def is_proxychains_available() -> bool:
     return shutil.which("proxychains4") is not None or shutil.which("proxychains") is not None
 
 
+def is_tor_healthy(timeout: int = 15) -> bool:
+    """
+    Verify that Tor can actually route a real TCP connection (not just listen).
+
+    A listening SOCKS port is necessary but not sufficient: many scans stall
+    because Tor circuits cannot reach targets. This function opens a test
+    connection through the Tor proxy to confirm a working circuit.
+
+    Parameters
+    ----------
+    timeout : int
+        Seconds to wait for the test connection.
+
+    Returns
+    -------
+    bool
+        True if Tor successfully routes a connection, False otherwise.
+    """
+    if not is_tor_running():
+        return False
+
+    # First try PySocks: lightweight TCP test to Cloudflare HTTP endpoint.
+    try:
+        import socks
+        sock = socks.socksocket()
+        sock.set_proxy(socks.SOCKS5, TOR_SOCKS_HOST, TOR_SOCKS_PORT)
+        sock.settimeout(timeout)
+        sock.connect(("1.1.1.1", 80))
+        sock.close()
+        return True
+    except ImportError:
+        pass
+    except Exception:
+        return False
+
+    # Fallback: use curl if available.
+    curl = shutil.which("curl")
+    if curl:
+        try:
+            result = subprocess.run(
+                [
+                    curl,
+                    "--max-time", str(timeout),
+                    "--socks5", f"{TOR_SOCKS_HOST}:{TOR_SOCKS_PORT}",
+                    "-s", "-o", "/dev/null",
+                    "-w", "%{http_code}",
+                    "https://check.torproject.org/api/ip",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout + 5,
+            )
+            return result.returncode == 0 and result.stdout.strip().startswith(("2", "3", "4", "5"))
+        except Exception:
+            return False
+
+    return False
+
+
 def get_proxychains_cmd() -> str:
     """Get the proxychains command name."""
     if shutil.which("proxychains4"):

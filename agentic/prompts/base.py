@@ -493,6 +493,105 @@ def build_attack_path_behavior(attack_path_type):
             "context-aware payloads, Playwright dialog-handler proof, dalfox WAF evasion if filtered, "
             "then action='complete' after PoC capture."
         )
+    elif attack_path_type == "ad_kill_chain":
+        return (
+            "In informational phase: Run BloodHound ingest and query_graph for AD topology "
+            "(Domains, Hosts with ports 88/445/389, Users, Service nodes). "
+            "Do NOT fire credential attacks during informational phase.\n"
+            "In exploitation: Follow the AD Kill Chain workflow — prioritize AS-REP roasting "
+            "(no lockout) -> Kerberoasting -> password spray (only if enabled) -> "
+            "BloodHound-guided exploitation of shortest path to DA."
+        )
+    elif attack_path_type == "cloud_infra_exploitation":
+        return (
+            "In informational phase: Query graph for cloud assets, then probe metadata endpoints "
+            "(IMDS, GCP metadata, Azure IMDS) and enumerate IAM permissions. "
+            "Do NOT modify cloud resources during informational phase.\n"
+            "In exploitation: Follow the Cloud Infra workflow — metadata abuse -> "
+            "storage enumeration -> privilege escalation -> cross-account pivot. "
+            "Stop at read-only proofs unless aggressive mode is enabled."
+        )
+    elif attack_path_type == "api_security_testing":
+        return (
+            "In informational phase: Map API surface via query_graph, OpenAPI discovery, "
+            "and JavaScript analysis. Identify auth mechanisms and parameter types.\n"
+            "In exploitation: Follow the API Security workflow — auth testing (JWT/OAuth) -> "
+            "authorization flaws (IDOR/BOLA/BFLA) -> GraphQL-specific checks -> "
+            "mass assignment -> rate-limit bypass. Test ONE flaw class at a time."
+        )
+    elif attack_path_type == "supply_chain_poisoning":
+        return (
+            "In informational phase: Discover manifest files, internal package names, "
+            "and registry configuration via query_graph and repo analysis.\n"
+            "In exploitation: Follow the Supply Chain workflow — dependency confusion recon -> "
+            "typo-squat check -> benign PoC package build -> publish (only if enabled) -> "
+            "verify execution. NEVER publish harmful packages. Cleanup within 24h."
+        )
+    elif attack_path_type == "domain_takeover":
+        return (
+            "In informational phase: Enumerate subdomains passively (subfinder, amass, gau) "
+            "and resolve DNS records. Do NOT claim resources during informational phase.\n"
+            "In exploitation: Follow the Domain Takeover workflow — dangling CNAME detection -> "
+            "provider fingerprint confirmation -> benign PoC claim (test subdomains only) -> "
+            "cleanup. Also check DNS/email security (SPF/DMARC/DKIM)."
+        )
+    elif attack_path_type == "subdomain_reconnaissance":
+        return (
+            "In informational phase: Run passive subdomain enumeration (crt.sh, subfinder, amass, gau) "
+            "and resolve discovered names. Do NOT run active brute-force during informational phase.\n"
+            "In exploitation: Follow the Subdomain Recon workflow — active brute-force (dnsx, massdns) -> "
+            "permutation generation (altdns, dnsgen) -> DNS resolution validation -> takeover fingerprinting. "
+            "Document source for each subdomain found."
+        )
+    elif attack_path_type == "attack_surface_mapping":
+        return (
+            "In informational phase: Run full passive OSINT (subfinder, amass, gau, crt.sh, shodan) "
+            "followed by active verification (httpx, naabu, nmap) if enabled. "
+            "Crawl live hosts with katana and analyze JS with jsluice.\n"
+            "In exploitation: Attack surface mapping is INFORMATIONAL ONLY. "
+            "After mapping, recommend specific exploitation skills (e.g., api_security_testing, xss, domain_takeover). "
+            "Do NOT perform exploitation under this skill."
+        )
+    elif attack_path_type == "email_security_assessment":
+        return (
+            "In informational phase: Query all email DNS records (MX, SPF, DMARC, DKIM, MTA-STS, TLS-RPT, BIMI) "
+            "and analyze configuration. Do NOT send spoofed emails during informational phase.\n"
+            "In exploitation: Follow the Email Security workflow — DNS analysis -> spoofing PoC (if enabled) -> "
+            "open relay test -> mailbox enumeration -> header injection -> BEC lookalike check. "
+            "Never send emails to third parties."
+        )
+    elif attack_path_type == "web_cache_poisoning":
+        return (
+            "In informational phase: Fingerprint caching layers (CDN, reverse proxy, app cache) via headers. "
+            "Map cache key components and identify unkeyed inputs.\n"
+            "In exploitation: Follow the Cache Poisoning workflow — unkeyed input discovery -> "
+            "header-based poisoning -> parameter cloaking -> cache deception. "
+            "Use benign oracles only. Document every poisoned URL and TTL for cleanup."
+        )
+    elif attack_path_type == "web_application_reconnaissance":
+        return (
+            "In informational phase: Map the web application surface via endpoint discovery (ffuf, katana), "
+            "technology fingerprinting (WhatWeb, Wappalyzer), and WAF detection. Do NOT send evasion probes.\n"
+            "In exploitation: Follow the Web App Recon workflow — JavaScript analysis (jsluice, LinkFinder) -> "
+            "form/input mapping (Arjun, katana) -> comment/hint discovery -> source map recovery. "
+            "Rate-limit requests. Read-only reconnaissance."
+        )
+    elif attack_path_type == "transport_security_assessment":
+        return (
+            "In informational phase: Run testssl baseline on the apex domain. "
+            "Analyze certificate chain, HSTS, and security headers.\n"
+            "In exploitation: Follow the Transport Security workflow — cipher suite grading -> "
+            "downgrade vulnerability testing (if enabled) -> subdomain TLS consistency scan. "
+            "Never modify server TLS configuration. Read-only assessment."
+        )
+    elif attack_path_type == "infrastructure_exposure_analysis":
+        return (
+            "In informational phase: Query graph for known assets, then run passive recon (shodan, google_dork, crt.sh).\n"
+            "In exploitation: Follow the Infrastructure Exposure workflow — cloud storage scan -> "
+            "database/API exposure test -> management interface discovery -> shadow IT hunting -> "
+            "secret/source code exposure. Never modify data in exposed databases or buckets. "
+            "Do NOT access PII."
+        )
     elif attack_path_type.startswith("user_skill:"):
         return (
             "Follow the attack skill workflow guidance provided in the Available Tools section.\n"

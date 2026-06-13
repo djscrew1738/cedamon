@@ -37,7 +37,7 @@ model UserLlmProvider {
   userId          String   @map("user_id")
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // "openai" | "anthropic" | "openrouter" | "bedrock" | "openai_compatible"
+  // "openai" | "anthropic" | "bedrock" | "openai_compatible"
   providerType    String   @map("provider_type")
   name            String
 
@@ -746,7 +746,7 @@ model Project {
   fireteamMaxConcurrent                 Int      @default(5)               @map("fireteam_max_concurrent")
   fireteamMaxMembers                    Int      @default(5)               @map("fireteam_max_members")
   fireteamMemberMaxIterations           Int      @default(10)              @map("fireteam_member_max_iterations")
-  fireteamTimeoutSec                    Int      @default(3600)            @map("fireteam_timeout_sec")
+  fireteamTimeoutSec                    Int      @default(7200)            @map("fireteam_timeout_sec")
   fireteamAllowedPhases                 String[] @default(["informational", "exploitation", "post_exploitation"]) @map("fireteam_allowed_phases")
   fireteamConfirmationTimeoutSec        Int      @default(600)             @map("fireteam_confirmation_timeout_sec")
   fireteamPropensity                    Int      @default(3)               @map("fireteam_propensity")
@@ -874,7 +874,7 @@ model Project {
   pathTraversalOobProvider              String   @default("oast.fun") @map("path_traversal_oob_provider")
 
   // ========== ATTACK SKILL CONFIG ==========
-  attackSkillConfig                    Json     @default("{\"builtIn\":{\"cve_exploit\":true,\"brute_force_credential_guess\":true,\"phishing_social_engineering\":true,\"denial_of_service\":true,\"sql_injection\":true,\"xss\":true,\"ssrf\":true,\"rce\":true,\"path_traversal\":true},\"user\":{}}") @map("attack_skill_config")
+  attackSkillConfig                    Json     @default("{\"builtIn\":{\"cve_exploit\":true,\"brute_force_credential_guess\":true,\"phishing_social_engineering\":true,\"denial_of_service\":true,\"sql_injection\":true,\"xss\":true,\"ssrf\":true,\"rce\":true,\"path_traversal\":true,\"llm_security\":true,\"cicd_pipeline\":true,\"browser_exploitation\":true,\"container_k8s\":true,\"hybrid_identity\":true},\"user\":{}}") @map("attack_skill_config")
 
   // ========== CYPHERFIX SETTINGS ==========
   cypherfixGithubToken              String   @default("") @map("cypherfix_github_token")

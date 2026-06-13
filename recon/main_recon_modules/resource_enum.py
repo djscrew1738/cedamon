@@ -57,6 +57,9 @@ from recon.helpers.resource_enum import (
     verify_gau_urls,
     detect_gau_methods,
     merge_gau_into_by_base_url,
+    # waymore helpers
+    run_waymore_discovery,
+    merge_waymore_into_by_base_url,
     # Kiterunner helpers
     ensure_kiterunner_binary,
     run_kiterunner_discovery,
@@ -271,6 +274,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             ("GAU_THREADS", "GAU (passive archives)"),
             ("GAU_VERIFY_RATE_LIMIT", "GAU (passive archives)"),
             ("GAU_VERIFY_THREADS", "GAU (passive archives)"),
+            ("WAYMORE_ENABLED", "waymore (passive archives)"),
+            ("WAYMORE_PROVIDERS", "waymore (passive archives)"),
+            ("WAYMORE_WORKERS", "waymore (passive archives)"),
             ("PARAMSPIDER_ENABLED", "ParamSpider"),
             ("PARAMSPIDER_WORKERS", "ParamSpider"),
             ("PARAMSPIDER_TIMEOUT", "ParamSpider"),
@@ -474,6 +480,22 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     GAU_FILTER_DEAD_ENDPOINTS = settings.get('GAU_FILTER_DEAD_ENDPOINTS', True)
     GAU_WORKERS = settings.get('GAU_WORKERS', 10)
     URLSCAN_API_KEY = settings.get('URLSCAN_API_KEY', '')
+
+    # waymore settings - disable in IP mode (archives index by domain, not IP)
+    WAYMORE_ENABLED = False if ip_mode else settings.get('WAYMORE_ENABLED', True)
+    WAYMORE_DOCKER_IMAGE = settings.get('WAYMORE_DOCKER_IMAGE', 'waymore:latest')
+    WAYMORE_TIMEOUT = settings.get('WAYMORE_TIMEOUT', 300)
+    WAYMORE_WORKERS = settings.get('WAYMORE_WORKERS', 3)
+    WAYMORE_BLACKLIST_EXTENSIONS = settings.get(
+        'WAYMORE_BLACKLIST_EXTENSIONS',
+        ['png', 'jpg', 'jpeg', 'gif', 'css', 'woff', 'woff2', 'ttf', 'svg', 'ico', 'eot', 'pdf', 'zip', 'gz']
+    )
+    WAYMORE_FROM_DATE = settings.get('WAYMORE_FROM_DATE', '')
+    WAYMORE_TO_DATE = settings.get('WAYMORE_TO_DATE', '')
+    WAYMORE_PROVIDERS = list(settings.get(
+        'WAYMORE_PROVIDERS',
+        ['wayback', 'commoncrawl', 'alienvault', 'urlscan', 'virustotal', 'ghostarchive', 'intelligencex']
+    ))
 
     # ParamSpider settings - disable in IP mode (archives index by domain, not IP)
     PARAMSPIDER_ENABLED = False if ip_mode else settings.get('PARAMSPIDER_ENABLED', False)
@@ -707,6 +729,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     hakrawler_meta = {}
     gau_urls = []
     gau_urls_by_domain = {}
+    waymore_urls = []
     paramspider_urls = []
     paramspider_urls_by_domain = {}
     kr_results = []
@@ -799,6 +822,21 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                 GAU_WORKERS,
             )
 
+        # Submit waymore discovery if enabled
+        if WAYMORE_ENABLED and target_domains:
+            futures['waymore'] = executor.submit(
+                run_waymore_discovery,
+                target_domains,
+                WAYMORE_DOCKER_IMAGE,
+                WAYMORE_TIMEOUT,
+                use_proxy,
+                WAYMORE_WORKERS,
+                WAYMORE_BLACKLIST_EXTENSIONS,
+                WAYMORE_FROM_DATE or None,
+                WAYMORE_TO_DATE or None,
+                WAYMORE_PROVIDERS,
+            )
+
         # Submit ParamSpider discovery if enabled
         if PARAMSPIDER_ENABLED and target_domains:
             futures['paramspider'] = executor.submit(
@@ -825,6 +863,9 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
                     gau_overall_timeout = gau_per_domain_timeout * (len(target_domains) // gau_workers + 1) + 180
                     gau_urls, gau_urls_by_domain = future.result(timeout=gau_overall_timeout)
                     print(f"[+][GAU] Completed: {len(gau_urls)} URLs")
+                elif name == 'waymore':
+                    waymore_urls = future.result(timeout=WAYMORE_TIMEOUT * len(target_domains) + 120)
+                    print(f"[+][waymore] Completed: {len(waymore_urls)} URLs")
                 elif name == 'paramspider':
                     paramspider_urls, paramspider_urls_by_domain = future.result(timeout=PARAMSPIDER_TIMEOUT * len(target_domains) + 120)
                     print(f"[+][ParamSpider] Completed: {len(paramspider_urls)} parameterized URLs")
@@ -916,163 +957,136 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         print(f"[+][Hakrawler] New endpoints: {hakrawler_stats['hakrawler_new']}")
         print(f"[+][Hakrawler] Overlap with Katana: {hakrawler_stats['hakrawler_overlap']}")
 
-    # jsluice post-crawl JS analysis (runs after crawlers complete)
-    jsluice_stats = {
-        "jsluice_total": 0,
-        "jsluice_parsed": 0,
-        "jsluice_new": 0,
-        "jsluice_overlap": 0,
-        "jsluice_verify_total": 0,
-        "jsluice_verify_candidates": 0,
-        "jsluice_skipped_blacklist": 0,
-        "jsluice_verified": 0,
-        "jsluice_skipped_unverified": 0,
-    }
+    # ------------------------------------------------------------------
+    # PHASE 4-6: jsluice, FFuf, ZAP Ajax Spider (parallel fan-out group)
+    #
+    # These three tools are independent of each other — each takes Phase-1
+    # (Katana + Hakrawler + GAU) data as input and produces new endpoint
+    # candidates.  We launch them in parallel, then merge results into
+    # organized_data sequentially.
+    # ------------------------------------------------------------------
+    print(f"\n[*][ResourceEnum] Post-crawl analysis (parallel): jsluice + FFuf + ZAP")
+    print("-" * 40)
 
-    jsluice_urls_pre_verify_count = 0
+    jsluice_stats: dict = {}
+    ffuf_stats: dict = {}
+    zap_ajax_result: tuple = (), {}
 
-    if JSLUICE_ENABLED and (JSLUICE_EXTRACT_URLS or JSLUICE_EXTRACT_SECRETS):
-        all_crawl_urls = list(set(katana_urls + hakrawler_urls))
-        if all_crawl_urls:
-            jsluice_result = run_jsluice_analysis(
-                all_crawl_urls,
-                JSLUICE_MAX_FILES,
-                JSLUICE_TIMEOUT,
-                JSLUICE_EXTRACT_URLS,
-                JSLUICE_EXTRACT_SECRETS,
-                JSLUICE_CONCURRENCY,
-                JSLUICE_PARALLELISM,
-                target_domains,
-                use_proxy
-            )
-
-            jsluice_urls_pre_verify_count = len(jsluice_result.get("urls", []))
-
-            if jsluice_result.get("urls"):
-                if JSLUICE_VERIFY_URLS:
-                    verified_jsluice_urls, verify_stats = verify_jsluice_urls(
-                        jsluice_result["urls"],
-                        JSLUICE_VERIFY_DOCKER_IMAGE,
-                        JSLUICE_VERIFY_THREADS,
-                        JSLUICE_VERIFY_TIMEOUT,
-                        JSLUICE_VERIFY_RATE_LIMIT,
-                        JSLUICE_VERIFY_ACCEPT_STATUS,
-                        JSLUICE_EXCLUDE_PATTERNS,
-                        use_proxy,
-                    )
-                    jsluice_result["urls"] = sorted(verified_jsluice_urls)
-                    jsluice_stats.update(verify_stats)
-                else:
-                    jsluice_stats["jsluice_verify_total"] = jsluice_urls_pre_verify_count
-                    jsluice_stats["jsluice_verify_candidates"] = jsluice_urls_pre_verify_count
-                    jsluice_stats["jsluice_verified"] = jsluice_urls_pre_verify_count
-
-            if jsluice_result.get("urls"):
-                print("\n[*][jsluice] Merging extracted URLs into results...")
-                organized_data['by_base_url'], merge_stats = merge_jsluice_into_by_base_url(
-                    jsluice_result["urls"],
-                    organized_data['by_base_url'],
-                )
-                jsluice_stats.update(merge_stats)
-                print(f"[+][jsluice] Total URLs: {jsluice_stats['jsluice_total']}")
-                print(f"[+][jsluice] New endpoints: {jsluice_stats['jsluice_new']}")
-                print(f"[+][jsluice] Overlap: {jsluice_stats['jsluice_overlap']}")
-                if JSLUICE_VERIFY_URLS:
-                    print(f"[+][jsluice] Pre-verify URLs: {jsluice_urls_pre_verify_count}")
-                    print(f"[+][jsluice] Skipped (blacklist): {jsluice_stats['jsluice_skipped_blacklist']}")
-                    print(f"[+][jsluice] Skipped (unverified): {jsluice_stats['jsluice_skipped_unverified']}")
-            elif JSLUICE_VERIFY_URLS and jsluice_stats.get("jsluice_verify_total", 0) > 0:
-                print(f"[-][jsluice] No URLs survived validation ({jsluice_stats['jsluice_skipped_blacklist']} blacklisted, {jsluice_stats['jsluice_skipped_unverified']} unverified)")
-
-    # FFuf directory fuzzing (runs after crawlers and jsluice, before GAU merge)
-    ffuf_stats = {
-        "ffuf_total": 0,
-        "ffuf_new": 0,
-        "ffuf_overlap": 0,
-    }
-
+    # FFuf setup (lightweight — compute before submitting to parallel pool)
+    ffuf_setup: dict = {"enabled": False, "discovered_base_paths": None, "extensions": FFUF_EXTENSIONS}
     if FFUF_ENABLED:
         if pull_ffuf_binary_check():
-            discovered_base_paths = None
-            if FFUF_SMART_FUZZ:
-                base_paths = set()
-                for base_url, base_data in organized_data['by_base_url'].items():
-                    for path in base_data.get('endpoints', {}).keys():
-                        parts = path.strip('/').split('/')
-                        if len(parts) >= 2:
-                            base_paths.add('/'.join(parts[:2]))
-                        if len(parts) >= 1 and parts[0]:
-                            base_paths.add(parts[0])
-                if base_paths:
-                    discovered_base_paths = sorted(base_paths)[:20]
-                    print(f"[*][FFuf] Smart fuzz: targeting {len(discovered_base_paths)} discovered base paths")
-
-            effective_extensions = FFUF_EXTENSIONS
-            if FFUF_AI_EXTENSIONS:
-                from recon.helpers.ai_planner.ffuf_extensions import get_ai_extensions
-                user_id = os.environ.get('USER_ID', '')
-                project_id = os.environ.get('PROJECT_ID', '')
-                print(f"[*][FFuf] AI extensions enabled, model={AI_PIPELINE_MODEL}")
-                print(f"[*][FFuf] Querying AI for {len(target_urls)} target(s)...")
-                fp_cache: dict = {}
-                ai_per_target: dict = {}
-                for url in target_urls:
-                    ai_per_target[url] = get_ai_extensions(
-                        url, AI_PIPELINE_MODEL, max_extensions=6,
-                        cache=fp_cache, user_id=user_id, project_id=project_id,
-                    )
-                # Union of per-target extensions (single ffuf job uses one -e list).
-                effective_extensions = sorted({e for exts in ai_per_target.values() for e in exts})
-                print(f"[*][FFuf] AI selected {len(effective_extensions)} unique extensions across all targets: {effective_extensions}")
-                print(f"[*][FFuf] Static FFUF_EXTENSIONS list ({FFUF_EXTENSIONS}) is being ignored.")
-
-            ffuf_results, ffuf_meta = run_ffuf_discovery(
-                target_urls,
-                FFUF_WORDLIST,
-                FFUF_THREADS,
-                FFUF_RATE,
-                FFUF_TIMEOUT,
-                FFUF_MAX_TIME,
-                FFUF_MATCH_CODES,
-                FFUF_FILTER_CODES,
-                FFUF_FILTER_SIZE,
-                effective_extensions,
-                FFUF_RECURSION,
-                FFUF_RECURSION_DEPTH,
-                FFUF_AUTO_CALIBRATE,
-                FFUF_CUSTOM_HEADERS,
-                FFUF_FOLLOW_REDIRECTS,
-                target_domains,
-                discovered_base_paths,
-                use_proxy,
-                FFUF_PARALLELISM,
-            )
-
-            if ffuf_results:
-                print("\n[*][FFuf] Merging discovered endpoints into results...")
-                organized_data['by_base_url'], ffuf_stats = merge_ffuf_into_by_base_url(
-                    ffuf_results,
-                    organized_data['by_base_url'],
-                )
-                print(f"[+][FFuf] Total: {ffuf_stats['ffuf_total']} endpoints")
-                print(f"[+][FFuf] New endpoints: {ffuf_stats['ffuf_new']}")
-                print(f"[+][FFuf] Overlap with crawlers: {ffuf_stats['ffuf_overlap']}")
+            ffuf_setup["enabled"] = True
         else:
             print("[!][FFuf] ffuf binary not found in PATH, skipping")
-
-    # ZAP Ajax Spider browser-driven discovery (runs before Arjun so Arjun can enrich ZAP endpoints)
-    if ZAP_AJAX_SPIDER_ENABLED:
-        zap_ajax_seed_urls = list(target_urls)
-        if ZAP_AJAX_SPIDER_SEED_MODE == "base_urls_and_endpoints":
+        if FFUF_SMART_FUZZ:
+            base_paths = set()
             for base_url, base_data in organized_data['by_base_url'].items():
                 for path in base_data.get('endpoints', {}).keys():
-                    zap_ajax_seed_urls.append(base_url.rstrip('/') + path)
-        zap_ajax_seed_urls = sorted(set(zap_ajax_seed_urls))
+                    parts = path.strip('/').split('/')
+                    if len(parts) >= 2:
+                        base_paths.add('/'.join(parts[:2]))
+                    if len(parts) >= 1 and parts[0]:
+                        base_paths.add(parts[0])
+            if base_paths:
+                ffuf_setup["discovered_base_paths"] = sorted(base_paths)[:20]
+                print(f"[*][FFuf] Smart fuzz: targeting {len(ffuf_setup['discovered_base_paths'])} discovered base paths")
+
+        if FFUF_AI_EXTENSIONS:
+            from recon.helpers.ai_planner.ffuf_extensions import get_ai_extensions
+            user_id = os.environ.get('USER_ID', '')
+            project_id = os.environ.get('PROJECT_ID', '')
+            print(f"[*][FFuf] AI extensions enabled, model={AI_PIPELINE_MODEL}")
+            print(f"[*][FFuf] Querying AI for {len(target_urls)} target(s) (parallel)...")
+            fp_cache: dict = {}
+            ai_per_target: dict = {}
+            # Parallelize AI queries — each is an LLM call with ~1-5s latency
+            def _fetch_ai_ext(url: str) -> tuple:
+                exts = get_ai_extensions(
+                    url, AI_PIPELINE_MODEL, max_extensions=6,
+                    cache=fp_cache, user_id=user_id, project_id=project_id,
+                )
+                return url, exts
+            with ThreadPoolExecutor(max_workers=min(len(target_urls), 10)) as ai_exec:
+                ai_futures = {ai_exec.submit(_fetch_ai_ext, url): url for url in target_urls}
+                for f in as_completed(ai_futures):
+                    url, exts = f.result()
+                    ai_per_target[url] = exts
+            ffuf_setup["extensions"] = sorted({e for exts in ai_per_target.values() for e in exts})
+            print(f"[*][FFuf] AI selected {len(ffuf_setup['extensions'])} unique extensions: {ffuf_setup['extensions']}")
+
+    # ZAP seed URL setup (uses Phase-1 endpoints only when running in parallel)
+    if ZAP_AJAX_SPIDER_ENABLED:
+        zap_ajax_seed_urls = sorted(set(target_urls))
+
+    def _run_jsluice() -> dict:
+        """Run jsluice post-crawl JS analysis."""
+        local_stats = {
+            "jsluice_total": 0, "jsluice_parsed": 0, "jsluice_new": 0,
+            "jsluice_overlap": 0, "jsluice_verify_total": 0,
+            "jsluice_verify_candidates": 0, "jsluice_skipped_blacklist": 0,
+            "jsluice_verified": 0, "jsluice_skipped_unverified": 0,
+        }
+        if not JSLUICE_ENABLED or not (JSLUICE_EXTRACT_URLS or JSLUICE_EXTRACT_SECRETS):
+            return {"result": None, "stats": local_stats, "pre_verify_count": 0}
+
+        all_crawl_urls = list(set(katana_urls + hakrawler_urls))
+        if not all_crawl_urls:
+            return {"result": None, "stats": local_stats, "pre_verify_count": 0}
+
+        jsluice_result = run_jsluice_analysis(
+            all_crawl_urls, JSLUICE_MAX_FILES, JSLUICE_TIMEOUT,
+            JSLUICE_EXTRACT_URLS, JSLUICE_EXTRACT_SECRETS,
+            JSLUICE_CONCURRENCY, JSLUICE_PARALLELISM,
+            target_domains, use_proxy,
+        )
+
+        pre_verify_count = len((jsluice_result or {}).get("urls", []))
+        if (jsluice_result or {}).get("urls") and JSLUICE_VERIFY_URLS:
+            verified_urls, verify_stats = verify_jsluice_urls(
+                jsluice_result["urls"], JSLUICE_VERIFY_DOCKER_IMAGE,
+                JSLUICE_VERIFY_THREADS, JSLUICE_VERIFY_TIMEOUT,
+                JSLUICE_VERIFY_RATE_LIMIT, JSLUICE_VERIFY_ACCEPT_STATUS,
+                JSLUICE_EXCLUDE_PATTERNS, use_proxy,
+            )
+            jsluice_result["urls"] = sorted(verified_urls)
+            local_stats.update(verify_stats)
+        elif (jsluice_result or {}).get("urls"):
+            local_stats["jsluice_verify_total"] = pre_verify_count
+            local_stats["jsluice_verify_candidates"] = pre_verify_count
+            local_stats["jsluice_verified"] = pre_verify_count
+
+        return {"result": jsluice_result, "stats": local_stats, "pre_verify_count": pre_verify_count}
+
+    def _run_ffuf() -> dict:
+        """Run FFuf directory fuzzing."""
+        local_stats = {"ffuf_total": 0, "ffuf_new": 0, "ffuf_overlap": 0}
+        if not ffuf_setup["enabled"]:
+            return {"result": None, "meta": {}, "stats": local_stats}
+
+        ffuf_results, ffuf_meta = run_ffuf_discovery(
+            target_urls, FFUF_WORDLIST, FFUF_THREADS, FFUF_RATE,
+            FFUF_TIMEOUT, FFUF_MAX_TIME, FFUF_MATCH_CODES,
+            FFUF_FILTER_CODES, FFUF_FILTER_SIZE, ffuf_setup["extensions"],
+            FFUF_RECURSION, FFUF_RECURSION_DEPTH, FFUF_AUTO_CALIBRATE,
+            FFUF_CUSTOM_HEADERS, FFUF_FOLLOW_REDIRECTS,
+            target_domains, ffuf_setup["discovered_base_paths"],
+            use_proxy, FFUF_PARALLELISM,
+        )
+        return {"result": ffuf_results, "meta": ffuf_meta, "stats": local_stats}
+
+    def _run_zap_ajax() -> dict:
+        """Run ZAP Ajax Spider browser-driven discovery."""
+        local_stats = {
+            "zap_ajax_spider_total": 0, "zap_ajax_spider_parsed": 0,
+            "zap_ajax_spider_new": 0, "zap_ajax_spider_overlap": 0,
+        }
+        if not ZAP_AJAX_SPIDER_ENABLED:
+            return {"result": ([], {}), "stats": local_stats}
 
         print(f"\n[*][ZAP Ajax] Running browser-driven discovery ({len(zap_ajax_seed_urls)} seed URLs)...")
-        zap_ajax_urls, zap_ajax_meta = run_zap_ajax_spider(
-            zap_ajax_seed_urls,
-            ZAP_AJAX_SPIDER_DOCKER_IMAGE,
+        zap_urls, zap_meta = run_zap_ajax_spider(
+            zap_ajax_seed_urls, ZAP_AJAX_SPIDER_DOCKER_IMAGE,
             allowed_hosts=target_domains,
             custom_headers=ZAP_AJAX_SPIDER_CUSTOM_HEADERS,
             exclude_patterns=ZAP_AJAX_SPIDER_EXCLUDE_PATTERNS,
@@ -1092,17 +1106,62 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             use_proxy=use_proxy,
             parallelism=ZAP_AJAX_SPIDER_PARALLELISM,
         )
+        return {"result": (zap_urls, zap_meta), "stats": local_stats}
 
-        if zap_ajax_urls:
-            print("\n[*][ZAP Ajax] Merging discovered URLs into results...")
-            organized_data['by_base_url'], zap_ajax_stats = merge_zap_ajax_into_by_base_url(
-                zap_ajax_urls,
-                organized_data['by_base_url'],
-            )
-        print(f"[+][ZAP Ajax] Total URLs: {zap_ajax_stats['zap_ajax_spider_total']}")
-        print(f"[+][ZAP Ajax] Parsed: {zap_ajax_stats['zap_ajax_spider_parsed']}")
-        print(f"[+][ZAP Ajax] New endpoints: {zap_ajax_stats['zap_ajax_spider_new']}")
-        print(f"[+][ZAP Ajax] Overlap: {zap_ajax_stats['zap_ajax_spider_overlap']}")
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="post-crawl") as pc_exec:
+        jsluice_fut = pc_exec.submit(_run_jsluice)
+        ffuf_fut = pc_exec.submit(_run_ffuf)
+        zap_fut = pc_exec.submit(_run_zap_ajax)
+
+        # Wait for all three to complete
+        jsluice_out = jsluice_fut.result()
+        ffuf_out = ffuf_fut.result()
+        zap_ajax_out = zap_fut.result()
+
+    # --- Merge jsluice results ---
+    jsluice_result = jsluice_out["result"]
+    jsluice_stats = jsluice_out["stats"]
+    jsluice_urls_pre_verify_count = jsluice_out["pre_verify_count"]
+    if (jsluice_result or {}).get("urls"):
+        print("\n[*][jsluice] Merging extracted URLs into results...")
+        organized_data['by_base_url'], merge_stats = merge_jsluice_into_by_base_url(
+            jsluice_result["urls"], organized_data['by_base_url'],
+        )
+        jsluice_stats.update(merge_stats)
+        print(f"[+][jsluice] Total URLs: {jsluice_stats['jsluice_total']}")
+        print(f"[+][jsluice] New endpoints: {jsluice_stats['jsluice_new']}")
+        print(f"[+][jsluice] Overlap: {jsluice_stats['jsluice_overlap']}")
+        if JSLUICE_VERIFY_URLS:
+            print(f"[+][jsluice] Pre-verify URLs: {jsluice_urls_pre_verify_count}")
+            print(f"[+][jsluice] Skipped (blacklist): {jsluice_stats['jsluice_skipped_blacklist']}")
+            print(f"[+][jsluice] Skipped (unverified): {jsluice_stats['jsluice_skipped_unverified']}")
+    elif jsluice_result and JSLUICE_VERIFY_URLS and jsluice_stats.get("jsluice_verify_total", 0) > 0:
+        print(f"[-][jsluice] No URLs survived validation ({jsluice_stats['jsluice_skipped_blacklist']} blacklisted, {jsluice_stats['jsluice_skipped_unverified']} unverified)")
+
+    # --- Merge FFuf results ---
+    ffuf_stats = ffuf_out["stats"]
+    ffuf_results = ffuf_out["result"]
+    if ffuf_results:
+        print("\n[*][FFuf] Merging discovered endpoints into results...")
+        organized_data['by_base_url'], ffuf_stats = merge_ffuf_into_by_base_url(
+            ffuf_results, organized_data['by_base_url'],
+        )
+        print(f"[+][FFuf] Total: {ffuf_stats['ffuf_total']} endpoints")
+        print(f"[+][FFuf] New endpoints: {ffuf_stats['ffuf_new']}")
+        print(f"[+][FFuf] Overlap with crawlers: {ffuf_stats['ffuf_overlap']}")
+
+    # --- Merge ZAP Ajax Spider results ---
+    zap_ajax_urls, zap_ajax_meta = zap_ajax_out["result"]
+    zap_ajax_stats = zap_ajax_out["stats"]
+    if zap_ajax_urls:
+        print("\n[*][ZAP Ajax] Merging discovered URLs into results...")
+        organized_data['by_base_url'], zap_ajax_stats = merge_zap_ajax_into_by_base_url(
+            zap_ajax_urls, organized_data['by_base_url'],
+        )
+    print(f"[+][ZAP Ajax] Total URLs: {zap_ajax_stats['zap_ajax_spider_total']}")
+    print(f"[+][ZAP Ajax] Parsed: {zap_ajax_stats['zap_ajax_spider_parsed']}")
+    print(f"[+][ZAP Ajax] New endpoints: {zap_ajax_stats['zap_ajax_spider_new']}")
+    print(f"[+][ZAP Ajax] Overlap: {zap_ajax_stats['zap_ajax_spider_overlap']}")
 
     # Arjun parameter discovery (runs after crawlers/FFuf, enriches endpoints with hidden params)
     # Feeds DISCOVERED endpoint URLs (not just base URLs) for maximum coverage.
@@ -1251,6 +1310,24 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         if GAU_FILTER_DEAD_ENDPOINTS:
             print(f"[+][GAU] Dead endpoints filtered: {gau_stats.get('gau_skipped_dead', 0)}")
 
+    # Merge waymore results if available
+    waymore_stats = {
+        "waymore_total": 0,
+        "waymore_parsed": 0,
+        "waymore_new": 0,
+        "waymore_overlap": 0,
+    }
+    if WAYMORE_ENABLED and waymore_urls:
+        print("\n[*][waymore] Merging archive URLs into results...")
+        organized_data['by_base_url'], waymore_stats = merge_waymore_into_by_base_url(
+            waymore_urls,
+            organized_data['by_base_url'],
+        )
+        print(f"[+][waymore] Total URLs: {waymore_stats['waymore_total']}")
+        print(f"[+][waymore] Parsed: {waymore_stats['waymore_parsed']}")
+        print(f"[+][waymore] New endpoints: {waymore_stats['waymore_new']}")
+        print(f"[+][waymore] Overlap with other tools: {waymore_stats['waymore_overlap']}")
+
     # Merge ParamSpider results if available
     paramspider_stats = {
         "paramspider_total": 0,
@@ -1344,7 +1421,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             print(f"[-][ResourceEnum] URLScan skipped {urlscan_skipped} out-of-scope URLs")
 
     # Combine all discovered URLs (deduplicated, in-scope only)
-    jsluice_in_scope_urls = jsluice_result.get("urls", []) if JSLUICE_ENABLED else []
+    jsluice_in_scope_urls = (jsluice_result or {}).get("urls", []) if JSLUICE_ENABLED else []
     ffuf_discovered_urls = [r["url"] for r in ffuf_results] if FFUF_ENABLED else []
     all_discovered_urls = sorted(set(
         katana_urls
@@ -1387,7 +1464,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             'jsluice_verify_enabled': JSLUICE_VERIFY_URLS if JSLUICE_ENABLED else False,
             'jsluice_urls_pre_verify': jsluice_urls_pre_verify_count if JSLUICE_ENABLED else 0,
             'jsluice_urls_found': len(jsluice_in_scope_urls),
-            'jsluice_secrets_found': len(jsluice_result.get("secrets", [])),
+            'jsluice_secrets_found': len((jsluice_result or {}).get("secrets", [])),
             'jsluice_stats': jsluice_stats,
             # FFuf metadata
             'ffuf_enabled': FFUF_ENABLED,
@@ -1462,7 +1539,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             'from_jsluice_urls': len(jsluice_in_scope_urls),
             'jsluice_new_endpoints': jsluice_stats['jsluice_new'],
             'jsluice_overlap': jsluice_stats['jsluice_overlap'],
-            'jsluice_secrets_count': len(jsluice_result.get("secrets", [])),
+            'jsluice_secrets_count': len((jsluice_result or {}).get("secrets", [])),
             'from_ffuf': len(ffuf_results) if FFUF_ENABLED else 0,
             'ffuf_new_endpoints': ffuf_stats['ffuf_new'],
             'ffuf_overlap': ffuf_stats['ffuf_overlap'],
@@ -1474,6 +1551,10 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             'from_gau_in_scope': len(in_scope_gau),  # Only in-scope URLs
             'gau_new_endpoints': gau_stats['gau_new'],
             'gau_overlap': gau_stats['gau_overlap'],
+            # waymore breakdown
+            'from_waymore_total': len(waymore_urls),
+            'waymore_new_endpoints': waymore_stats['waymore_new'],
+            'waymore_overlap': waymore_stats['waymore_overlap'],
             # ParamSpider breakdown
             'from_paramspider_total': len(paramspider_urls),
             'paramspider_new_endpoints': paramspider_stats['paramspider_new'],
@@ -1491,12 +1572,12 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             'methods': {},
             'categories': {}
         },
-        'jsluice_secrets': jsluice_result.get("secrets", []),
+        'jsluice_secrets': (jsluice_result or {}).get("secrets", []),
         'external_domains': (
             gau_external_domains
             + katana_meta.get("external_domains", [])
             + hakrawler_meta.get("external_domains", [])
-            + jsluice_result.get("external_domains", [])
+            + (jsluice_result or {}).get("external_domains", [])
             + ffuf_meta.get("external_domains", [])
             + zap_ajax_meta.get("external_domains", [])
             + arjun_meta.get("external_domains", [])
@@ -1544,7 +1625,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     if HAKRAWLER_ENABLED and hakrawler_urls:
         print(f"[+][Hakrawler] New endpoints: {hakrawler_stats['hakrawler_new']}")
         print(f"[+][Hakrawler] Overlap: {hakrawler_stats['hakrawler_overlap']}")
-    print(f"[+][jsluice] JS analysis: {len(jsluice_in_scope_urls)} URLs, {len(jsluice_result.get('secrets', []))} secrets" if JSLUICE_ENABLED else "[+][jsluice] JS analysis: disabled")
+    print(f"[+][jsluice] JS analysis: {len(jsluice_in_scope_urls)} URLs, {len((jsluice_result or {}).get('secrets', []))} secrets" if JSLUICE_ENABLED else "[+][jsluice] JS analysis: disabled")
     if JSLUICE_ENABLED and jsluice_in_scope_urls:
         print(f"[+][jsluice] New endpoints: {jsluice_stats['jsluice_new']}")
     print(f"[+][FFuf] Directory fuzzing: {len(ffuf_results) if FFUF_ENABLED else 'disabled'}")
@@ -1559,6 +1640,10 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     if GAU_ENABLED and gau_urls:
         print(f"[+][GAU] New endpoints: {gau_stats['gau_new']}")
         print(f"[+][GAU] Overlap: {gau_stats['gau_overlap']}")
+    print(f"[+][waymore] Passive archive: {len(waymore_urls) if WAYMORE_ENABLED else 'disabled'}")
+    if WAYMORE_ENABLED and waymore_urls:
+        print(f"[+][waymore] New endpoints: {waymore_stats['waymore_new']}")
+        print(f"[+][waymore] Overlap: {waymore_stats['waymore_overlap']}")
     print(f"[+][ParamSpider] Passive params: {len(paramspider_urls) if PARAMSPIDER_ENABLED else 'disabled'}")
     if PARAMSPIDER_ENABLED and paramspider_urls:
         print(f"[+][ParamSpider] New endpoints: {paramspider_stats['paramspider_new']}")

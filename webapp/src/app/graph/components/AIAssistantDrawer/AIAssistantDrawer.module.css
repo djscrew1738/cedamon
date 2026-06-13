@@ -2297,3 +2297,28 @@ td:hover .tableCellCopyButton {
   cursor: not-allowed;
 }
 
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .drawer {
+    width: 100vw !important;
+    border-left: none;
+  }
+
+  .drawerResizing {
+    width: 100vw !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-2-5) var(--space-3);
+  }
+
+  .settingsModal {
+    width: calc(100% - 16px);
+    max-height: 90%;
+    border-radius: var(--radius-md);
+  }
+}
+

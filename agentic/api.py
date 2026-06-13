@@ -212,7 +212,6 @@ async def check_target_guardrail(body: GuardrailRequest):
 
                 openai_p = _resolve_provider_key(user_providers, "openai")
                 anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-                openrouter_p = _resolve_provider_key(user_providers, "openrouter")
                 deepseek_p = _resolve_provider_key(user_providers, "deepseek")
                 gemini_p = _resolve_provider_key(user_providers, "gemini")
                 glm_p = _resolve_provider_key(user_providers, "glm")
@@ -225,7 +224,6 @@ async def check_target_guardrail(body: GuardrailRequest):
                     model_name,
                     openai_api_key=(openai_p or {}).get("apiKey"),
                     anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-                    openrouter_api_key=(openrouter_p or {}).get("apiKey"),
                     deepseek_api_key=(deepseek_p or {}).get("apiKey"),
                     gemini_api_key=(gemini_p or {}).get("apiKey"),
                     glm_api_key=(glm_p or {}).get("apiKey"),
@@ -502,7 +500,6 @@ def _build_llm_with_model_for_user(model_name: str, user_id: Optional[str]):
 
     openai_p = _resolve_provider_key(user_providers, "openai")
     anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
     bedrock_p = _resolve_provider_key(user_providers, "bedrock")
     deepseek_p = _resolve_provider_key(user_providers, "deepseek")
     gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -515,7 +512,6 @@ def _build_llm_with_model_for_user(model_name: str, user_id: Optional[str]):
         model_name,
         openai_api_key=(openai_p or {}).get("apiKey"),
         anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-        openrouter_api_key=(openrouter_p or {}).get("apiKey"),
         deepseek_api_key=(deepseek_p or {}).get("apiKey"),
         gemini_api_key=(gemini_p or {}).get("apiKey"),
         glm_api_key=(glm_p or {}).get("apiKey"),
@@ -1119,7 +1115,6 @@ def _setup_llm_for_endpoint(model_name: str) -> "BaseChatModel":
 
     openai_p = _resolve_provider_key(user_providers, "openai")
     anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
     bedrock_p = _resolve_provider_key(user_providers, "bedrock")
     deepseek_p = _resolve_provider_key(user_providers, "deepseek")
     gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -1133,7 +1128,6 @@ def _setup_llm_for_endpoint(model_name: str) -> "BaseChatModel":
         model_name,
         openai_api_key=(openai_p or {}).get("apiKey"),
         anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-        openrouter_api_key=(openrouter_p or {}).get("apiKey"),
         deepseek_api_key=(deepseek_p or {}).get("apiKey"),
         gemini_api_key=(gemini_p or {}).get("apiKey"),
         glm_api_key=(glm_p or {}).get("apiKey"),
@@ -1233,7 +1227,6 @@ def _build_llm_for_user(user_id: Optional[str]):
 
     openai_p = _resolve_provider_key(user_providers, "openai")
     anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
     bedrock_p = _resolve_provider_key(user_providers, "bedrock")
     deepseek_p = _resolve_provider_key(user_providers, "deepseek")
     gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -1246,7 +1239,6 @@ def _build_llm_for_user(user_id: Optional[str]):
         model_name,
         openai_api_key=(openai_p or {}).get("apiKey"),
         anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-        openrouter_api_key=(openrouter_p or {}).get("apiKey"),
         deepseek_api_key=(deepseek_p or {}).get("apiKey"),
         gemini_api_key=(gemini_p or {}).get("apiKey"),
         glm_api_key=(glm_p or {}).get("apiKey"),
@@ -1771,8 +1763,6 @@ async def test_llm_provider(body: LlmProviderTestRequest):
             # Dated snapshots like claude-sonnet-4-20250514 are deprecated and 404
             # once retired. claude-opus-4-6 still accepts the temperature param.
             llm = setup_llm("claude-opus-4-6", anthropic_api_key=body.apiKey)
-        elif ptype == "openrouter":
-            llm = setup_llm("openrouter/openai/gpt-4o-mini", openrouter_api_key=body.apiKey)
         elif ptype == "deepseek":
             llm = setup_llm("deepseek/deepseek-chat", deepseek_api_key=body.apiKey)
         elif ptype == "gemini":
@@ -2525,7 +2515,6 @@ async def text_to_cypher(body: TextToCypherRequest):
 
     openai_p = _resolve_provider_key(user_providers, "openai")
     anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-    openrouter_p = _resolve_provider_key(user_providers, "openrouter")
     bedrock_p = _resolve_provider_key(user_providers, "bedrock")
     deepseek_p = _resolve_provider_key(user_providers, "deepseek")
     gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -2558,7 +2547,6 @@ async def text_to_cypher(body: TextToCypherRequest):
                 model_name,
                 openai_api_key=(openai_p or {}).get("apiKey"),
                 anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-                openrouter_api_key=(openrouter_p or {}).get("apiKey"),
                 deepseek_api_key=(deepseek_p or {}).get("apiKey"),
                 gemini_api_key=(gemini_p or {}).get("apiKey"),
                 glm_api_key=(glm_p or {}).get("apiKey"),

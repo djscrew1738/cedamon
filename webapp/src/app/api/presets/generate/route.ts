@@ -10,7 +10,7 @@ import { reconPresetSchema, extractJson, RECON_PARAMETER_CATALOG } from '@/lib/r
 // Provider resolution mirrors the agent chat path
 // (agentic/orchestrator_helpers/llm_setup.py + agentic/api.py:_pick_custom_provider):
 //   - "custom/<id>"        → lookup UserLlmProvider by id, use modelIdentifier
-//   - "openrouter/...","bedrock/...","deepseek/...", etc. → match providerType
+//   - "bedrock/...","deepseek/...", etc. → match providerType
 //   - "claude-*"           → anthropic
 //   - everything else      → openai
 // This is what makes "Generate Recon Preset with AI" work with any configured
@@ -52,7 +52,6 @@ function resolveModel(model: string): Resolved {
     return { kind: 'custom', providerId: model.slice('custom/'.length) }
   }
   const prefixMap: Record<string, string> = {
-    'openrouter/': 'openrouter',
     'bedrock/': 'bedrock',
     'deepseek/': 'deepseek',
     'gemini/': 'gemini',
@@ -80,7 +79,6 @@ function resolveModel(model: string): Resolved {
 function defaultBaseUrlFor(providerType: string): string {
   switch (providerType) {
     case 'openai': return 'https://api.openai.com/v1'
-    case 'openrouter': return 'https://openrouter.ai/api/v1'
     case 'deepseek': return 'https://api.deepseek.com/v1'
     case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai'
     case 'glm': return 'https://open.bigmodel.cn/api/paas/v4'
@@ -294,7 +292,6 @@ export async function POST(request: NextRequest) {
         const friendlyNames: Record<string, string> = {
           anthropic: 'Anthropic',
           openai: 'OpenAI',
-          openrouter: 'OpenRouter',
           deepseek: 'DeepSeek',
           gemini: 'Google Gemini',
           glm: 'GLM (Zhipu AI)',

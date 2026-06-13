@@ -577,7 +577,7 @@ class WebSearchToolManager:
     """Manages the web_search tool — checks local KB first, falls back to Tavily."""
 
     def __init__(self, api_key: str = None, max_results: int = 5, knowledge_base=None):
-        self.api_key = api_key or ''
+        self.api_key = api_key or os.getenv('TAVILY_API_KEY', '')
         self.max_results = max_results
         self.key_rotator = None  # Optional[KeyRotator]
         self.knowledge_base = knowledge_base  # Optional[PentestKnowledgeBase]
@@ -1061,7 +1061,7 @@ class GoogleDorkToolManager:
     """Manages Google dork search tool via SerpAPI for OSINT reconnaissance."""
 
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or ''
+        self.api_key = api_key or os.getenv('SERPAPI_KEY', '')
         self.key_rotator = None  # Optional[KeyRotator]
 
     def get_tool(self) -> Optional[callable]:

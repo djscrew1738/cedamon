@@ -37,6 +37,31 @@ const BUILT_IN_SKILLS = [
     description: 'Arbitrary file read via path traversal, Local File Inclusion, Remote File Inclusion, PHP wrapper chains (php://filter, data://, expect://), log poisoning, and Zip Slip archive-extraction tests',
   },
   {
+    id: 'llm_security',
+    name: 'GenAI / LLM Security',
+    description: 'Prompt injection, jailbreaking, model extraction, RAG pipeline poisoning, content-filter bypass, and excessive-agency exploits against LLM-powered applications',
+  },
+  {
+    id: 'cicd_pipeline',
+    name: 'CI/CD Pipeline Attacks',
+    description: 'GitHub Actions / GitLab CI / Jenkins pipeline abuse, pull_request_target exploitation, self-hosted runner compromise, artifact poisoning, and dependency confusion',
+  },
+  {
+    id: 'browser_exploitation',
+    name: 'Browser & Electron Exploitation',
+    description: 'Electron IPC abuse, Chrome extension attacks, DevTools protocol hijacking, DOM clobbering, service worker interception, and postMessage exploitation',
+  },
+  {
+    id: 'container_k8s',
+    name: 'Container & Kubernetes Security',
+    description: 'Container registry / image-layer analysis, K8s RBAC enumeration, pod breakout, etcd exposure, admission controller abuse, and cluster-wide privilege escalation',
+  },
+  {
+    id: 'hybrid_identity',
+    name: 'Hybrid Identity & Federation Attacks',
+    description: 'AD FS compromise, Azure AD Connect abuse, Kerberos delegation (constrained/unconstrained/RBCD), SAML federation trust attacks, cross-forest pivots, and Entra ID token theft',
+  },
+  {
     id: 'brute_force_credential_guess',
     name: 'Credential Testing',
     description: 'Credential policy validation using Hydra against login services',

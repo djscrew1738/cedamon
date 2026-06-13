@@ -52,6 +52,8 @@ def run_with_heartbeat(
 
     start = time.monotonic()
     stop = threading.Event()
+    cmd_str = " ".join(str(c) for c in cmd)
+    print(f"[*][{label}] Starting subprocess (timeout={timeout}s): {cmd_str[:240]}", flush=True)
 
     def _heartbeat():
         # First tick after `interval` seconds, not immediately.
@@ -78,6 +80,15 @@ def run_with_heartbeat(
     finally:
         stop.set()
         t.join(timeout=1)
+
+    elapsed = int(time.monotonic() - start)
+    stdout_lines = len(stdout.splitlines()) if isinstance(stdout, str) else len(stdout.split(b"\n"))
+    stderr_lines = len(stderr.splitlines()) if isinstance(stderr, str) else len(stderr.split(b"\n"))
+    print(
+        f"[*][{label}] Subprocess finished in {elapsed}s — rc={proc.returncode} "
+        f"stdout_lines={stdout_lines} stderr_lines={stderr_lines}",
+        flush=True,
+    )
 
     return subprocess.CompletedProcess(
         args=cmd,

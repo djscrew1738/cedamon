@@ -20,7 +20,9 @@ import copy
 import ipaddress
 import json
 import os
+import signal
 import subprocess
+import threading
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlparse
@@ -81,14 +83,59 @@ from recon.helpers import (
 )
 
 
-def _execute_nuclei_pass(cmd: list, output_file: str, label: str) -> tuple:
+class _ScanTimeout(Exception):
+    """Raised when a nuclei scan pass exceeds its configured timeout."""
+    pass
+
+
+def _timeout_handler(signum: int, frame) -> None:
+    """SIGALRM handler — raises _ScanTimeout to abort the subprocess loop."""
+    raise _ScanTimeout()
+
+
+def _check_error_spike(stderr_lines: list[str], label: str, max_errors: int = 50) -> None:
+    """
+    Scan recent JSON stats heartbeats for a sharp increase in errors and warn.
+
+    Looks at the last 10 heartbeat lines; if the latest `errors` field exceeds
+    *max_errors* or has grown by more than 20 in that window, prints a warning
+    so the user knows Tor or network issues are degrading the scan.
+    """
+    import re
+    errors_over_time: list[int] = []
+    for line in stderr_lines[-50:]:
+        m = re.search(r'"errors"\s*:\s*(\d+)', line)
+        if m:
+            errors_over_time.append(int(m.group(1)))
+    if not errors_over_time:
+        return
+    latest = errors_over_time[-1]
+    if latest >= max_errors:
+        increase = latest - errors_over_time[0] if len(errors_over_time) > 1 else 0
+        print(
+            f"[!][Nuclei][{label}] ⚠ Error spike detected: {latest} errors"
+            f"{f' (+{increase} in last window)' if increase > 20 else ''}. "
+            "Tor or network issues may be degrading scan quality."
+        )
+
+
+def _execute_nuclei_pass(cmd: list, output_file: str, label: str,
+                         scan_timeout: int = 0) -> tuple:
     """
     Run a single nuclei invocation and parse the JSONL output.
+
+    Args:
+        cmd: Nuclei docker command as a list of strings.
+        output_file: Path to write JSONL results.
+        label: Human-readable label for log output (e.g. "DETECTION").
+        scan_timeout: Max seconds for the entire pass. 0 = no limit.
 
     Returns (findings, false_positives, duration_seconds, return_code).
     """
     print(f"[*][Nuclei] Running {label} pass [DOCKER]...")
     print(f"[*][Nuclei] {label} command: {' '.join(cmd[:12])}...")
+    if scan_timeout > 0:
+        print(f"[*][Nuclei] {label} scan timeout: {scan_timeout}s")
 
     start_time = datetime.now()
     process = subprocess.Popen(
@@ -99,16 +146,54 @@ def _execute_nuclei_pass(cmd: list, output_file: str, label: str) -> tuple:
         bufsize=1,
     )
     stderr_lines = []
-    for line in process.stdout:
-        line = line.rstrip()
-        if not line:
-            continue
-        print(f"[*][Nuclei][{label}] {line}", flush=True)
-        stderr_lines.append(line)
-    process.wait()
+    timed_out = False
+    timer = None
+    use_signal = scan_timeout > 0 and threading.current_thread() is threading.main_thread()
+
+    if use_signal:
+        # SIGALRM only works in the main interpreter thread
+        had_previous = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(scan_timeout)
+    elif scan_timeout > 0:
+        # Fallback watchdog for worker threads
+        def _kill_after_timeout():
+            nonlocal timed_out
+            timed_out = True
+            print(f"[!][Nuclei][{label}] ⏱ Scan timed out after {scan_timeout}s, killing process...")
+            try:
+                process.kill()
+            except Exception:
+                pass
+        timer = threading.Timer(scan_timeout, _kill_after_timeout)
+        timer.daemon = True
+        timer.start()
+
+    try:
+        for line in process.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            print(f"[*][Nuclei][{label}] {line}", flush=True)
+            stderr_lines.append(line)
+        process.wait()
+    except _ScanTimeout:
+        print(f"[!][Nuclei][{label}] ⏱ Scan timed out after {scan_timeout}s, killing process...")
+        process.kill()
+        process.wait()
+        timed_out = True
+    finally:
+        if use_signal:
+            signal.alarm(0)                     # Cancel alarm
+            signal.signal(signal.SIGALRM, had_previous)  # Restore previous handler
+        if timer is not None:
+            timer.cancel()
+
     duration = (datetime.now() - start_time).total_seconds()
 
-    if process.returncode != 0 and stderr_lines:
+    # Check for error spikes when proxy/Tor is used (non-fatal warning)
+    _check_error_spike(stderr_lines, label)
+
+    if process.returncode != 0 and not timed_out and stderr_lines:
         # Skip noise: nuclei [WRN]/[INF] lines, the pipe-format stats heartbeat
         # (`| Duration: 0:00:30 | ...`), and the JSON-format stats heartbeat
         # ({"duration":...,"matched":...}) so they don't masquerade as errors.
@@ -211,6 +296,8 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     NUCLEI_AI_RESPONSE_FILTER = settings.get('NUCLEI_AI_RESPONSE_FILTER', False)
     AI_PIPELINE_MODEL = settings.get('AI_PIPELINE_MODEL', 'claude-opus-4-6')
     USE_TOR_FOR_RECON = settings.get('USE_TOR_FOR_RECON', False)
+    NUCLEI_SCAN_TIMEOUT = settings.get('NUCLEI_SCAN_TIMEOUT', 0)
+    NUCLEI_TOR_TIMEOUT_MULTIPLIER = settings.get('NUCLEI_TOR_TIMEOUT_MULTIPLIER', 3)
     KATANA_DEPTH = settings.get('KATANA_DEPTH', 2)
     NUCLEI_AUTO_UPDATE_TEMPLATES = settings.get('NUCLEI_AUTO_UPDATE_TEMPLATES', True)
     CVE_LOOKUP_ENABLED = settings.get('CVE_LOOKUP_ENABLED', True)
@@ -515,6 +602,15 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             print(f"[*][Nuclei]   Timeout: {SECURITY_CHECK_TIMEOUT}s")
             print(f"[*][Nuclei]   Max workers: {SECURITY_CHECK_MAX_WORKERS}")
         print("=" * 70 + "\n")
+
+        # Apply Tor-aware timeout/retry multiplier when using proxy
+        if use_proxy and NUCLEI_TOR_TIMEOUT_MULTIPLIER > 1:
+            adjusted_timeout = int(NUCLEI_TIMEOUT * NUCLEI_TOR_TIMEOUT_MULTIPLIER)
+            adjusted_retries = max(1, int(NUCLEI_RETRIES * NUCLEI_TOR_TIMEOUT_MULTIPLIER))
+            print(f"[*][Nuclei] Tor mode: adjusting timeouts — timeout {NUCLEI_TIMEOUT}s → {adjusted_timeout}s, "
+                  f"retries {NUCLEI_RETRIES} → {adjusted_retries}")
+            NUCLEI_TIMEOUT = adjusted_timeout
+            NUCLEI_RETRIES = adjusted_retries
     
         # Create a temporary directory for nuclei files
         # Use /tmp/redamon to avoid spaces in paths (snap Docker issue)
@@ -613,7 +709,8 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     interactsh=NUCLEI_INTERACTSH,
                 )
                 d_findings, d_fps, d_duration, _ = _execute_nuclei_pass(
-                    detection_cmd, detection_output_file, label="DETECTION"
+                    detection_cmd, detection_output_file, label="DETECTION",
+                    scan_timeout=NUCLEI_SCAN_TIMEOUT,
                 )
             findings.extend(d_findings)
             false_positives_filtered.extend(d_fps)
@@ -640,7 +737,8 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     force_dast_pass=True,
                 )
                 b_findings, b_fps, b_duration, _ = _execute_nuclei_pass(
-                    dast_cmd, dast_output_file, label="DAST"
+                    dast_cmd, dast_output_file, label="DAST",
+                    scan_timeout=NUCLEI_SCAN_TIMEOUT,
                 )
                 findings.extend(b_findings)
                 false_positives_filtered.extend(b_fps)

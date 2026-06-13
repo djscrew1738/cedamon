@@ -2,14 +2,16 @@
 Docker container lifecycle management for recon processes
 """
 import asyncio
+import json
 import logging
 import os
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Tuple
 
 import docker
 from docker.errors import NotFound, APIError
@@ -96,6 +98,15 @@ class ContainerManager:
         self.github_hunt_states: dict[str, GithubHuntState] = {}
         self.trufflehog_states: dict[str, TrufflehogState] = {}
         self._log_tasks: dict[str, asyncio.Task] = {}
+        self._start_locks: dict[str, asyncio.Lock] = {}
+        # Dedicated executor for long-running log streaming threads
+        # so they don't starve the default executor used by _exec() and _fetch_project_json
+        self._log_executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="log-stream"
+        )
+        # Cache for feed-sync readiness probes so health checks don't hammer GVM
+        self._gvm_ready_cache: Tuple[Optional[bool], datetime] = (None, datetime.min.replace(tzinfo=timezone.utc))
+        self._gvm_ready_cache_ttl = timedelta(seconds=60)
 
     async def _exec(self, fn, *args, **kwargs):
         """Run a synchronous Docker call in the default thread pool."""
@@ -180,120 +191,126 @@ class ContainerManager:
 
         logger.info(f"start_recon called project_id={project_id} user_id={user_id}")
 
-        # Check if already running or paused
-        current_state = await self.get_status(project_id)
-        if current_state.status in (ReconStatus.RUNNING, ReconStatus.PAUSED):
-            raise ValueError(f"Recon already active for project {project_id}")
+        # Serialize start operations per project to prevent race conditions
+        # when two concurrent POST /start requests arrive at nearly the same time.
+        if project_id not in self._start_locks:
+            self._start_locks[project_id] = asyncio.Lock()
 
-        # Mutual exclusion: block if any partial recon is running
-        if self._count_active_partial_recons(project_id) > 0:
-            raise ValueError(f"Partial recon(s) running for project {project_id}. Stop them first.")
+        async with self._start_locks[project_id]:
+            # Check if already running or paused (inside lock — now accurate)
+            current_state = await self.get_status(project_id)
+            if current_state.status in (ReconStatus.RUNNING, ReconStatus.PAUSED):
+                raise ValueError(f"Recon already active for project {project_id}")
 
-        # Clean up any existing container
-        container_name = self._get_container_name(project_id)
-        try:
-            old_container = await self._exec(self.client.containers.get, container_name)
-            await self._exec(old_container.remove, force=True)
-            logger.info(f"Removed old container {container_name} for project {project_id}")
-        except NotFound:
-            logger.info(f"No existing container to remove for project {project_id}")
+            # Mutual exclusion: block if any partial recon is running
+            if self._count_active_partial_recons(project_id) > 0:
+                raise ValueError(f"Partial recon(s) running for project {project_id}. Stop them first.")
 
-        # Create new state
-        state = ReconState(
-            project_id=project_id,
-            status=ReconStatus.STARTING,
-            started_at=datetime.now(timezone.utc),
-        )
-        self.running_states[project_id] = state
-
-        try:
-            # Ensure recon image exists
-            logger.info(f"Checking recon image {self.recon_image} for project {project_id}")
+            # Clean up any existing container
+            container_name = self._get_container_name(project_id)
             try:
-                await self._exec(self.client.images.get, self.recon_image)
-                logger.info(f"Recon image {self.recon_image} found for project {project_id}")
+                old_container = await self._exec(self.client.containers.get, container_name)
+                await self._exec(old_container.remove, force=True)
+                logger.info(f"Removed old container {container_name} for project {project_id}")
             except NotFound:
-                # Use the project-root in-container path (/app) for the build context
-                # so that COPY instructions in recon/Dockerfile (e.g. COPY graph_db/ /app/graph_db/)
-                # resolve correctly. images.build() reads from the local (container) filesystem,
-                # not the Docker host — but recon_path is a HOST path used for
-                # volume mounts in spawned sibling containers.
-                build_path = "/app"
-                dockerfile = "recon/Dockerfile"
-                logger.info(f"Building recon image {self.recon_image} from {build_path}/{dockerfile} for project {project_id}")
-                await self._exec(self.client.images.build, path=build_path, dockerfile=dockerfile, tag=self.recon_image, rm=True)
-                logger.info(f"Recon image {self.recon_image} built for project {project_id}")
+                logger.info(f"No existing container to remove for project {project_id}")
 
-            logger.info(
-                f"Spawning recon container {container_name} for project {project_id} "
-                f"image={self.recon_image} volumes={len(['docker.sock', 'recon', 'graph_db', 'tmp', 'js_uploads', 'js_custom', 'nuclei_templates'])}"
+            # Create new state
+            state = ReconState(
+                project_id=project_id,
+                status=ReconStatus.STARTING,
+                started_at=datetime.now(timezone.utc),
             )
+            self.running_states[project_id] = state
 
-            # Start container with environment variables
-            container = await self._exec(
-                self.client.containers.run,
-                self.recon_image,
-                name=container_name,
-                detach=True,
-                network_mode="host",
-                privileged=True,
-                environment={
-                    "PROJECT_ID": project_id,
-                    "USER_ID": user_id,
-                    "WEBAPP_API_URL": webapp_api_url,
-                    "UPDATE_GRAPH_DB": "true",
-                    # Anonymity — route all scanning traffic through Tor
-                    "USE_TOR_FOR_RECON": "true",
-                    "HTTP_PROXY": "socks5h://127.0.0.1:9050",
-                    "HTTPS_PROXY": "socks5h://127.0.0.1:9050",
-                    "ALL_PROXY": "socks5h://127.0.0.1:9050",
-                    "NO_PROXY": "localhost,127.0.0.1,::1",
-                    # HOST_RECON_OUTPUT_PATH: Required for nested Docker containers (naabu, httpx, etc.)
-                    # These run as sibling containers and need host paths for volume mounts
-                    "HOST_RECON_OUTPUT_PATH": f"{recon_path}/output",
-                    # Custom nuclei templates host path (for sibling nuclei container volume mount)
-                    "HOST_CUSTOM_TEMPLATES_PATH": custom_templates_path,
-                    # Forward credentials from orchestrator environment
-                    "NEO4J_URI": os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
-                    "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
-                    "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
-                    "INTERNAL_API_KEY": os.environ.get("INTERNAL_API_KEY", ""),
-                    # Agent API for AI hooks (FFuf AI extensions, etc.)
-                    "AGENT_API_URL": os.environ.get("AGENT_API_URL", "http://localhost:8090"),
-                },
-                volumes={
-                    "/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "rw"},
-                    # Mount source code for development (no rebuild needed)
-                    # Note: rw needed because output/data are subdirectories
-                    f"{recon_path}": {"bind": "/app/recon", "mode": "rw"},
-                    # Mount graph_db module
-                    f"{Path(recon_path).parent}/graph_db": {"bind": "/app/graph_db", "mode": "ro"},
-                    # Mount /tmp for Docker-in-Docker temp files (avoids spaces in paths)
-                    "/tmp/redamon": {"bind": "/tmp/redamon", "mode": "rw"},
-                    # JS Recon shared volumes with webapp
-                    "redamon_js_recon_uploads": {"bind": "/data/js-recon-uploads", "mode": "ro"},
-                    "redamon_js_recon_custom": {"bind": "/data/js-recon-custom", "mode": "ro"},
-                    # Official nuclei-templates volume (read-only) for the AI tag
-                    # selector to read TEMPLATES-STATS.json. Populated by
-                    # ensure_templates_volume() before any nuclei pass.
-                    "nuclei-templates": {"bind": "/opt/nuclei-templates-official", "mode": "ro"},
-                },
-                command="python /app/recon/main.py",
-            )
+            try:
+                # Ensure recon image exists
+                logger.info(f"Checking recon image {self.recon_image} for project {project_id}")
+                try:
+                    await self._exec(self.client.images.get, self.recon_image)
+                    logger.info(f"Recon image {self.recon_image} found for project {project_id}")
+                except NotFound:
+                    # Use the project-root in-container path (/app) for the build context
+                    # so that COPY instructions in recon/Dockerfile (e.g. COPY graph_db/ /app/graph_db/)
+                    # resolve correctly. images.build() reads from the local (container) filesystem,
+                    # not the Docker host — but recon_path is a HOST path used for
+                    # volume mounts in spawned sibling containers.
+                    build_path = "/app"
+                    dockerfile = "recon/Dockerfile"
+                    logger.info(f"Building recon image {self.recon_image} from {build_path}/{dockerfile} for project {project_id}")
+                    await self._exec(self.client.images.build, path=build_path, dockerfile=dockerfile, tag=self.recon_image, rm=True)
+                    logger.info(f"Recon image {self.recon_image} built for project {project_id}")
 
-            state.container_id = container.id
-            state.status = ReconStatus.RUNNING
-            logger.info(
-                f"Started recon container {container.id[:12]} for project {project_id} "
-                f"name={container.name} image={self.recon_image}"
-            )
+                logger.info(
+                    f"Spawning recon container {container_name} for project {project_id} "
+                    f"image={self.recon_image} volumes={len(['docker.sock', 'recon', 'graph_db', 'tmp', 'js_uploads', 'js_custom', 'nuclei_templates'])}"
+                )
 
-        except Exception as e:
-            state.status = ReconStatus.ERROR
-            state.error = str(e)
-            logger.error(f"Failed to start recon for {project_id}: {e}")
+                # Start container with environment variables
+                container = await self._exec(
+                    self.client.containers.run,
+                    self.recon_image,
+                    name=container_name,
+                    detach=True,
+                    network_mode="host",
+                    privileged=True,
+                    environment={
+                        "PROJECT_ID": project_id,
+                        "USER_ID": user_id,
+                        "WEBAPP_API_URL": webapp_api_url,
+                        "UPDATE_GRAPH_DB": "true",
+                        # Anonymity — route all scanning traffic through Tor
+                        "USE_TOR_FOR_RECON": "true",
+                        "HTTP_PROXY": "socks5h://127.0.0.1:9050",
+                        "HTTPS_PROXY": "socks5h://127.0.0.1:9050",
+                        "ALL_PROXY": "socks5h://127.0.0.1:9050",
+                        "NO_PROXY": "localhost,127.0.0.1,::1",
+                        # HOST_RECON_OUTPUT_PATH: Required for nested Docker containers (naabu, httpx, etc.)
+                        # These run as sibling containers and need host paths for volume mounts
+                        "HOST_RECON_OUTPUT_PATH": f"{recon_path}/output",
+                        # Custom nuclei templates host path (for sibling nuclei container volume mount)
+                        "HOST_CUSTOM_TEMPLATES_PATH": custom_templates_path,
+                        # Forward credentials from orchestrator environment
+                        "NEO4J_URI": os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
+                        "NEO4J_USER": os.environ.get("NEO4J_USER", "neo4j"),
+                        "NEO4J_PASSWORD": os.environ.get("NEO4J_PASSWORD", ""),
+                        "INTERNAL_API_KEY": os.environ.get("INTERNAL_API_KEY", ""),
+                        # Agent API for AI hooks (FFuf AI extensions, etc.)
+                        "AGENT_API_URL": os.environ.get("AGENT_API_URL", "http://localhost:8090"),
+                    },
+                    volumes={
+                        "/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "rw"},
+                        # Mount source code for development (no rebuild needed)
+                        # Note: rw needed because output/data are subdirectories
+                        f"{recon_path}": {"bind": "/app/recon", "mode": "rw"},
+                        # Mount graph_db module
+                        f"{Path(recon_path).parent}/graph_db": {"bind": "/app/graph_db", "mode": "ro"},
+                        # Mount /tmp for Docker-in-Docker temp files (avoids spaces in paths)
+                        "/tmp/redamon": {"bind": "/tmp/redamon", "mode": "rw"},
+                        # JS Recon shared volumes with webapp
+                        "redamon_js_recon_uploads": {"bind": "/data/js-recon-uploads", "mode": "ro"},
+                        "redamon_js_recon_custom": {"bind": "/data/js-recon-custom", "mode": "ro"},
+                        # Official nuclei-templates volume (read-only) for the AI tag
+                        # selector to read TEMPLATES-STATS.json. Populated by
+                        # ensure_templates_volume() before any nuclei pass.
+                        "nuclei-templates": {"bind": "/opt/nuclei-templates-official", "mode": "ro"},
+                    },
+                    command="python /app/recon/main.py",
+                )
 
-        return state
+                state.container_id = container.id
+                state.status = ReconStatus.RUNNING
+                logger.info(
+                    f"Started recon container {container.id[:12]} for project {project_id} "
+                    f"name={container.name} image={self.recon_image}"
+                )
+
+            except Exception as e:
+                state.status = ReconStatus.ERROR
+                state.error = str(e)
+                logger.error(f"Failed to start recon for {project_id}: {e}")
+
+            return state
 
     def _cleanup_sub_containers(self) -> int:
         """Stop and remove any running sub-containers (naabu, httpx, nuclei, etc.)
@@ -490,7 +507,7 @@ class ContainerManager:
             # Use asyncio queue to bridge sync Docker logs to async generator
             log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
 
-            # Capture the event loop before starting the thread
+            # Capture the event loop before starting the thread (needed for closure)
             loop = asyncio.get_running_loop()
 
             def read_logs():
@@ -520,8 +537,9 @@ class ContainerManager:
                     except Exception:
                         pass
 
-            # Start log reader in a thread
-            loop.run_in_executor(None, read_logs)
+            # Start log reader in the dedicated streaming executor
+            # (separate from default executor to avoid starving short-lived tasks)
+            self._log_executor.submit(read_logs)
 
             # Process logs from queue
             while True:
@@ -941,7 +959,7 @@ class ContainerManager:
                     except Exception:
                         pass
 
-            loop.run_in_executor(None, read_logs)
+            self._log_executor.submit(read_logs)
 
             while True:
                 try:
@@ -1105,19 +1123,10 @@ class ContainerManager:
         self.gvm_states[project_id] = state
 
         try:
-            # Ensure GVM scanner image exists
-            try:
-                self.client.images.get(self.gvm_image)
-            except NotFound:
-                # Use in-container path for build context (/app/gvm_scan/Dockerfile)
-                build_path = "/app"
-                dockerfile = f"{Path(gvm_scan_path).name}/Dockerfile"
-                logger.info(f"Building GVM scanner image from {build_path}/{dockerfile}")
-                self.client.images.build(
-                    path=build_path,
-                    dockerfile=dockerfile,
-                    tag=self.gvm_image,
-                    rm=True,
+            # Ensure GVM scanner image exists (pre-build on startup if missing)
+            if not self.ensure_gvm_scanner_image():
+                raise RuntimeError(
+                    f"GVM scanner image {self.gvm_image} is missing and could not be built"
                 )
 
             # Start container with environment variables
@@ -1332,7 +1341,7 @@ class ContainerManager:
                     except Exception:
                         pass
 
-            loop.run_in_executor(None, read_logs)
+            self._log_executor.submit(read_logs)
 
             while True:
                 try:
@@ -1405,6 +1414,113 @@ class ContainerManager:
             return container.status == "running"
         except Exception:
             return False
+
+    def build_gvm_scanner_image(
+        self,
+        build_path: str = "/app",
+        dockerfile: str = "gvm_scan/Dockerfile",
+    ) -> bool:
+        """Build the GVM scanner image ahead of first scan."""
+        try:
+            logger.info(
+                f"Pre-building GVM scanner image from {build_path}/{dockerfile}"
+            )
+            self.client.images.build(
+                path=build_path,
+                dockerfile=dockerfile,
+                tag=self.gvm_image,
+                rm=True,
+            )
+            logger.info(f"GVM scanner image built: {self.gvm_image}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to build GVM scanner image: {e}")
+            return False
+
+    def ensure_gvm_scanner_image(self) -> bool:
+        """Ensure the GVM scanner image exists; build it if missing."""
+        try:
+            self.client.images.get(self.gvm_image)
+            return True
+        except NotFound:
+            logger.info(f"GVM scanner image {self.gvm_image} not found; building")
+            return self.build_gvm_scanner_image()
+        except Exception as e:
+            logger.error(f"Failed to check GVM scanner image: {e}")
+            return False
+
+    def _probe_gvm_feed_sync(self) -> Tuple[bool, dict]:
+        """Run a one-off readiness probe against the gvmd socket."""
+        gvm_scan_path = os.environ.get("GVM_SCAN_PATH", "/app/gvm_scan")
+        try:
+            output = self.client.containers.run(
+                self.gvm_image,
+                remove=True,
+                network_mode="host",
+                volumes={
+                    "redamon_gvmd_socket": {"bind": "/run/gvmd", "mode": "ro"},
+                    # Mount live source so the probe picks up the current code
+                    # without requiring an image rebuild.
+                    gvm_scan_path: {"bind": "/app/gvm_scan", "mode": "ro"},
+                },
+                environment={
+                    "GVM_SOCKET_PATH": os.environ.get(
+                        "GVM_SOCKET_PATH", "/run/gvmd/gvmd.sock"
+                    ),
+                    "GVM_USERNAME": os.environ.get("GVM_USERNAME", "admin"),
+                    "GVM_PASSWORD": os.environ.get("GVM_PASSWORD", "admin"),
+                    "PYTHONPATH": "/app",
+                },
+                command=[
+                    "python",
+                    "-m",
+                    "gvm_scan.ready_probe",
+                    "--json",
+                    "--max-retries",
+                    "3",
+                ],
+                stdout=True,
+                stderr=True,
+            )
+            result = json.loads(output.decode("utf-8"))
+            return bool(result.get("ready", False)), result
+        except Exception as e:
+            logger.warning(f"GVM readiness probe failed: {e}")
+            return False, {"error": str(e)}
+
+    def is_gvm_ready(self, timeout: int = 0, max_age: int = 60) -> bool:
+        """
+        Check if GVM has finished feed sync and is ready to run scans.
+
+        Args:
+            timeout: If > 0, block up to this many seconds waiting for readiness.
+            max_age: Cache validity in seconds for probe results.
+
+        Returns:
+            True if GVM is available and feed sync is complete.
+        """
+        if not self.is_gvm_available():
+            self._gvm_ready_cache = (False, datetime.now(timezone.utc))
+            return False
+
+        def _cached_or_probe() -> bool:
+            now = datetime.now(timezone.utc)
+            cached_ready, cached_at = self._gvm_ready_cache
+            if cached_ready is not None and now - cached_at < timedelta(seconds=max_age):
+                return bool(cached_ready)
+            ready, _ = self._probe_gvm_feed_sync()
+            self._gvm_ready_cache = (ready, datetime.now(timezone.utc))
+            return ready
+
+        if timeout <= 0:
+            return _cached_or_probe()
+
+        deadline = datetime.now(timezone.utc) + timedelta(seconds=timeout)
+        while datetime.now(timezone.utc) < deadline:
+            if _cached_or_probe():
+                return True
+            time.sleep(5)
+        return False
 
     # =========================================================================
     # GitHub Secret Hunt Container Lifecycle
@@ -1722,7 +1838,7 @@ class ContainerManager:
                     except Exception:
                         pass
 
-            loop.run_in_executor(None, read_logs)
+            self._log_executor.submit(read_logs)
 
             while True:
                 try:
@@ -2104,7 +2220,7 @@ class ContainerManager:
                     except Exception:
                         pass
 
-            loop.run_in_executor(None, read_logs)
+            self._log_executor.submit(read_logs)
 
             while True:
                 try:

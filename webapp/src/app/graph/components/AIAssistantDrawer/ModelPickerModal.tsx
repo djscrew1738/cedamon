@@ -71,7 +71,7 @@ export function ModelPickerModal({
                   type="text"
                   value={modelName || ''}
                   onChange={(e) => onModelChange?.(e.target.value)}
-                  placeholder="e.g. claude-opus-4-6, gpt-5.2, openrouter/meta-llama/llama-4-maverick"
+                  placeholder="e.g. claude-opus-4-6, gpt-5.2, meta-llama/llama-4-maverick"
                 />
               </div>
             ) : Object.keys(filteredModels).length === 0 ? (

@@ -38,12 +38,47 @@ TOOL_MUTEX_GROUPS = {
 # DEFAULT SETTINGS - Used as fallback for standalone usage and missing API fields
 # =============================================================================
 
+DEFAULT_INFORMATIONAL_SYSTEM_PROMPT = """## Information Phase Operating Principles
+
+You are in the INFORMATIONAL phase. Your goal is to gather, verify, and organize intelligence about the authorized target. Obey these rules:
+
+1. **Graph-first.** The Neo4j recon graph is the single source of truth. Query it before running external tools and never re-run a scan whose results are already in the graph.
+2. **Passive before active.** Prefer passive OSINT (`query_graph`, `subfinder`, `amass`, `crt.sh`, `shodan`) over active probing. Use active tools (`execute_nmap`, `execute_naabu`, `execute_httpx`, `execute_katana`) only to verify or fill gaps.
+3. **No exploitation.** Do not exploit vulnerabilities, generate payloads, start listeners, or run brute-force attacks. If the user asks for these, request a phase transition.
+4. **Cheap verification.** One `execute_curl` or `execute_httpx` call is enough to confirm a service is live. Avoid repeated probes.
+5. **Enrich and document.** When new assets, services, or vulnerabilities are discovered, emit `chain_findings` and write concise notes in `notes/`.
+6. **Exit criteria.** Only request transition to exploitation after you have confirmed target details (IP, port, service, CVE, or vulnerable endpoint) and the user has approved."""
+
+DEFAULT_EXPLOITATION_SYSTEM_PROMPT = """## Exploitation Phase Operating Principles
+
+You are in the EXPLOITATION phase. You have user approval and a confirmed vulnerability. Act decisively but safely:
+
+1. **Confirm before firing.** Re-check the target detail (IP, port, service, CVE, or vulnerable endpoint) from the graph or prior findings before launching an exploit.
+2. **Match mode and payload.** Respect the configured mode (stateful vs stateless) and payload direction. Wrong TARGET/payload type means no session or no output.
+3. **Follow the attack skill.** Use the workflow for the active attack path (CVE, brute force, SQLi, XSS, etc.) — it is the single source of truth for this vulnerability class.
+4. **Capture proof.** A successful exploit must produce evidence (command output, file contents, `uid=...`, "session X opened", or valid credentials). Without proof, it is not a success.
+5. **Stop on success.** Once the objective is achieved, emit `action="complete"` with a clear completion reason. Do not keep attacking the same vector.
+6. **No unapproved post-exploitation.** If you establish a session, only transition to post-exploitation when the project allows it and the user has approved. Otherwise complete.
+7. **Document and clean up.** Write exploit evidence to `notes/` and emit `chain_findings`. Leave the target in a recoverable state unless the user explicitly requested destructive proof."""
+
+DEFAULT_POST_EXPLOITATION_SYSTEM_PROMPT = """## Post-Exploitation Phase Operating Principles
+
+You are in the POST-EXPLOITATION phase. You have an active session or confirmed access. Your goal is to achieve the engagement objective while minimizing risk:
+
+1. **Enumerate first.** Before taking action, gather context: whoami, hostname, user privileges, network interfaces, running processes, and installed software. Use `query_graph` to correlate the host with existing recon data.
+2. **Respect the session type.** In stateful mode, reuse Meterpreter/shell sessions. In stateless mode, run discrete commands and capture output; do not assume persistence.
+3. **Targeted actions only.** Perform credential harvesting, privilege escalation, or lateral movement only when it directly supports the current objective. Avoid noisy or destructive discovery.
+4. **Capture proof.** Every significant action must produce evidence (file contents, command output, hashes, screenshots, new session IDs). Emit `chain_findings` for each new access level or credential.
+5. **Minimize footprint.** Prefer in-memory or temporary artifacts. Write files to `notes/` or staging paths you control; clean up temporary files when done unless the user requests retention.
+6. **No out-of-scope movement.** Do not pivot to hosts, domains, or networks outside the authorized scope. If a target looks out of scope, stop and ask.
+7. **Know when to stop.** Once the post-exploitation objective is achieved (e.g., proof of access, data exfiltration demo, privilege escalation confirmed), emit `action="complete"`. Do not perform open-ended reconnaissance from a compromised host."""
+
 DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     # LLM Configuration
     'OPENAI_MODEL': 'claude-opus-4-6',
-    'INFORMATIONAL_SYSTEM_PROMPT': '',
-    'EXPL_SYSTEM_PROMPT': '',
-    'POST_EXPL_SYSTEM_PROMPT': '',
+    'INFORMATIONAL_SYSTEM_PROMPT': DEFAULT_INFORMATIONAL_SYSTEM_PROMPT,
+    'EXPL_SYSTEM_PROMPT': DEFAULT_EXPLOITATION_SYSTEM_PROMPT,
+    'POST_EXPL_SYSTEM_PROMPT': DEFAULT_POST_EXPLOITATION_SYSTEM_PROMPT,
     # Anthropic prompt caching for the root think_node's system prompt.
     # When True, the static prefix (persona + tool registry + attack skill)
     # is marked cache_control={"type": "ephemeral"} so Anthropic caches it
@@ -285,14 +320,19 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'ATTACK_SKILL_CONFIG': {
         'builtIn': {
             'cve_exploit': True,
-            'brute_force_credential_guess': False,
-            'phishing_social_engineering': False,
-            'denial_of_service': False,
+            'brute_force_credential_guess': True,
+            'phishing_social_engineering': True,
+            'denial_of_service': True,
             'sql_injection': True,
             'xss': True,
             'ssrf': True,
             'rce': True,
             'path_traversal': True,
+            'llm_security': True,
+            'cicd_pipeline': True,
+            'browser_exploitation': True,
+            'container_k8s': True,
+            'hybrid_identity': True,
         },
         'user': {},
     },
@@ -367,9 +407,11 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
 
     # Map camelCase API fields to SCREAMING_SNAKE_CASE
     settings['OPENAI_MODEL'] = project.get('agentOpenaiModel', DEFAULT_AGENT_SETTINGS['OPENAI_MODEL'])
-    settings['INFORMATIONAL_SYSTEM_PROMPT'] = project.get('agentInformationalSystemPrompt', DEFAULT_AGENT_SETTINGS['INFORMATIONAL_SYSTEM_PROMPT'])
-    settings['EXPL_SYSTEM_PROMPT'] = project.get('agentExplSystemPrompt', DEFAULT_AGENT_SETTINGS['EXPL_SYSTEM_PROMPT'])
-    settings['POST_EXPL_SYSTEM_PROMPT'] = project.get('agentPostExplSystemPrompt', DEFAULT_AGENT_SETTINGS['POST_EXPL_SYSTEM_PROMPT'])
+    # An empty custom prompt means "use the built-in default"; only a non-empty
+    # project value overrides the default phase guidance.
+    settings['INFORMATIONAL_SYSTEM_PROMPT'] = project.get('agentInformationalSystemPrompt') or DEFAULT_AGENT_SETTINGS['INFORMATIONAL_SYSTEM_PROMPT']
+    settings['EXPL_SYSTEM_PROMPT'] = project.get('agentExplSystemPrompt') or DEFAULT_AGENT_SETTINGS['EXPL_SYSTEM_PROMPT']
+    settings['POST_EXPL_SYSTEM_PROMPT'] = project.get('agentPostExplSystemPrompt') or DEFAULT_AGENT_SETTINGS['POST_EXPL_SYSTEM_PROMPT']
     settings['ACTIVATE_POST_EXPL_PHASE'] = project.get('agentActivatePostExplPhase', DEFAULT_AGENT_SETTINGS['ACTIVATE_POST_EXPL_PHASE'])
     settings['POST_EXPL_PHASE_TYPE'] = project.get('agentPostExplPhaseType', DEFAULT_AGENT_SETTINGS['POST_EXPL_PHASE_TYPE'])
     settings['LHOST'] = project.get('agentLhost', DEFAULT_AGENT_SETTINGS['LHOST'])
@@ -398,6 +440,10 @@ def fetch_agent_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['USER_MCP_SERVERS'] = project.get('userMcpServers', []) or []
     settings['BRUTE_FORCE_MAX_WORDLIST_ATTEMPTS'] = project.get('agentBruteForceMaxWordlistAttempts', DEFAULT_AGENT_SETTINGS['BRUTE_FORCE_MAX_WORDLIST_ATTEMPTS'])
     settings['BRUTEFORCE_SPEED'] = project.get('agentBruteforceSpeed', DEFAULT_AGENT_SETTINGS['BRUTEFORCE_SPEED'])
+    # SQL Injection settings (mapped from DB, not just defaults)
+    settings['SQLI_LEVEL'] = project.get('sqliLevel', DEFAULT_AGENT_SETTINGS['SQLI_LEVEL'])
+    settings['SQLI_RISK'] = project.get('sqliRisk', DEFAULT_AGENT_SETTINGS['SQLI_RISK'])
+    settings['SQLI_TAMPER_SCRIPTS'] = project.get('sqliTamperScripts', DEFAULT_AGENT_SETTINGS['SQLI_TAMPER_SCRIPTS'])
     settings['KALI_INSTALL_ENABLED'] = project.get('agentKaliInstallEnabled', DEFAULT_AGENT_SETTINGS['KALI_INSTALL_ENABLED'])
     settings['KALI_INSTALL_ALLOWED_PACKAGES'] = project.get('agentKaliInstallAllowedPackages', DEFAULT_AGENT_SETTINGS['KALI_INSTALL_ALLOWED_PACKAGES'])
     settings['KALI_INSTALL_FORBIDDEN_PACKAGES'] = project.get('agentKaliInstallForbiddenPackages', DEFAULT_AGENT_SETTINGS['KALI_INSTALL_FORBIDDEN_PACKAGES'])

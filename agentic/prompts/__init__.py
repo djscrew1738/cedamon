@@ -109,6 +109,78 @@ from .path_traversal_prompts import (
     PATH_TRAVERSAL_PAYLOAD_REFERENCE,
 )
 
+# Re-export from Active Directory Kill Chain prompts
+from .ad_kill_chain_prompts import (
+    AD_KILL_CHAIN_TOOLS,
+    AD_KILL_CHAIN_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Cloud Infrastructure Exploitation prompts
+from .cloud_infra_exploitation_prompts import (
+    CLOUD_INFRA_TOOLS,
+    CLOUD_INFRA_PAYLOAD_REFERENCE,
+)
+
+# Re-export from API Security Testing prompts
+from .api_security_testing_prompts import (
+    API_SECURITY_TOOLS,
+    API_SECURITY_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Supply Chain Poisoning prompts
+from .supply_chain_poisoning_prompts import (
+    SUPPLY_CHAIN_TOOLS,
+    SUPPLY_CHAIN_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Domain Takeover prompts
+from .domain_takeover_prompts import (
+    DOMAIN_TAKEOVER_TOOLS,
+    DOMAIN_TAKEOVER_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Attack Surface Mapping prompts
+from .attack_surface_mapping_prompts import (
+    ATTACK_SURFACE_MAPPING_TOOLS,
+    ATTACK_SURFACE_MAPPING_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Subdomain Reconnaissance prompts
+from .subdomain_reconnaissance_prompts import (
+    SUBDOMAIN_RECON_TOOLS,
+    SUBDOMAIN_RECON_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Email Security Assessment prompts
+from .email_security_assessment_prompts import (
+    EMAIL_SECURITY_TOOLS,
+    EMAIL_SECURITY_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Web Cache Poisoning prompts
+from .web_cache_poisoning_prompts import (
+    WEB_CACHE_POISONING_TOOLS,
+    WEB_CACHE_POISONING_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Web Application Reconnaissance prompts
+from .web_application_reconnaissance_prompts import (
+    WEBAPP_RECON_TOOLS,
+    WEBAPP_RECON_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Transport Security Assessment prompts
+from .transport_security_assessment_prompts import (
+    TRANSPORT_SECURITY_TOOLS,
+    TRANSPORT_SECURITY_PAYLOAD_REFERENCE,
+)
+
+# Re-export from Infrastructure Exposure Analysis prompts
+from .infrastructure_exposure_analysis_prompts import (
+    INFRASTRUCTURE_EXPOSURE_TOOLS,
+    INFRASTRUCTURE_EXPOSURE_PAYLOAD_REFERENCE,
+)
+
 # Re-export from unclassified attack path prompts
 from .unclassified_prompts import UNCLASSIFIED_EXPLOIT_TOOLS
 
@@ -463,6 +535,200 @@ def get_phase_tools(
                 else:
                     parts.append(NO_MODULE_FALLBACK_STATELESS)
             return True
+        elif (attack_path_type == "ad_kill_chain"
+                and "ad_kill_chain" in enabled_builtins
+                and "kali_shell" in allowed_tools):
+            ad_settings = {
+                'ad_bh_enabled': get_setting('AD_BH_ENABLED', True),
+                'ad_kerberoast_enabled': get_setting('AD_KERBEROAST_ENABLED', True),
+                'ad_spray_enabled': get_setting('AD_SPRAY_ENABLED', True),
+                'ad_relay_enabled': get_setting('AD_RELAY_ENABLED', False),
+                'ad_certipy_enabled': get_setting('AD_CERTIPY_ENABLED', True),
+                'ad_dcsync_enabled': get_setting('AD_DCSYNC_ENABLED', False),
+                'ad_aggressive_enabled': get_setting('AD_AGGRESSIVE_ENABLED', False),
+                'ad_domain_hint': get_setting('AD_DOMAIN_HINT', '') or 'none configured',
+                'ad_dc_ip_hint': get_setting('AD_DC_IP_HINT', '') or 'none configured',
+                'ad_user_wordlist': get_setting('AD_USER_WORDLIST', '') or 'default',
+                'ad_pass_wordlist': get_setting('AD_PASS_WORDLIST', '') or 'default',
+            }
+            parts.append(AD_KILL_CHAIN_TOOLS.format(**ad_settings))
+            parts.append(AD_KILL_CHAIN_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "cloud_infra_exploitation"
+                and "cloud_infra_exploitation" in enabled_builtins
+                and "execute_code" in allowed_tools):
+            cloud_settings = {
+                'cloud_aws_enabled': get_setting('CLOUD_AWS_ENABLED', True),
+                'cloud_gcp_enabled': get_setting('CLOUD_GCP_ENABLED', True),
+                'cloud_azure_enabled': get_setting('CLOUD_AZURE_ENABLED', True),
+                'cloud_metadata_enabled': get_setting('CLOUD_METADATA_ENABLED', True),
+                'cloud_storage_enabled': get_setting('CLOUD_STORAGE_ENABLED', True),
+                'cloud_serverless_enabled': get_setting('CLOUD_SERVERLESS_ENABLED', True),
+                'cloud_cred_exfil_enabled': get_setting('CLOUD_CRED_EXFIL_ENABLED', False),
+                'cloud_aggressive_enabled': get_setting('CLOUD_AGGRESSIVE_ENABLED', False),
+                'cloud_target_account': get_setting('CLOUD_TARGET_ACCOUNT', '') or 'none configured',
+                'cloud_known_roles': get_setting('CLOUD_KNOWN_ROLES', '') or 'none configured',
+            }
+            parts.append(CLOUD_INFRA_TOOLS.format(**cloud_settings))
+            parts.append(CLOUD_INFRA_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "api_security_testing"
+                and "api_security_testing" in enabled_builtins
+                and "execute_curl" in allowed_tools):
+            api_settings = {
+                'api_graphql_introspection_enabled': get_setting('API_GRAPHQL_INTROSPECTION_ENABLED', True),
+                'api_jwt_enabled': get_setting('API_JWT_ENABLED', True),
+                'api_oauth_enabled': get_setting('API_OAUTH_ENABLED', True),
+                'api_rate_limit_enabled': get_setting('API_RATE_LIMIT_ENABLED', True),
+                'api_mass_assignment_enabled': get_setting('API_MASS_ASSIGNMENT_ENABLED', True),
+                'api_bola_enabled': get_setting('API_BOLA_ENABLED', True),
+                'api_doc_discovery_enabled': get_setting('API_DOC_DISCOVERY_ENABLED', True),
+                'api_request_timeout': get_setting('API_REQUEST_TIMEOUT', 10),
+            }
+            parts.append(API_SECURITY_TOOLS.format(**api_settings))
+            parts.append(API_SECURITY_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "supply_chain_poisoning"
+                and "supply_chain_poisoning" in enabled_builtins
+                and "kali_shell" in allowed_tools):
+            sc_settings = {
+                'sc_dep_confusion_enabled': get_setting('SC_DEP_CONFUSION_ENABLED', True),
+                'sc_typosquat_enabled': get_setting('SC_TYPOSQUAT_ENABLED', True),
+                'sc_malicious_build_enabled': get_setting('SC_MALICIOUS_BUILD_ENABLED', False),
+                'sc_manifest_poison_enabled': get_setting('SC_MANIFEST_POISON_ENABLED', True),
+                'sc_sig_bypass_enabled': get_setting('SC_SIG_BYPASS_ENABLED', False),
+                'sc_target_registries': get_setting('SC_TARGET_REGISTRIES', 'npm,pypi') or 'npm,pypi',
+                'sc_internal_scope': get_setting('SC_INTERNAL_SCOPE', '') or 'none configured',
+                'sc_public_targets': get_setting('SC_PUBLIC_TARGETS', '') or 'none configured',
+            }
+            parts.append(SUPPLY_CHAIN_TOOLS.format(**sc_settings))
+            parts.append(SUPPLY_CHAIN_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "domain_takeover"
+                and "domain_takeover" in enabled_builtins
+                and "execute_curl" in allowed_tools):
+            dto_settings = {
+                'dto_subdomain_enabled': get_setting('DTO_SUBDOMAIN_ENABLED', True),
+                'dto_ns_hijack_enabled': get_setting('DTO_NS_HIJACK_ENABLED', False),
+                'dto_expiry_enabled': get_setting('DTO_EXPIRY_ENABLED', True),
+                'dto_dns_misconfig_enabled': get_setting('DTO_DNS_MISCONFIG_ENABLED', True),
+                'dto_cloud_providers': get_setting('DTO_CLOUD_PROVIDERS', 'aws,gcp,azure,github,heroku') or 'aws,gcp,azure,github,heroku',
+                'dto_excluded_domains': get_setting('DTO_EXCLUDED_DOMAINS', '') or 'none',
+            }
+            parts.append(DOMAIN_TAKEOVER_TOOLS.format(**dto_settings))
+            parts.append(DOMAIN_TAKEOVER_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "attack_surface_mapping"
+                and "attack_surface_mapping" in enabled_builtins
+                and "execute_httpx" in allowed_tools):
+            asm_settings = {
+                'asm_passive_enabled': get_setting('ASM_PASSIVE_ENABLED', True),
+                'asm_active_enabled': get_setting('ASM_ACTIVE_ENABLED', True),
+                'asm_crawl_enabled': get_setting('ASM_CRAWL_ENABLED', True),
+                'asm_tech_enabled': get_setting('ASM_TECH_ENABLED', True),
+                'asm_port_scope': get_setting('ASM_PORT_SCOPE', '80,443,8080,8443,3000,5000,8000,9000') or '80,443,8080,8443,3000,5000,8000,9000',
+                'asm_screenshots_enabled': get_setting('ASM_SCREENSHOTS_ENABLED', False),
+                'asm_excluded_hosts': get_setting('ASM_EXCLUDED_HOSTS', '') or 'none',
+                'asm_target_domain': get_setting('ASM_TARGET_DOMAIN', '') or 'none configured',
+            }
+            parts.append(ATTACK_SURFACE_MAPPING_TOOLS.format(**asm_settings))
+            parts.append(ATTACK_SURFACE_MAPPING_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "subdomain_reconnaissance"
+                and "subdomain_reconnaissance" in enabled_builtins
+                and "kali_shell" in allowed_tools):
+            sdr_settings = {
+                'sdr_passive_enabled': get_setting('SDR_PASSIVE_ENABLED', True),
+                'sdr_active_enabled': get_setting('SDR_ACTIVE_ENABLED', True),
+                'sdr_permutations_enabled': get_setting('SDR_PERMUTATIONS_ENABLED', True),
+                'sdr_resolution_enabled': get_setting('SDR_RESOLUTION_ENABLED', True),
+                'sdr_takeover_check_enabled': get_setting('SDR_TAKEOVER_CHECK_ENABLED', True),
+                'sdr_dns_records_enabled': get_setting('SDR_DNS_RECORDS_ENABLED', True),
+                'sdr_target_domain': get_setting('SDR_TARGET_DOMAIN', '') or 'none configured',
+            }
+            parts.append(SUBDOMAIN_RECON_TOOLS.format(**sdr_settings))
+            parts.append(SUBDOMAIN_RECON_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "email_security_assessment"
+                and "email_security_assessment" in enabled_builtins
+                and "kali_shell" in allowed_tools):
+            email_settings = {
+                'email_dns_analysis_enabled': get_setting('EMAIL_DNS_ANALYSIS_ENABLED', True),
+                'email_spoofing_enabled': get_setting('EMAIL_SPOOFING_ENABLED', False),
+                'email_open_relay_enabled': get_setting('EMAIL_OPEN_RELAY_ENABLED', False),
+                'email_enum_enabled': get_setting('EMAIL_ENUM_ENABLED', False),
+                'email_header_injection_enabled': get_setting('EMAIL_HEADER_INJECTION_ENABLED', True),
+                'email_bec_enabled': get_setting('EMAIL_BEC_ENABLED', True),
+                'email_target_domain': get_setting('EMAIL_TARGET_DOMAIN', '') or 'none configured',
+                'email_executives': get_setting('EMAIL_EXECUTIVES', '') or 'none configured',
+                'email_smtp_hint': get_setting('EMAIL_SMTP_HINT', '') or 'none configured',
+            }
+            parts.append(EMAIL_SECURITY_TOOLS.format(**email_settings))
+            parts.append(EMAIL_SECURITY_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "web_cache_poisoning"
+                and "web_cache_poisoning" in enabled_builtins
+                and "execute_curl" in allowed_tools):
+            wcp_settings = {
+                'wcp_fingerprint_enabled': get_setting('WCP_FINGERPRINT_ENABLED', True),
+                'wcp_header_poison_enabled': get_setting('WCP_HEADER_POISON_ENABLED', False),
+                'wcp_cloak_enabled': get_setting('WCP_CLOAK_ENABLED', True),
+                'wcp_deception_enabled': get_setting('WCP_DECEPTION_ENABLED', False),
+                'wcp_cdn_providers': get_setting('WCP_CDN_PROVIDERS', 'cloudflare,fastly,akamai,cloudfront,varnish') or 'cloudflare,fastly,akamai,cloudfront,varnish',
+                'wcp_max_attempts': get_setting('WCP_MAX_ATTEMPTS', 20),
+                'wcp_target_domain': get_setting('WCP_TARGET_DOMAIN', '') or 'none configured',
+            }
+            parts.append(WEB_CACHE_POISONING_TOOLS.format(**wcp_settings))
+            parts.append(WEB_CACHE_POISONING_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "web_application_reconnaissance"
+                and "web_application_reconnaissance" in enabled_builtins
+                and "execute_curl" in allowed_tools):
+            war_settings = {
+                'war_endpoint_discovery_enabled': get_setting('WAR_ENDPOINT_DISCOVERY_ENABLED', True),
+                'war_tech_fingerprint_enabled': get_setting('WAR_TECH_FINGERPRINT_ENABLED', True),
+                'war_waf_detection_enabled': get_setting('WAR_WAF_DETECTION_ENABLED', True),
+                'war_js_analysis_enabled': get_setting('WAR_JS_ANALYSIS_ENABLED', True),
+                'war_form_mapping_enabled': get_setting('WAR_FORM_MAPPING_ENABLED', True),
+                'war_comment_analysis_enabled': get_setting('WAR_COMMENT_ANALYSIS_ENABLED', True),
+                'war_target_domain': get_setting('WAR_TARGET_DOMAIN', '') or 'none configured',
+            }
+            parts.append(WEBAPP_RECON_TOOLS.format(**war_settings))
+            parts.append(WEBAPP_RECON_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "transport_security_assessment"
+                and "transport_security_assessment" in enabled_builtins
+                and "kali_shell" in allowed_tools):
+            tsa_settings = {
+                'tsa_tls_scan_enabled': get_setting('TSA_TLS_SCAN_ENABLED', True),
+                'tsa_cipher_enabled': get_setting('TSA_CIPHER_ENABLED', True),
+                'tsa_cert_validation_enabled': get_setting('TSA_CERT_VALIDATION_ENABLED', True),
+                'tsa_hsts_enabled': get_setting('TSA_HSTS_ENABLED', True),
+                'tsa_downgrade_enabled': get_setting('TSA_DOWNGRADE_ENABLED', False),
+                'tsa_ct_enabled': get_setting('TSA_CT_ENABLED', True),
+                'tsa_deep_scan_enabled': get_setting('TSA_DEEP_SCAN_ENABLED', False),
+                'tsa_target_domain': get_setting('TSA_TARGET_DOMAIN', '') or 'none configured',
+            }
+            parts.append(TRANSPORT_SECURITY_TOOLS.format(**tsa_settings))
+            parts.append(TRANSPORT_SECURITY_PAYLOAD_REFERENCE)
+            return True
+        elif (attack_path_type == "infrastructure_exposure_analysis"
+                and "infrastructure_exposure_analysis" in enabled_builtins
+                and "execute_curl" in allowed_tools):
+            iea_settings = {
+                'iea_storage_enabled': get_setting('IEA_STORAGE_ENABLED', True),
+                'iea_db_api_enabled': get_setting('IEA_DB_API_ENABLED', True),
+                'iea_mgmt_enabled': get_setting('IEA_MGMT_ENABLED', True),
+                'iea_shadow_enabled': get_setting('IEA_SHADOW_ENABLED', True),
+                'iea_secrets_enabled': get_setting('IEA_SECRETS_ENABLED', True),
+                'iea_shodan_enabled': get_setting('IEA_SHODAN_ENABLED', True),
+                'iea_dorking_enabled': get_setting('IEA_DORKING_ENABLED', True),
+                'iea_target_domain': get_setting('IEA_TARGET_DOMAIN', '') or 'none configured',
+                'iea_ip_ranges': get_setting('IEA_IP_RANGES', '') or 'none configured',
+            }
+            parts.append(INFRASTRUCTURE_EXPOSURE_TOOLS.format(**iea_settings))
+            parts.append(INFRASTRUCTURE_EXPOSURE_PAYLOAD_REFERENCE)
+            return True
         return False
 
     # Tool descriptions: render in EVERY phase for every allowed tool.
@@ -594,6 +860,36 @@ __all__ = [
     "PATH_TRAVERSAL_OOB_WORKFLOW",
     "PATH_TRAVERSAL_ARCHIVE_EXTRACTION",
     "PATH_TRAVERSAL_PAYLOAD_REFERENCE",
+    # Active Directory Kill Chain
+    "AD_KILL_CHAIN_TOOLS",
+    "AD_KILL_CHAIN_PAYLOAD_REFERENCE",
+    # Cloud Infrastructure Exploitation
+    "CLOUD_INFRA_TOOLS",
+    "CLOUD_INFRA_PAYLOAD_REFERENCE",
+    # API Security Testing
+    "API_SECURITY_TOOLS",
+    "API_SECURITY_PAYLOAD_REFERENCE",
+    # Supply Chain Poisoning
+    "SUPPLY_CHAIN_TOOLS",
+    "SUPPLY_CHAIN_PAYLOAD_REFERENCE",
+    # Domain Takeover
+    "DOMAIN_TAKEOVER_TOOLS",
+    "DOMAIN_TAKEOVER_PAYLOAD_REFERENCE",
+    # Attack Surface Mapping
+    "ATTACK_SURFACE_MAPPING_TOOLS",
+    "ATTACK_SURFACE_MAPPING_PAYLOAD_REFERENCE",
+    # Email Security Assessment
+    "EMAIL_SECURITY_TOOLS",
+    "EMAIL_SECURITY_PAYLOAD_REFERENCE",
+    # Web Cache Poisoning
+    "WEB_CACHE_POISONING_TOOLS",
+    "WEB_CACHE_POISONING_PAYLOAD_REFERENCE",
+    # Transport Security Assessment
+    "TRANSPORT_SECURITY_TOOLS",
+    "TRANSPORT_SECURITY_PAYLOAD_REFERENCE",
+    # Infrastructure Exposure Analysis
+    "INFRASTRUCTURE_EXPOSURE_TOOLS",
+    "INFRASTRUCTURE_EXPOSURE_PAYLOAD_REFERENCE",
     # Unclassified attack path
     "UNCLASSIFIED_EXPLOIT_TOOLS",
     # Post-exploitation

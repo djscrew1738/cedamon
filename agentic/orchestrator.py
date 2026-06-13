@@ -259,7 +259,7 @@ class AgentOrchestrator:
             return KeyRotator([main_key] + extra, rotate_n)
 
         # Tavily (web_search)
-        tavily_key = user_settings.get('tavilyApiKey', '')
+        tavily_key = user_settings.get('tavilyApiKey', '') or os.getenv('TAVILY_API_KEY', '')
         if tavily_key and self._web_search_manager and self._web_search_manager.api_key != tavily_key:
             self._web_search_manager.api_key = tavily_key
             new_tool = self._web_search_manager.get_tool()
@@ -362,7 +362,7 @@ class AgentOrchestrator:
             logger.info("PDCP API key configured for cve_intel rate-limit upgrade")
 
         # Google dork (SerpAPI)
-        serp_api_key = user_settings.get('serpApiKey', '')
+        serp_api_key = user_settings.get('serpApiKey', '') or os.getenv('SERPAPI_KEY', '')
         if self._google_dork_manager and self.tool_executor:
             if serp_api_key and self._google_dork_manager.api_key != serp_api_key:
                 self._google_dork_manager.api_key = serp_api_key
@@ -485,7 +485,6 @@ class AgentOrchestrator:
 
         openai_p = _resolve_provider_key(user_providers, "openai")
         anthropic_p = _resolve_provider_key(user_providers, "anthropic")
-        openrouter_p = _resolve_provider_key(user_providers, "openrouter")
         bedrock_p = _resolve_provider_key(user_providers, "bedrock")
         deepseek_p = _resolve_provider_key(user_providers, "deepseek")
         gemini_p = _resolve_provider_key(user_providers, "gemini")
@@ -499,7 +498,6 @@ class AgentOrchestrator:
             self.model_name,
             openai_api_key=(openai_p or {}).get("apiKey"),
             anthropic_api_key=(anthropic_p or {}).get("apiKey"),
-            openrouter_api_key=(openrouter_p or {}).get("apiKey"),
             deepseek_api_key=(deepseek_p or {}).get("apiKey"),
             gemini_api_key=(gemini_p or {}).get("apiKey"),
             glm_api_key=(glm_p or {}).get("apiKey"),

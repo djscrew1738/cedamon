@@ -129,6 +129,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'CLOUD_ENUM_KEYWORDS': [],
     'CLOUD_ENUM_TIMEOUT': 600,
 
+    # Overall discovery fan-out phase timeout (seconds).  When the parallel
+    # subdomain-discovery step takes longer than this, remaining tools are
+    # cancelled and the scan continues with partial results.
+    'DISCOVERY_OVERALL_TIMEOUT': 900,
+
     # Naabu Port Scanner
     'NAABU_ENABLED': True,
     'NAABU_DOCKER_IMAGE': 'projectdiscovery/naabu:latest',

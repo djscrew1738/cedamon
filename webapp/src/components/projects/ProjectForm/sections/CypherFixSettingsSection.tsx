@@ -278,7 +278,7 @@ export function CypherFixSettingsSection({ data, updateField }: CypherFixSetting
                         type="text"
                         value={data.cypherfixLlmModel}
                         onChange={(e) => updateField('cypherfixLlmModel', e.target.value)}
-                        placeholder="e.g. claude-opus-4-6, gpt-5.2, openrouter/meta-llama/llama-4-maverick"
+                        placeholder="e.g. claude-opus-4-6, gpt-5.2, meta-llama/llama-4-maverick"
                         style={{ marginTop: 'var(--space-1)' }}
                       />
                     </div>

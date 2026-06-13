@@ -173,3 +173,81 @@
   color: var(--text-primary);
   border-color: var(--accent);
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .table {
+    font-size: var(--text-sm);
+  }
+
+  .table th {
+    padding: 8px 12px;
+    font-size: var(--text-xs);
+  }
+
+  .table td {
+    padding: 8px 12px;
+  }
+
+  /* Keep row context visible while horizontally scrolling on phones */
+  .table th:first-child,
+  .table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--bg-primary);
+    z-index: 2;
+  }
+
+  .table th:first-child {
+    top: 0;
+    z-index: 3;
+    background: var(--bg-secondary);
+  }
+
+  .sevBadge,
+  .cvssBadge {
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+  }
+
+  .kevChip {
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+  }
+
+  .mono,
+  .numCell {
+    font-size: var(--text-sm);
+  }
+
+  .listCell {
+    max-width: 220px;
+  }
+
+  .loadMoreBar {
+    padding: 10px;
+  }
+
+  .loadMoreBtn {
+    padding: 10px 24px;
+    font-size: var(--text-sm);
+    min-height: 44px;
+    min-width: 140px;
+  }
+}
+
+@media (max-width: 480px) {
+  .table {
+    font-size: var(--text-xs);
+  }
+
+  .table th,
+  .table td {
+    padding: 6px 10px;
+  }
+
+  .loadMoreBtn {
+    width: 100%;
+  }
+}

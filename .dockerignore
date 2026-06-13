@@ -60,6 +60,20 @@ logs/
 **/docker-compose*.yml
 **/.dockerignore
 
+# ---------- Runtime data / scan outputs (large, mounted at runtime) ----------
+agentic/agent-workspace/
+recon/output/
+gvm_scan/output/
+github_secret_hunt/output/
+trufflehog_scan/output/
+mcp/output/
+
+# ---------- Test targets & docs (not needed in production images) ----------
+guinea_pigs/
+readmes/
+redamon.wiki/
+assets/
+
 # ---------- Misc ----------
 *.bak
 *.tmp
