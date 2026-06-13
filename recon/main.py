@@ -32,25 +32,54 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Import settings from project_settings (fetches from API or falls back to params.py)
 from recon.project_settings import get_settings
 
-# Load settings from API (if PROJECT_ID/WEBAPP_API_URL set) or params.py (CLI mode).
-# get_settings() now applies stealth + AI cascade overrides internally so every
-# downstream consumer (full pipeline + every partial recon module) gets them.
-_settings = get_settings()
+# Runtime helpers: orphan cleanup, disk checks, monitored subprocess execution
+from recon.helpers.scan_runtime import (
+    cleanup_orphan_containers,
+    check_disk_space,
+)
 
-# Extract commonly used settings as module-level variables for compatibility
-TARGET_DOMAIN = _settings['TARGET_DOMAIN']
-SUBDOMAIN_LIST = _settings['SUBDOMAIN_LIST']
-USE_TOR_FOR_RECON = _settings['USE_TOR_FOR_RECON']
-USE_BRUTEFORCE_FOR_SUBDOMAINS = _settings['USE_BRUTEFORCE_FOR_SUBDOMAINS']
-SCAN_MODULES = _settings['SCAN_MODULES']
-UPDATE_GRAPH_DB = _settings['UPDATE_GRAPH_DB']
-USER_ID = _settings['USER_ID']
-PROJECT_ID = _settings['PROJECT_ID']
-VERIFY_DOMAIN_OWNERSHIP = _settings['VERIFY_DOMAIN_OWNERSHIP']
-OWNERSHIP_TOKEN = _settings['OWNERSHIP_TOKEN']
-OWNERSHIP_TXT_PREFIX = _settings['OWNERSHIP_TXT_PREFIX']
-IP_MODE = _settings['IP_MODE']
-TARGET_IPS = _settings['TARGET_IPS']
+# Settings are loaded lazily in main() to avoid blocking the module import with
+# synchronous HTTP calls to the webapp API. This keeps container cold-start fast
+# and makes the module safe to import in tests/other tooling.
+_settings = None
+
+# Module-level placeholders; populated by _load_settings() at pipeline start.
+TARGET_DOMAIN = None
+SUBDOMAIN_LIST = None
+USE_TOR_FOR_RECON = None
+USE_BRUTEFORCE_FOR_SUBDOMAINS = None
+SCAN_MODULES = None
+UPDATE_GRAPH_DB = None
+USER_ID = None
+PROJECT_ID = None
+VERIFY_DOMAIN_OWNERSHIP = None
+OWNERSHIP_TOKEN = None
+OWNERSHIP_TXT_PREFIX = None
+IP_MODE = None
+TARGET_IPS = None
+
+
+def _load_settings():
+    """Load project settings and populate module-level globals."""
+    global _settings, TARGET_DOMAIN, SUBDOMAIN_LIST, USE_TOR_FOR_RECON
+    global USE_BRUTEFORCE_FOR_SUBDOMAINS, SCAN_MODULES, UPDATE_GRAPH_DB
+    global USER_ID, PROJECT_ID, VERIFY_DOMAIN_OWNERSHIP, OWNERSHIP_TOKEN
+    global OWNERSHIP_TXT_PREFIX, IP_MODE, TARGET_IPS
+
+    _settings = get_settings()
+    TARGET_DOMAIN = _settings['TARGET_DOMAIN']
+    SUBDOMAIN_LIST = _settings['SUBDOMAIN_LIST']
+    USE_TOR_FOR_RECON = _settings['USE_TOR_FOR_RECON']
+    USE_BRUTEFORCE_FOR_SUBDOMAINS = _settings['USE_BRUTEFORCE_FOR_SUBDOMAINS']
+    SCAN_MODULES = _settings['SCAN_MODULES']
+    UPDATE_GRAPH_DB = _settings['UPDATE_GRAPH_DB']
+    USER_ID = _settings['USER_ID']
+    PROJECT_ID = _settings['PROJECT_ID']
+    VERIFY_DOMAIN_OWNERSHIP = _settings['VERIFY_DOMAIN_OWNERSHIP']
+    OWNERSHIP_TOKEN = _settings['OWNERSHIP_TOKEN']
+    OWNERSHIP_TXT_PREFIX = _settings['OWNERSHIP_TXT_PREFIX']
+    IP_MODE = _settings['IP_MODE']
+    TARGET_IPS = _settings['TARGET_IPS']
 
 # Import recon modules
 from recon.main_recon_modules.whois_recon import whois_lookup
@@ -87,15 +116,17 @@ def _graph_update_bg(update_method_name: str, combined_result: dict,
                      user_id: str, project_id: str):
     """Submit a graph DB update to the background thread.
 
-    Takes a deep-copy snapshot of combined_result so the main thread can
-    keep mutating it safely.
+    Deep-copies inside the executor thread so the main thread is never
+    blocked by a large dict copy.
     """
     if not UPDATE_GRAPH_DB or _graph_executor is None:
         return
-    snapshot = copy.deepcopy(combined_result)
 
     def _do_update():
         try:
+            # Deep-copy inside the executor thread so the main pipeline
+            # thread can keep mutating combined_result without waiting.
+            snapshot = copy.deepcopy(combined_result)
             from graph_db import Neo4jClient
             with Neo4jClient() as client:
                 if client.verify_connection():
@@ -362,11 +393,22 @@ def build_scan_type() -> str:
 _save_lock = threading.Lock()
 
 
-def save_recon_file(data: dict, output_file: Path):
-    """Save recon data to JSON file (thread-safe)."""
+def save_recon_file(data: dict, output_file: Path, pretty: bool = False):
+    """Save recon data to JSON file (thread-safe).
+
+    Args:
+        data: Recon data dict to serialize.
+        output_file: Path to the output JSON file.
+        pretty: If True, use pretty-print (indent=2). Use only for the
+                final save — intermediate saves use compact JSON which is
+                2-3x faster to serialize and produces ~60% smaller files.
+    """
     with _save_lock:
         with open(output_file, 'w') as f:
-            json.dump(data, f, indent=2)
+            if pretty:
+                json.dump(data, f, indent=2)
+            else:
+                json.dump(data, f, separators=(',', ':'))
 
 
 def _maybe_run_ai_surface(result: dict, settings: dict, output_file: Path) -> dict:
@@ -540,6 +582,12 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     print("               RedAmon - IP-Based Reconnaissance")
     print("=" * 70)
     print(f"  [*][Pipeline] Target IPs/CIDRs: {', '.join(target_ips)}")
+    scan_modules = settings.get('SCAN_MODULES', [])
+    print(
+        f"  [*][Pipeline] Scan modules: "
+        f"{','.join(scan_modules) if isinstance(scan_modules, list) else scan_modules}"
+    )
+    print(f"  [*][Pipeline] Stealth mode: {settings.get('STEALTH_MODE', False)} | AI pipeline: {settings.get('AI_IN_PIPELINE', False)}")
     print("=" * 70 + "\n")
 
     _graph_reset()
@@ -581,20 +629,34 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     dns_enabled = settings.get('DNS_ENABLED', True)
 
     if dns_enabled:
-        print(f"\n[*][DNS] PHASE 1: Reverse DNS Lookup")
+        print(f"\n[*][DNS] PHASE 1: Reverse DNS Lookup (parallel)")
         print("-" * 40)
+        dns_max_retries = settings.get('DNS_MAX_RETRIES', 3)
 
-        for ip in expanded_ips:
-            hostname = reverse_dns_lookup(ip, max_retries=settings.get('DNS_MAX_RETRIES', 3))
-            if hostname:
-                ip_to_hostname[ip] = hostname
-                all_hostnames.append(hostname)
-                print(f"[+][DNS] {ip} -> {hostname}")
-            else:
-                # Use IP with dashes as mock subdomain name
-                mock_name = ip.replace('.', '-').replace(':', '-')
-                ip_to_hostname[ip] = mock_name
-                print(f"[-][DNS] {ip} -> no PTR (using {mock_name})")
+        def _reverse_dns_one(ip: str) -> tuple[str, str]:
+            """Resolve a single IP. Returns (ip, hostname_or_none)."""
+            hostname = reverse_dns_lookup(ip, max_retries=dns_max_retries)
+            return ip, hostname
+
+        dns_workers = min(len(expanded_ips), settings.get('DNS_MAX_WORKERS', 50))
+        with ThreadPoolExecutor(max_workers=dns_workers, thread_name_prefix="rdns") as rdns_exec:
+            rdns_futures = {rdns_exec.submit(_reverse_dns_one, ip): ip for ip in expanded_ips}
+            for future in as_completed(rdns_futures):
+                try:
+                    ip, hostname = future.result()
+                    if hostname:
+                        ip_to_hostname[ip] = hostname
+                        all_hostnames.append(hostname)
+                        print(f"[+][DNS] {ip} -> {hostname}")
+                    else:
+                        mock_name = ip.replace('.', '-').replace(':', '-')
+                        ip_to_hostname[ip] = mock_name
+                        print(f"[-][DNS] {ip} -> no PTR (using {mock_name})")
+                except Exception as e:
+                    ip = rdns_futures[future]
+                    mock_name = ip.replace('.', '-').replace(':', '-')
+                    ip_to_hostname[ip] = mock_name
+                    print(f"[!][DNS] {ip} -> lookup error ({e}), using {mock_name}")
     else:
         print(f"\n[-][DNS] PHASE 1: Reverse DNS Lookup — SKIPPED (disabled)")
         for ip in expanded_ips:
@@ -604,33 +666,50 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     # Step 3: Build DNS data structure for each "subdomain"
     subdomain_names = []
     if dns_enabled:
-        print(f"\n[*][DNS] PHASE 2: DNS Resolution for Discovered Hosts")
+        print(f"\n[*][DNS] PHASE 2: DNS Resolution for Discovered Hosts (parallel)")
         print("-" * 40)
 
-        for ip, hostname in ip_to_hostname.items():
-            # Determine if this is a real hostname or mock
-            is_real_hostname = hostname in all_hostnames and not hostname.replace('-', '').replace('.', '').isdigit()
+        def _resolve_one(item: tuple) -> tuple:
+            ip, hostname = item
+            is_real = hostname in all_hostnames and not hostname.replace('-', '').replace('.', '').isdigit()
+            if is_real:
+                dns = dns_lookup(hostname)
+                return hostname, dns, ip, True
+            return hostname, None, ip, False
 
-            if is_real_hostname:
-                # Resolve DNS for real hostnames
-                print(f"[*][DNS] Resolving: {hostname}")
-                host_dns = dns_lookup(hostname)
-                subdomains_dns[hostname] = host_dns
-                subdomain_names.append(hostname)
-            else:
-                # Mock entry - create minimal DNS data with the IP
-                is_v6 = ':' in ip
-                subdomains_dns[hostname] = {
-                    "has_records": True,
-                    "ips": {
-                        "ipv4": [] if is_v6 else [ip],
-                        "ipv6": [ip] if is_v6 else [],
-                    },
-                    "records": {},
-                    "is_mock": True,
-                    "actual_ip": ip,
-                }
-                subdomain_names.append(hostname)
+        dns_workers = min(len(ip_to_hostname), settings.get('DNS_MAX_WORKERS', 50))
+        with ThreadPoolExecutor(max_workers=dns_workers, thread_name_prefix="dns-resolv") as dns_exec:
+            items = list(ip_to_hostname.items())
+            dns_futures = {dns_exec.submit(_resolve_one, item): item for item in items}
+            # Collect mock entries first so we can process real ones
+            temp_mock = {}
+            real_results = {}
+            for future in as_completed(dns_futures):
+                try:
+                    hostname, host_dns, ip, is_real = future.result()
+                    if is_real:
+                        real_results[hostname] = host_dns
+                        print(f"[+][DNS] Resolved: {hostname}")
+                    else:
+                        is_v6 = ':' in ip
+                        temp_mock[hostname] = {
+                            "has_records": True,
+                            "ips": {"ipv4": [] if is_v6 else [ip], "ipv6": [ip] if is_v6 else []},
+                            "records": {},
+                            "is_mock": True,
+                            "actual_ip": ip,
+                        }
+                        subdomain_names.append(hostname)
+                except Exception as e:
+                    item = dns_futures[future]
+                    ip, hostname = item
+                    print(f"[!][DNS] Resolution error for {hostname}: {e}")
+
+        # Merge real results and mock entries
+        for hostname, host_dns in real_results.items():
+            subdomains_dns[hostname] = host_dns
+            subdomain_names.append(hostname)
+        subdomains_dns.update(temp_mock)
     else:
         print(f"\n[-][DNS] PHASE 2: DNS Resolution — SKIPPED (disabled)")
         for ip, hostname in ip_to_hostname.items():
@@ -724,7 +803,6 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
                 combined_result["uncover"] = uncover_data
                 merge_uncover_into_pipeline(combined_result, uncover_data, combined_result.get('domain', ''))
                 combined_result["metadata"]["modules_executed"].append("uncover_expansion")
-                save_recon_file(combined_result, output_file)
                 _graph_update_bg("update_graph_from_uncover", combined_result, USER_ID, PROJECT_ID)
         except Exception as e:
             print(f"[!][Uncover] Expansion failed: {e}")
@@ -818,8 +896,6 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         if "nmap_scan" in combined_result:
             merge_nmap_into_port_scan(combined_result)
 
-        save_recon_file(combined_result, output_file)
-
         if "nmap_scan" in combined_result:
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
 
@@ -865,7 +941,6 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
                         print(f"[+][{name.upper()}] Enrichment merged")
                 except Exception as e:
                     print(f"[!][{name.upper()}] Enrichment failed: {e}")
-        save_recon_file(combined_result, output_file)
         for name, (_, _, _, graph_method) in enabled_ip_osint.items():
             if name in combined_result:
                 _graph_update_bg(graph_method, combined_result, USER_ID, PROJECT_ID)
@@ -918,7 +993,6 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
             from recon.main_recon_modules.js_recon import run_js_recon
             combined_result = run_js_recon(combined_result, settings=settings)
             combined_result["metadata"]["modules_executed"].append("js_recon")
-            save_recon_file(combined_result, output_file)
             _graph_update_bg("update_graph_from_js_recon", combined_result, USER_ID, PROJECT_ID)
         except Exception as e:
             print(f"[!][JsRecon] Error: {e}")
@@ -936,7 +1010,6 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
                     except Exception as e:
                         print(f"[!][Pipeline] mitre_enrichment failed: {e}")
                         combined_result["metadata"].setdefault("phase_errors", {})["mitre_enrichment"] = str(e)
-                save_recon_file(combined_result, output_file)
                 _graph_update_bg("update_graph_from_vuln_scan", combined_result, USER_ID, PROJECT_ID)
             except Exception as e:
                 print(f"[!][Pipeline] vuln_scan failed: {e}")
@@ -948,13 +1021,15 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         ext_domains = _aggregate_external_domains(combined_result)
         if ext_domains:
             combined_result["external_domains_aggregated"] = ext_domains
-            save_recon_file(combined_result, output_file)
             _graph_update_bg("update_graph_from_external_domains", combined_result, USER_ID, PROJECT_ID)
     except Exception as e:
         print(f"[!][Pipeline] external_domains aggregation failed: {e}")
 
     # Wait for all background graph DB updates to finish
     _graph_wait_all()
+
+    # Final pretty-print save for human readability
+    save_recon_file(combined_result, output_file, pretty=True)
 
     print(f"\n{'=' * 70}")
     print(f"[✓][Pipeline] IP RECON COMPLETE")
@@ -1040,6 +1115,12 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         "subdomain_count": 0,
         "dns": {}
     }
+
+    print(
+        f"[*][Pipeline] Scan plan: type={combined_result['metadata']['scan_type']} "
+        f"modules={','.join(SCAN_MODULES) if isinstance(SCAN_MODULES, list) else SCAN_MODULES}"
+    )
+    print(f"[*][Pipeline] Settings loaded: {len(_settings)} keys | Stealth={_settings.get('STEALTH_MODE', False)} | AI={_settings.get('AI_IN_PIPELINE', False)}")
 
     # =====================================================================
     # GROUP 1 — Fan-Out: WHOIS + Subdomain Discovery + URLScan (parallel)
@@ -1205,7 +1286,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 combined_result["uncover"] = uncover_data
                 merge_uncover_into_pipeline(combined_result, uncover_data, TARGET_DOMAIN)
                 combined_result["metadata"]["modules_executed"].append("uncover_expansion")
-                save_recon_file(combined_result, output_file)
                 _graph_update_bg("update_graph_from_uncover", combined_result, USER_ID, PROJECT_ID)
         except Exception as e:
             print(f"[!][Uncover] Expansion failed: {e}")
@@ -1229,7 +1309,8 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         print("[!][Pipeline] Downstream modules (HTTP probe, vuln scan) require open ports to work")
 
     if shodan_enabled or "port_scan" in SCAN_MODULES:
-        print(f"\n[*][Pipeline] GROUP 3: Shodan + Port Scan (parallel fan-out)")
+        host_count = len(combined_result.get("dns", {}).get("subdomains", {}))
+        print(f"\n[*][Pipeline] GROUP 3: Shodan + Port Scan (parallel fan-out) — hosts={host_count} naabu={naabu_enabled} masscan={masscan_enabled} shodan={shodan_enabled}")
         print("-" * 40)
 
         port_scan_workers = (1 if naabu_enabled else 0) + (1 if masscan_enabled else 0)
@@ -1293,7 +1374,9 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # =====================================================================
     nmap_enabled = _settings.get('NMAP_ENABLED', True)
     if nmap_enabled and "port_scan" in combined_result:
-        print(f"\n[*][Pipeline] GROUP 3.5: Nmap Service Detection + NSE Vuln Scripts")
+        nmap_targets = len(combined_result["port_scan"].get("by_host", {}))
+        nmap_ports = len(combined_result["port_scan"].get("all_ports", []))
+        print(f"\n[*][Pipeline] GROUP 3.5: Nmap Service Detection + NSE Vuln Scripts — targets={nmap_targets} unique_ports={nmap_ports}")
         print("-" * 40)
 
         from recon.main_recon_modules.nmap_scan import run_nmap_scan
@@ -1303,8 +1386,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         # Merge Nmap service versions into port_scan.port_details
         if "nmap_scan" in combined_result:
             merge_nmap_into_port_scan(combined_result)
-
-        save_recon_file(combined_result, output_file)
 
         if "nmap_scan" in combined_result:
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
@@ -1359,8 +1440,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 except Exception as e:
                     print(f"[!][{name.upper()}] Enrichment failed: {e}")
 
-        save_recon_file(combined_result, output_file)
-
         # Queue graph updates for completed OSINT tools
         for name, (_, _, _, graph_method) in enabled_osint.items():
             if name in combined_result:
@@ -1374,6 +1453,10 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         if not _settings.get('HTTPX_ENABLED', True):
             print("\n[*][httpx] HTTP probing disabled -- skipping")
         else:
+            http_probe_hosts = len(combined_result.get("port_scan", {}).get("by_host", {}))
+            http_probe_ports = len(combined_result.get("port_scan", {}).get("all_ports", []))
+            print(f"\n[*][Pipeline] GROUP 4: HTTP Probe — hosts={http_probe_hosts} ports={http_probe_ports}")
+            print("-" * 40)
             try:
                 combined_result = run_http_probe(combined_result, output_file=output_file, settings=_settings)
                 combined_result["metadata"]["modules_executed"].append("http_probe")
@@ -1403,6 +1486,9 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     else:
         # GROUP 5 — Resource Enum (already parallel internally: Katana || GAU || Kiterunner)
         if "resource_enum" in SCAN_MODULES:
+            live_urls = combined_result.get("http_probe", {}).get("summary", {}).get("live_urls", 0)
+            print(f"\n[*][Pipeline] GROUP 5: Resource Enum — live_urls={live_urls}")
+            print("-" * 40)
             try:
                 combined_result = run_resource_enum(combined_result, output_file=output_file, settings=_settings)
                 combined_result["metadata"]["modules_executed"].append("resource_enum")
@@ -1423,7 +1509,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             from recon.main_recon_modules.js_recon import run_js_recon
             combined_result = run_js_recon(combined_result, settings=_settings)
             combined_result["metadata"]["modules_executed"].append("js_recon")
-            save_recon_file(combined_result, output_file)
             _graph_update_bg("update_graph_from_js_recon", combined_result, USER_ID, PROJECT_ID)
         except Exception as e:
             print(f"[!][JsRecon] Error: {e}")
@@ -1452,7 +1537,13 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             phase_a_tools['vhost_sni'] = run_vhost_sni_enrichment_isolated
 
         if phase_a_tools:
-            print(f"\n[*][Pipeline] GROUP 6 Phase A: Active Vulnerability Scanning (fan-out: {', '.join(phase_a_tools.keys())})")
+            vuln_input_endpoints = combined_result.get("resource_enum", {}).get("summary", {}).get("total_endpoints", 0)
+            vuln_input_urls = len(combined_result.get("http_probe", {}).get("by_url", {}))
+            print(
+                f"\n[*][Pipeline] GROUP 6 Phase A: Active Vulnerability Scanning "
+                f"(fan-out: {', '.join(phase_a_tools.keys())}) — "
+                f"endpoints={vuln_input_endpoints} live_urls={vuln_input_urls}"
+            )
             print("-" * 40)
             with ThreadPoolExecutor(max_workers=len(phase_a_tools)) as pool:
                 futures = {pool.submit(fn, combined_result, _settings): key
@@ -1477,7 +1568,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             print("-" * 40)
             try:
                 combined_result = run_mitre_enrichment(combined_result, output_file=output_file, settings=_settings)
-                save_recon_file(combined_result, output_file)
                 _graph_update_bg("update_graph_from_vuln_scan", combined_result, USER_ID, PROJECT_ID)
             except Exception as e:
                 print(f"[!][Pipeline] mitre_enrichment failed: {e}")
@@ -1489,7 +1579,6 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         ext_domains = _aggregate_external_domains(combined_result)
         if ext_domains:
             combined_result["external_domains_aggregated"] = ext_domains
-            save_recon_file(combined_result, output_file)
             _graph_update_bg("update_graph_from_external_domains", combined_result, USER_ID, PROJECT_ID)
     except Exception as e:
         print(f"[!][Pipeline] external_domains aggregation failed: {e}")
@@ -1568,6 +1657,8 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                       f"High: {graphql_summary['by_severity']['high']}, " +
                       f"Medium: {graphql_summary['by_severity']['medium']})")
 
+    # Final pretty-print save for human readability
+    save_recon_file(combined_result, output_file, pretty=True)
     print(f"[+][Pipeline] Output saved: {output_file}")
     print(f"{'=' * 70}")
 
@@ -1585,6 +1676,23 @@ def main():
     - With entries ["testphp.", "www."]: Filtered mode (only scan specified subdomains)
     """
     start_time = datetime.now()
+
+    # Load settings lazily so the module can be imported without a live webapp API.
+    print("[*][Pipeline] Loading project settings...")
+    _load_settings()
+    print(
+        f"[*][Pipeline] Settings loaded: project={PROJECT_ID} user={USER_ID} "
+        f"modules={','.join(SCAN_MODULES) if isinstance(SCAN_MODULES, list) else SCAN_MODULES}"
+    )
+
+    # Preflight checks: disk space and stale containers.
+    # These run early so scans do not fail halfway through due to avoidable
+    # resource issues or volume collisions from previous runs.
+    check_disk_space(min_gb=5.0, path="/")
+    try:
+        cleanup_orphan_containers(project_id=PROJECT_ID)
+    except Exception as e:
+        print(f"[!][Pipeline] Could not clean stale containers: {e}")
 
     # IP Mode: skip domain verification and run IP-based recon instead
     if IP_MODE and TARGET_IPS:
@@ -1657,6 +1765,7 @@ def main():
     print(f"  [*][Pipeline] SUBDOMAIN_LIST:    {SUBDOMAIN_LIST if SUBDOMAIN_LIST else '[] (full discovery)'}")
     print(f"  [*][Pipeline] SCAN_MODULES:      {','.join(SCAN_MODULES) if isinstance(SCAN_MODULES, list) else SCAN_MODULES}")
     print(f"  [*][Pipeline] USE_TOR_FOR_RECON: {USE_TOR_FOR_RECON}")
+    print(f"  [*][Pipeline] NAABU_USE_TOR:     {_settings.get('NAABU_USE_TOR', False)}")
     print(f"  [*][Pipeline] STEALTH_MODE:      {_settings.get('STEALTH_MODE', False)}")
     print(f"  [*][Pipeline] UPDATE_GRAPH_DB:   {UPDATE_GRAPH_DB}")
     print(f"  [*][Pipeline] USER_ID:           {USER_ID}")
@@ -1704,6 +1813,11 @@ def main():
         try:
             from recon.helpers.anonymity import print_anonymity_status
             print_anonymity_status()
+            naabu_tor = _settings.get('NAABU_USE_TOR', False)
+            print("[*][Pipeline] Phase-specific anonymity:")
+            print(f"    Port scan (Naabu): {'Tor' if naabu_tor else 'direct (fast, no Tor)'} "
+                  f"(controlled by NAABU_USE_TOR)")
+            print("    HTTP probe / Resource enum / Vuln scan: Tor")
         except ImportError:
             print("[!][Pipeline] Anonymity module not found, proceeding without Tor status check")
 
