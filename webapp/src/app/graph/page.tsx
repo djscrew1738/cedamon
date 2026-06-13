@@ -37,6 +37,7 @@ import { ActiveSessions } from './components/ActiveSessions'
 import { RoeViewer } from './components/RoeViewer'
 import { KaliTerminal } from './components/KaliTerminal'
 import { GraphViews } from './components/GraphViews'
+import { AttackPanel } from './components/AttackPanel/AttackPanel'
 import { GitHubStarBanner } from './components/GitHubStarBanner'
 import { useGraphData, useDimensions, useNodeSelection, useTableData, useGraphViews } from './hooks'
 import { useStableGraphData } from './hooks/useStableGraphData'
@@ -1406,6 +1407,8 @@ export default function GraphPage() {
             />
           ) : activeView === 'terminal' ? (
             <KaliTerminal userId={userId} projectId={projectId} />
+          ) : activeView === 'attack' ? (
+            <AttackPanel projectId={projectId} />
           ) : activeView === 'roe' ? (
             <RoeViewer
               projectId={projectId || ''}

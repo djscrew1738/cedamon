@@ -6,7 +6,7 @@ import { Toggle } from '@/components/ui'
 import { AUTO_2D_THRESHOLD } from '../GraphCanvas'
 import styles from './ViewTabs.module.css'
 
-export type ViewMode = 'graph' | 'graphViews' | 'table' | 'sessions' | 'terminal' | 'roe'
+export type ViewMode = 'graph' | 'graphViews' | 'table' | 'sessions' | 'terminal' | 'roe' | 'attack'
 
 export type TableViewMode =
   | 'nodeDetails'
@@ -424,6 +424,15 @@ export const ViewTabs = memo(function ViewTabs({
             </div>
           )}
         </div>
+        <button
+          role="tab"
+          aria-selected={activeView === 'attack'}
+          className={`${styles.tab} ${activeView === 'attack' ? styles.tabActive : ''}`}
+          onClick={() => onViewChange('attack')}
+        >
+          <Target size={14} />
+          <span>Attack</span>
+        </button>
         <button
           role="tab"
           aria-selected={activeView === 'sessions'}
