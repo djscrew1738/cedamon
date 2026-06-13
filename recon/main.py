@@ -1853,12 +1853,31 @@ def main():
             print(f"[!][Pipeline] Add 'domain_discovery' to SCAN_MODULES to create it first")
             return 1
         
+        # Initialize skip_reasons tracker in metadata so every skipped phase
+        # records why, not just that it didn't run.
+        if "metadata" not in domain_result:
+            domain_result["metadata"] = {}
+        if "skip_reasons" not in domain_result["metadata"]:
+            domain_result["metadata"]["skip_reasons"] = {}
+
+        # Record why each phase is not running (helps downstream operators
+        # distinguish "disabled by config" from "no targets" from "bug")
+        _all_phases = ["port_scan", "http_probe", "resource_enum", "vuln_scan"]
+        for _phase in _all_phases:
+            if _phase not in SCAN_MODULES:
+                domain_result["metadata"]["skip_reasons"].setdefault(
+                    _phase, f"Not in SCAN_MODULES list"
+                )
+
         # Run port_scan if in SCAN_MODULES (when domain_discovery is skipped)
         if "port_scan" in SCAN_MODULES:
             _naabu_on = _settings.get('NAABU_ENABLED', True)
             _masscan_on = _settings.get('MASSCAN_ENABLED', True)
 
             if not _naabu_on and not _masscan_on:
+                domain_result["metadata"]["skip_reasons"]["port_scan"] = (
+                    "Both Naabu and Masscan are disabled"
+                )
                 print("\n[!][Pipeline] Both Naabu and Masscan are disabled — skipping port scan phase")
                 print("[!][Pipeline] Downstream modules (HTTP probe, vuln scan) require open ports to work")
             else:
@@ -1907,6 +1926,9 @@ def main():
         # Run http_probe if in SCAN_MODULES (when domain_discovery is skipped)
         if "http_probe" in SCAN_MODULES:
             if not _settings.get('HTTPX_ENABLED', True):
+                domain_result["metadata"]["skip_reasons"]["http_probe"] = (
+                    "httpx is disabled"
+                )
                 print("\n[*][httpx] HTTP probing disabled -- skipping")
             else:
                 domain_result = run_http_probe(domain_result, output_file=output_file, settings=_settings)
@@ -1954,6 +1976,8 @@ def main():
             if "metadata" in domain_result:
                 domain_result["metadata"]["active_scans_skipped"] = True
                 domain_result["metadata"]["active_scans_skip_reason"] = skip_reason
+                domain_result["metadata"]["skip_reasons"]["resource_enum"] = skip_reason
+                domain_result["metadata"]["skip_reasons"]["vuln_scan"] = skip_reason
             with open(output_file, 'w') as f:
                 json.dump(domain_result, f, indent=2)
         else:

@@ -7,7 +7,14 @@ Otherwise, falls back to DEFAULT_SETTINGS for CLI usage.
 """
 import os
 import logging
+from pathlib import Path
 from typing import Any, Optional
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +42,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # Scan Modules
     'SCAN_MODULES': ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan'],
     'UPDATE_GRAPH_DB': True,
-    'USE_TOR_FOR_RECON': False,
+    'USE_TOR_FOR_RECON': True,
     'USE_BRUTEFORCE_FOR_SUBDOMAINS': False,
     'STEALTH_MODE': False,
 
@@ -50,6 +57,77 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'DNS_MAX_RETRIES': 3,
     'DNS_MAX_WORKERS': 80,
     'DNS_RECORD_PARALLELISM': True,
+
+    # Alterx subdomain permutation (heavy permutation; default off for fast starts)
+    'ALTERX_ENABLED': False,
+    'ALTERX_DOCKER_IMAGE': 'projectdiscovery/alterx:latest',
+    'ALTERX_ENRICH': True,
+    'ALTERX_LIMIT': 10000,
+    'ALTERX_PATTERNS': [],
+    'ALTERX_CUSTOM_WORDLIST': '',
+    'ALTERX_TIMEOUT': 300,
+    'ALTERX_DNS_WORKERS': 50,
+    'ALTERX_DNS_TIMEOUT': 5.0,
+
+    # waymore passive URL discovery (archive sources beyond GAU)
+    'WAYMORE_ENABLED': True,
+    'WAYMORE_DOCKER_IMAGE': 'waymore:latest',
+    'WAYMORE_TIMEOUT': 300,
+    'WAYMORE_WORKERS': 3,
+    'WAYMORE_BLACKLIST_EXTENSIONS': ['png', 'jpg', 'jpeg', 'gif', 'css', 'woff', 'woff2', 'ttf', 'svg', 'ico', 'eot', 'pdf', 'zip', 'gz'],
+    'WAYMORE_FROM_DATE': '',
+    'WAYMORE_TO_DATE': '',
+    'WAYMORE_PROVIDERS': ['wayback', 'commoncrawl', 'alienvault', 'urlscan', 'virustotal', 'ghostarchive', 'intelligencex'],
+
+    # BBOT comprehensive OSINT (subdomains, cloud assets, emails, URLs)
+    # Heavy all-in-one Docker run; default off to keep scans fast.
+    'BBOT_ENABLED': False,
+    'BBOT_DOCKER_IMAGE': 'blacklanternsecurity/bbot:stable',
+    'BBOT_FLAGS': ['subdomain-enum', 'cloud-enum'],
+    'BBOT_MODULES': ['httpx'],
+    'BBOT_TIMEOUT': 600,
+    'BBOT_SAFE_MODE': True,
+
+    # Cloudlist credential-based cloud asset enumeration
+    # NOTE: cloudlist requires a provider-config file with valid cloud credentials.
+    # It is NOT a passive recon tool; enable only when authorized cloud access is available.
+    'CLOUDLIST_ENABLED': False,
+    'CLOUDLIST_DOCKER_IMAGE': 'projectdiscovery/cloudlist:latest',
+    'CLOUDLIST_PROVIDER_CONFIG': '',
+    'CLOUDLIST_PROVIDERS': [],
+    'CLOUDLIST_SERVICES': [],
+    'CLOUDLIST_TIMEOUT': 300,
+    'CLOUDLIST_EXTENDED_METADATA': False,
+
+    # ProjectDiscovery Chaos subdomain dataset (API key required)
+    'CHAOS_ENABLED': True,
+    'CHAOS_DOCKER_IMAGE': 'projectdiscovery/chaos-client:latest',
+    'CHAOS_API_KEY': os.getenv('CHAOS_API_KEY', ''),
+    'CHAOS_TIMEOUT': 300,
+
+    # ProjectDiscovery ASNmap - IP/ASN to CIDR mapping
+    'ASNMAP_ENABLED': True,
+    'ASNMAP_DOCKER_IMAGE': 'projectdiscovery/asnmap:latest',
+    'ASNMAP_TIMEOUT': 300,
+
+    # ProjectDiscovery DNSx - DNS enrichment / wildcard detection
+    'DNSX_ENABLED': True,
+    'DNSX_DOCKER_IMAGE': 'projectdiscovery/dnsx:latest',
+    'DNSX_RECORD_TYPES': ['a', 'aaaa', 'cname', 'mx', 'ns', 'txt', 'soa'],
+    'DNSX_WILDCARD_TESTS': 3,
+    'DNSX_TIMEOUT': 300,
+
+    # ProjectDiscovery TLSx - TLS certificate intelligence / SAN subdomain discovery
+    'TLSX_ENABLED': True,
+    'TLSX_DOCKER_IMAGE': 'projectdiscovery/tlsx:latest',
+    'TLSX_PORTS': ['443', '8443'],
+    'TLSX_TIMEOUT': 300,
+
+    # cloud_enum - public cloud asset brute-force (no credentials)
+    'CLOUD_ENUM_ENABLED': True,
+    'CLOUD_ENUM_DOCKER_IMAGE': 'redamon-cloud_enum:latest',
+    'CLOUD_ENUM_KEYWORDS': [],
+    'CLOUD_ENUM_TIMEOUT': 600,
 
     # Naabu Port Scanner
     'NAABU_ENABLED': True,
@@ -66,6 +144,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NAABU_SKIP_HOST_DISCOVERY': True,
     'NAABU_VERIFY_PORTS': True,
     'NAABU_PASSIVE_MODE': False,
+    # Phase-specific anonymity: port scanning through Tor is slow/unreliable,
+    # so it defaults to direct connection even when USE_TOR_FOR_RECON is True.
+    # HTTP/vuln scans still respect USE_TOR_FOR_RECON.
+    'NAABU_USE_TOR': False,
+    'NAABU_TOR_TOP_PORTS': '100',
+    'PORT_SCAN_TIMEOUT': 600,
+    'PORT_SCAN_STALL_TIMEOUT': 120,
     # AI surface recon — annotate AI-bearing ports (Ollama 11434, Qdrant 6333, Open WebUI 8080, …) on naabu output
     'PORT_SCAN_AI_PORT_CATALOG_ENABLED': True,
 
@@ -73,6 +158,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NMAP_ENABLED': True,
     'NMAP_VERSION_DETECTION': True,
     'NMAP_SCRIPT_SCAN': True,
+    'NMAP_SKIP_SCRIPT_SCAN_FOR_CDN': True,
     'NMAP_TIMING_TEMPLATE': 'T3',
     'NMAP_TIMEOUT': 600,
     'NMAP_HOST_TIMEOUT': 300,
@@ -169,6 +255,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NUCLEI_CONCURRENCY': 25,
     'NUCLEI_TIMEOUT': 10,
     'NUCLEI_RETRIES': 1,
+    # Max seconds a nuclei pass can run before being killed (0 = no limit).
+    # Protects against scans that stall or run forever due to Tor failures,
+    # network issues, or runaway template counts.
+    'NUCLEI_SCAN_TIMEOUT': 0,
+    # When Tor is enabled, per-request timeout and retries are multiplied by
+    # this value to compensate for Tor's inherent latency and circuit failures.
+    'NUCLEI_TOR_TIMEOUT_MULTIPLIER': 3,
     'NUCLEI_TAGS': ['cve', 'xss', 'sqli', 'rce', 'lfi', 'ssrf', 'xxe', 'ssti'],
     'NUCLEI_EXCLUDE_TAGS': ['dos', 'fuzz'],
     'NUCLEI_DAST_MODE': False,
@@ -511,8 +604,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'CVE_LOOKUP_SOURCE': 'nvd',
     'CVE_LOOKUP_MAX_CVES': 20,
     'CVE_LOOKUP_MIN_CVSS': 0.0,
-    'VULNERS_API_KEY': '',
-    'NVD_API_KEY': '',  # Configured in Global Settings → Tool API Keys
+    'VULNERS_API_KEY': os.getenv('VULNERS_API_KEY', ''),
+    'NVD_API_KEY': os.getenv('NVD_API_KEY', ''),  # Configured in Global Settings → Tool API Keys
 
     # MITRE CWE/CAPEC Enrichment
     'MITRE_ENABLED': True,
@@ -567,35 +660,35 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'SHODAN_DOMAIN_DNS': False,
     'SHODAN_PASSIVE_CVES': True,
     'SHODAN_WORKERS': 5,
-    'SHODAN_API_KEY': '',
-    'URLSCAN_API_KEY': '',
+    'SHODAN_API_KEY': os.getenv('SHODAN_API_KEY', ''),
+    'URLSCAN_API_KEY': os.getenv('URLSCAN_API_KEY', ''),
 
     # URLScan.io Passive Enrichment
-    'URLSCAN_ENABLED': True,
+    'URLSCAN_ENABLED': False,
     'URLSCAN_MAX_RESULTS': 50000,
 
     # OSINT & Threat Intelligence Enrichment
     'OSINT_ENRICHMENT_ENABLED': False,
     'CENSYS_ENABLED': False,
-    'CENSYS_API_TOKEN': '',
-    'CENSYS_ORG_ID': '',
+    'CENSYS_API_TOKEN': os.getenv('CENSYS_API_TOKEN', ''),
+    'CENSYS_ORG_ID': os.getenv('CENSYS_ORG_ID', ''),
     'FOFA_ENABLED': False,
     'FOFA_MAX_RESULTS': 1000,
-    'FOFA_API_KEY': '',
+    'FOFA_API_KEY': os.getenv('FOFA_API_KEY', ''),
     'OTX_ENABLED': True,
-    'OTX_API_KEY': '',
+    'OTX_API_KEY': os.getenv('OTX_API_KEY', ''),
     'NETLAS_ENABLED': False,
     'NETLAS_MAX_RESULTS': 1000,
-    'NETLAS_API_KEY': '',
+    'NETLAS_API_KEY': os.getenv('NETLAS_API_KEY', ''),
     'VIRUSTOTAL_ENABLED': False,
-    'VIRUSTOTAL_API_KEY': '',
+    'VIRUSTOTAL_API_KEY': os.getenv('VIRUSTOTAL_API_KEY', ''),
     'VIRUSTOTAL_RATE_LIMIT': 4,
     'VIRUSTOTAL_MAX_TARGETS': 20,
     'ZOOMEYE_ENABLED': False,
     'ZOOMEYE_MAX_RESULTS': 1000,
-    'ZOOMEYE_API_KEY': '',
+    'ZOOMEYE_API_KEY': os.getenv('ZOOMEYE_API_KEY', ''),
     'CRIMINALIP_ENABLED': False,
-    'CRIMINALIP_API_KEY': '',
+    'CRIMINALIP_API_KEY': os.getenv('CRIMINALIP_API_KEY', ''),
     # OSINT Enrichment Parallelism
     'OTX_WORKERS': 5,
     'VIRUSTOTAL_WORKERS': 3,
@@ -605,18 +698,23 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'NETLAS_WORKERS': 5,
     'ZOOMEYE_WORKERS': 5,
 
+    # Web Search & OSINT API Keys
+    'SERPAPI_KEY': os.getenv('SERPAPI_KEY', ''),
+    'TAVILY_API_KEY': os.getenv('TAVILY_API_KEY', ''),
+    'BRAVE_API_KEY': os.getenv('BRAVE_API_KEY', ''),
+
     # Uncover (ProjectDiscovery multi-engine search)
     'UNCOVER_ENABLED': False,
     'UNCOVER_MAX_RESULTS': 50000,
     'UNCOVER_DOCKER_IMAGE': 'projectdiscovery/uncover:latest',
-    'UNCOVER_QUAKE_API_KEY': '',
-    'UNCOVER_HUNTER_API_KEY': '',
-    'UNCOVER_PUBLICWWW_API_KEY': '',
-    'UNCOVER_HUNTERHOW_API_KEY': '',
-    'UNCOVER_GOOGLE_API_KEY': '',
-    'UNCOVER_GOOGLE_API_CX': '',
-    'UNCOVER_ONYPHE_API_KEY': '',
-    'UNCOVER_DRIFTNET_API_KEY': '',
+    'UNCOVER_QUAKE_API_KEY': os.getenv('UNCOVER_QUAKE_API_KEY', ''),
+    'UNCOVER_HUNTER_API_KEY': os.getenv('UNCOVER_HUNTER_API_KEY', ''),
+    'UNCOVER_PUBLICWWW_API_KEY': os.getenv('UNCOVER_PUBLICWWW_API_KEY', ''),
+    'UNCOVER_HUNTERHOW_API_KEY': os.getenv('UNCOVER_HUNTERHOW_API_KEY', ''),
+    'UNCOVER_GOOGLE_API_KEY': os.getenv('UNCOVER_GOOGLE_API_KEY', ''),
+    'UNCOVER_GOOGLE_API_CX': os.getenv('UNCOVER_GOOGLE_API_CX', ''),
+    'UNCOVER_ONYPHE_API_KEY': os.getenv('UNCOVER_ONYPHE_API_KEY', ''),
+    'UNCOVER_DRIFTNET_API_KEY': os.getenv('UNCOVER_DRIFTNET_API_KEY', ''),
 
     # Subdomain Discovery
     'SUBDOMAIN_DISCOVERY_ENABLED': True,
@@ -755,7 +853,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     logger.info(f"Fetching project settings from {url}")
 
     _internal_headers = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")}
-    response = requests.get(url, timeout=30, headers=_internal_headers)
+    response = requests.get(url, timeout=10, headers=_internal_headers)
     response.raise_for_status()
     project = response.json()
 
@@ -824,6 +922,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['NMAP_ENABLED'] = project.get('nmapEnabled', DEFAULT_SETTINGS['NMAP_ENABLED'])
     settings['NMAP_VERSION_DETECTION'] = project.get('nmapVersionDetection', DEFAULT_SETTINGS['NMAP_VERSION_DETECTION'])
     settings['NMAP_SCRIPT_SCAN'] = project.get('nmapScriptScan', DEFAULT_SETTINGS['NMAP_SCRIPT_SCAN'])
+    settings['NMAP_SKIP_SCRIPT_SCAN_FOR_CDN'] = project.get('nmapSkipScriptScanForCdn', DEFAULT_SETTINGS['NMAP_SKIP_SCRIPT_SCAN_FOR_CDN'])
     settings['NMAP_TIMING_TEMPLATE'] = project.get('nmapTimingTemplate', DEFAULT_SETTINGS['NMAP_TIMING_TEMPLATE'])
     settings['NMAP_TIMEOUT'] = project.get('nmapTimeout', DEFAULT_SETTINGS['NMAP_TIMEOUT'])
     settings['NMAP_HOST_TIMEOUT'] = project.get('nmapHostTimeout', DEFAULT_SETTINGS['NMAP_HOST_TIMEOUT'])

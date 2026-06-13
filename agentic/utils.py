@@ -6,11 +6,24 @@ Orchestrator-specific helpers are in orchestrator_helpers/.
 """
 
 import logging
+import time
 from textwrap import dedent
 
 from project_settings import get_setting
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Ngrok circuit breaker — stops hammering the ngrok API when the tunnel is
+# persistently down, reducing log noise and agent latency.
+# ---------------------------------------------------------------------------
+_ngrok_circuit: dict = {
+    "failures": 0,
+    "open_until": 0.0,          # epoch seconds; 0.0 = circuit is closed
+}
+
+_NGROK_CIRCUIT_MAX_FAILURES = 3      # trips after this many consecutive failures
+_NGROK_CIRCUIT_BACKOFF_SEC = 120.0   # stays open for this long
 
 
 def get_session_count() -> int:
@@ -63,14 +76,26 @@ def get_session_config_prompt() -> str:
     ngrok_active = False
     ngrok_error = None
     if NGROK_TUNNEL_ENABLED:
-        tunnel_info = _query_ngrok_tunnel()
-        if tunnel_info:
-            LHOST = tunnel_info['host']
-            LPORT = tunnel_info['port']
-            ngrok_active = True
+        if _ngrok_circuit["open_until"] > time.time():
+            logger.info(
+                "Ngrok circuit breaker OPEN (%.0f s remaining) — "
+                "skipping tunnel query",
+                _ngrok_circuit["open_until"] - time.time(),
+            )
+            ngrok_error = (
+                "ngrok tunnel enabled but circuit breaker is open "
+                "(%d failures, %.0fs backoff) — falling back to configured LHOST/LPORT"
+                % (_ngrok_circuit["failures"], _NGROK_CIRCUIT_BACKOFF_SEC)
+            )
         else:
-            ngrok_error = ("ngrok tunnel enabled but API unreachable "
-                           "— falling back to configured LHOST/LPORT")
+            tunnel_info = _query_ngrok_tunnel()
+            if tunnel_info:
+                LHOST = tunnel_info['host']
+                LPORT = tunnel_info['port']
+                ngrok_active = True
+            else:
+                ngrok_error = ("ngrok tunnel enabled but API unreachable "
+                               "— falling back to configured LHOST/LPORT")
 
     # -------------------------------------------------------------------------
     # CHISEL TUNNEL: derive endpoints from CHISEL_SERVER_URL
@@ -359,6 +384,8 @@ def _query_ngrok_tunnel() -> dict | None:
     IP than the actual relay server.  The target will resolve the hostname
     through its own DNS, which returns the correct IP.
 
+    Updates the circuit breaker on success (reset) or failure (increment).
+
     Returns:
         Dict with 'host' (str — ngrok hostname), 'port' (int), and
         'hostname' (str — same as host) if a TCP tunnel is found,
@@ -379,6 +406,9 @@ def _query_ngrok_tunnel() -> dict | None:
                 port = int(port_str)
 
                 logger.info(f"ngrok TCP tunnel: {hostname}:{port}")
+                # Success — reset circuit breaker
+                _ngrok_circuit["failures"] = 0
+                _ngrok_circuit["open_until"] = 0.0
                 return {
                     "host": hostname,
                     "port": port,
@@ -386,11 +416,27 @@ def _query_ngrok_tunnel() -> dict | None:
                 }
 
         logger.warning("ngrok API returned no TCP tunnels")
-        return None
+        return _ngrok_fail()
 
     except Exception as e:
         logger.warning(f"Failed to query ngrok tunnel API: {e}")
-        return None
+        return _ngrok_fail()
+
+
+def _ngrok_fail() -> None:
+    """
+    Record one ngrok failure and trip the circuit breaker if the threshold
+    is reached.  Returns None so callers can ``return _ngrok_fail()``.
+    """
+    _ngrok_circuit["failures"] += 1
+    if _ngrok_circuit["failures"] >= _NGROK_CIRCUIT_MAX_FAILURES:
+        _ngrok_circuit["open_until"] = time.time() + _NGROK_CIRCUIT_BACKOFF_SEC
+        logger.warning(
+            "Ngrok circuit breaker TRIPPED (%d failures, %.0fs backoff)",
+            _ngrok_circuit["failures"],
+            _NGROK_CIRCUIT_BACKOFF_SEC,
+        )
+    return None
 
 
 def _query_chisel_tunnel() -> dict | None:
