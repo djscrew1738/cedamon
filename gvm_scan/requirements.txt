@@ -3,4 +3,5 @@ python-gvm>=24.0.0
 python-dotenv>=1.0.0
 xmltodict>=0.13.0
 requests>=2.31.0
+neo4j>=5.0.0
 

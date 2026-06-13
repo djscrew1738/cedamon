@@ -18,8 +18,10 @@ Usage:
 import os
 import sys
 import json
+import concurrent.futures as cf
 from pathlib import Path
 from datetime import datetime
+from collections import OrderedDict
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -128,6 +130,7 @@ def _apply_scan_preset(settings: dict) -> dict:
         settings['PORT_LIST'] = 'All TCP and Nmap top 100 UDP'
         settings['POLL_INTERVAL'] = 10
         settings['TARGET_BATCH_SIZE'] = 10
+        settings['BATCH_CONCURRENCY'] = 8
         if not settings.get('MAX_HOSTS'):
             settings['MAX_HOSTS'] = 20
         if not settings.get('MAX_CHECKS'):
@@ -137,6 +140,7 @@ def _apply_scan_preset(settings: dict) -> dict:
         settings['PORT_LIST'] = 'All IANA assigned TCP and UDP'
         settings['POLL_INTERVAL'] = 30
         settings['TARGET_BATCH_SIZE'] = 1
+        settings['BATCH_CONCURRENCY'] = 1
         settings['MAX_HOSTS'] = settings.get('MAX_HOSTS') or 0
         settings['MAX_CHECKS'] = settings.get('MAX_CHECKS') or 0
     # 'default' keeps the explicit values loaded from the API/fallbacks
@@ -149,33 +153,72 @@ def _chunked(items: list, size: int):
         yield items[i:i + size]
 
 
-def _run_batch(
-    scanner: GVMScanner,
+def _run_batch_parallel(
     batch: list,
     batch_index: int,
     total_batches: int,
     scan_type: str,
     cleanup: bool,
-    results: dict,
-    save_incremental,
-    output_file: Path,
-):
-    """Scan a single batch of targets and update the shared results dict."""
-    kind = "IPs" if scan_type == "ip_scan" else "Hostnames"
-    print(f"\n[*] {kind} batch {batch_index}/{total_batches}: "
-          f"{len(batch)} target(s)")
+) -> dict:
+    """Run a single batch in its own thread with its own GVM connection.
 
-    batch_results = scanner.scan_targets(
-        targets=batch,
-        target_name=f"{kind}_batch_{batch_index}_of_{total_batches}",
-        cleanup=cleanup,
-    )
-    batch_results["scan_type"] = scan_type
-    if scan_type == "ip_scan":
-        batch_results["target_ips"] = batch
-    else:
-        batch_results["target_hostnames"] = batch
+    Each batch gets an independent GMP connection so multiple batches can
+    run concurrently without socket contention.
+
+    Returns:
+        Batch results dict. On failure, returns an error dict (never raises).
+    """
+    kind = "IPs" if scan_type == "ip_scan" else "Hostnames"
+    print(f"\n[*] [{kind} batch {batch_index}/{total_batches}] Starting scan "
+          f"of {len(batch)} target(s)...")
+
+    scanner = GVMScanner()
+    if not scanner.connect():
+        print(f"    [!] Batch {batch_index}: failed to connect to GVM")
+        return {
+            "batch_index": batch_index,
+            "scan_type": scan_type,
+            "error": "Failed to connect to GVM",
+            "vulnerabilities": [],
+            "hosts_scanned": 0,
+            "severity_summary": {},
+            "vulnerability_count": 0,
+        }
+
+    try:
+        batch_results = scanner.scan_targets(
+            targets=batch,
+            target_name=f"{kind}_batch_{batch_index}_of_{total_batches}",
+            cleanup=cleanup,
+        )
+        batch_results["scan_type"] = scan_type
+        batch_results["batch_index"] = batch_index
+        if scan_type == "ip_scan":
+            batch_results["target_ips"] = batch
+        else:
+            batch_results["target_hostnames"] = batch
+        return batch_results
+    except Exception as e:
+        print(f"    [!] Batch {batch_index} failed: {e}")
+        return {
+            "batch_index": batch_index,
+            "scan_type": scan_type,
+            "error": str(e),
+            "vulnerabilities": [],
+            "hosts_scanned": 0,
+            "severity_summary": {},
+            "vulnerability_count": 0,
+        }
+    finally:
+        scanner.disconnect()
+
+
+def _merge_batch_results(results: dict, batch_results: dict):
+    """Merge a single batch's results into the shared results dict."""
     results["scans"].append(batch_results)
+
+    if "error" in batch_results and not batch_results.get("vulnerabilities"):
+        return
 
     if "severity_summary" in batch_results:
         for sev, count in batch_results["severity_summary"].items():
@@ -185,8 +228,108 @@ def _run_batch(
     )
     results["summary"]["hosts_scanned"] += batch_results.get("hosts_scanned", 0)
 
+
+def _deduplicate_vulnerabilities(results: dict) -> list:
+    """Deduplicate vulnerabilities across parallel batches.
+
+    Uses (host, port, OID, CVE set) as the dedup key.  Keeps the entry with
+    the highest severity for each unique finding.
+
+    Returns:
+        Deduplicated list of vulnerability dicts.
+    """
+    seen = OrderedDict()
+
+    for scan in results.get("scans", []):
+        for vuln in scan.get("vulnerabilities", []):
+            host = vuln.get("host", vuln.get("ip", ""))
+            port = vuln.get("port", "")
+            oid = vuln.get("oid", "")
+            cves = vuln.get("cves_extracted", [])
+            cve_str = ",".join(sorted(cves)) if cves else ""
+            dedup_key = f"{host}|{port}|{oid}|{cve_str}"
+
+            if dedup_key in seen:
+                existing = seen[dedup_key]
+                if vuln.get("severity_float", 0) > existing.get("severity_float", 0):
+                    seen[dedup_key] = vuln
+            else:
+                seen[dedup_key] = vuln
+
+    return list(seen.values())
+
+
+def _run_phase(
+    targets: list,
+    scan_type: str,
+    batch_size: int,
+    batch_concurrency: int,
+    cleanup: bool,
+    results: dict,
+    root_domain: str,
+    output_file: Path,
+    save_incremental,
+):
+    """Run a scan phase (IPs or hostnames) with parallel batch execution.
+
+    Submits all batches to a ThreadPoolExecutor, collects results as they
+    complete, merges them into ``results``, and saves incrementally.
+    """
+    if not targets:
+        return
+
+    kind = "IP" if scan_type == "ip_scan" else "Hostname"
+    batches = list(_chunked(targets, batch_size))
+    print(f"\n[*] PHASE: Scanning {len(targets)} {kind} addresses "
+          f"in {len(batches)} batch(es) (concurrency={batch_concurrency})...")
+    print("-" * 50)
+
+    concurrency = min(batch_concurrency, len(batches))
+    with cf.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = {}
+        for i, batch in enumerate(batches, 1):
+            future = pool.submit(
+                _run_batch_parallel,
+                batch=batch,
+                batch_index=i,
+                total_batches=len(batches),
+                scan_type=scan_type,
+                cleanup=cleanup,
+            )
+            futures[future] = i
+
+        completed = 0
+        failed = 0
+        for future in cf.as_completed(futures):
+            batch_idx = futures[future]
+            try:
+                batch_results = future.result()
+                _merge_batch_results(results, batch_results)
+                completed += 1
+                if "error" in batch_results and batch_results.get("error"):
+                    failed += 1
+                print(f"    [+] Batch {batch_idx}/{len(batches)} complete. "
+                      f"Progress saved to {output_file}")
+            except Exception as e:
+                failed += 1
+                print(f"    [!] Batch {batch_idx} raised unhandled exception: {e}")
+                _merge_batch_results(results, {
+                    "batch_index": batch_idx,
+                    "scan_type": scan_type,
+                    "error": str(e),
+                    "vulnerabilities": [],
+                    "hosts_scanned": 0,
+                    "severity_summary": {},
+                    "vulnerability_count": 0,
+                })
+
     save_incremental()
-    print(f"    [+] Progress saved to {output_file}")
+
+    completed_count = completed
+    failed_count = failed
+    if failed_count:
+        print(f"    [!] {failed_count}/{len(batches)} batch(es) failed")
+    print(f"    [+] Phase complete: {completed_count}/{len(batches)} batches processed")
 
 
 def run_vulnerability_scan(
@@ -215,6 +358,7 @@ def run_vulnerability_scan(
     cleanup = get_setting('CLEANUP_AFTER_SCAN', True)
     port_list = get_setting('PORT_LIST', 'All IANA assigned TCP and UDP')
     batch_size = int(get_setting('TARGET_BATCH_SIZE', 5))
+    batch_concurrency = int(get_setting('BATCH_CONCURRENCY', 4))
     max_hosts = get_setting('MAX_HOSTS', 0)
     max_checks = get_setting('MAX_CHECKS', 0)
     scan_preset = get_setting('SCAN_PRESET', 'default')
@@ -228,6 +372,7 @@ def run_vulnerability_scan(
     print(f"  Port List:     {port_list}")
     print(f"  Scan Strategy: {scan_targets}")
     print(f"  Batch Size:    {batch_size}")
+    print(f"  Concurrency:   {batch_concurrency}")
     print(f"  Max Hosts:     {max_hosts or 'GVM default'}")
     print(f"  Max Checks:    {max_checks or 'GVM default'}")
     print(f"  Task Timeout:  {task_timeout}s")
@@ -328,84 +473,58 @@ def run_vulnerability_scan(
         }
     }
     
-    # Connect to GVM
-    print("\n[*] Connecting to GVM...")
-    scanner = GVMScanner()
-    
-    if not scanner.connect():
-        print("[!] ERROR: Failed to connect to GVM")
-        print("[!] Make sure GVM is running:")
-        print("[!]   docker compose up -d")
-        print("[!]   docker compose logs -f gvmd  # Wait for 'Starting GVMd'")
-        return {"error": "Failed to connect to GVM"}
-    
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_file = OUTPUT_DIR / f"gvm_{project_id}.json"
-    
+
     def save_incremental():
         """Save current results incrementally."""
         with open(output_file, 'w') as f:
             json.dump(results, f, indent=2)
-    
-    try:
-        # =====================================================================
-        # PHASE 1: Scan IPs in batches
-        # =====================================================================
-        if scan_targets in ("both", "ips_only") and ips:
-            ip_list = list(ips)
-            batches = list(_chunked(ip_list, batch_size))
-            print(f"\n[*] PHASE 1: Scanning {len(ip_list)} IP addresses "
-                  f"in {len(batches)} batch(es)...")
-            print("-" * 50)
 
-            for i, batch in enumerate(batches, 1):
-                _run_batch(
-                    scanner=scanner,
-                    batch=batch,
-                    batch_index=i,
-                    total_batches=len(batches),
-                    scan_type="ip_scan",
-                    cleanup=cleanup,
-                    results=results,
-                    save_incremental=save_incremental,
-                    output_file=output_file,
-                )
+    # Save initial (empty) results
+    save_incremental()
 
-        # =====================================================================
-        # PHASE 2: Scan Hostnames in batches
-        # Reconnect to GVM to avoid stale socket after long Phase 1 scans
-        # =====================================================================
-        if scan_targets in ("both", "hostnames_only") and hostnames:
-            if scan_targets == "both" and ips:
-                print("\n[*] Reconnecting to GVM before Phase 2...")
-                scanner.disconnect()
-                # Connect with exponential backoff from 2s — no hard sleep needed
-                if not scanner.connect(max_retries=8, retry_interval=2):
-                    raise RuntimeError("Failed to reconnect to GVM before Phase 2")
-            hostname_list = list(hostnames)
-            batches = list(_chunked(hostname_list, batch_size))
-            print(f"\n[*] PHASE 2: Scanning {len(hostname_list)} hostnames "
-                  f"in {len(batches)} batch(es)...")
-            print("-" * 50)
+    # =====================================================================
+    # PHASE 1: Scan IPs in parallel batches
+    # =====================================================================
+    if scan_targets in ("both", "ips_only") and ips:
+        _run_phase(
+            targets=list(ips),
+            scan_type="ip_scan",
+            batch_size=batch_size,
+            batch_concurrency=batch_concurrency,
+            cleanup=cleanup,
+            results=results,
+            root_domain=root_domain,
+            output_file=output_file,
+            save_incremental=save_incremental,
+        )
 
-            for i, batch in enumerate(batches, 1):
-                _run_batch(
-                    scanner=scanner,
-                    batch=batch,
-                    batch_index=i,
-                    total_batches=len(batches),
-                    scan_type="hostname_scan",
-                    cleanup=cleanup,
-                    results=results,
-                    save_incremental=save_incremental,
-                    output_file=output_file,
-                )
-        
-        # Final save
-        save_vuln_results(results, project_id)
-        
-    finally:
-        scanner.disconnect()
+    # =====================================================================
+    # PHASE 2: Scan Hostnames in parallel batches
+    # =====================================================================
+    if scan_targets in ("both", "hostnames_only") and hostnames:
+        _run_phase(
+            targets=list(hostnames),
+            scan_type="hostname_scan",
+            batch_size=batch_size,
+            batch_concurrency=batch_concurrency,
+            cleanup=cleanup,
+            results=results,
+            root_domain=root_domain,
+            output_file=output_file,
+            save_incremental=save_incremental,
+        )
+
+    # =====================================================================
+    # Deduplicate vulnerabilities across all batches
+    # =====================================================================
+    all_vulns = _deduplicate_vulnerabilities(results)
+    results["vulnerabilities"] = all_vulns
+    results["summary"]["total_vulnerabilities"] = len(all_vulns)
+
+    # Final save
+    save_vuln_results(results, project_id)
     
     # Print summary
     summary = results["summary"]

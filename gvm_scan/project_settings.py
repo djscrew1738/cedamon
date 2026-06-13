@@ -63,6 +63,11 @@ DEFAULT_GVM_SETTINGS: dict[str, Any] = {
     # Scan preset that overrides the above defaults when set to a named profile.
     # Supported: "default", "fast", "thorough"
     'SCAN_PRESET': 'default',
+
+    # Number of GVM batches to run in parallel within each phase (IP / hostname).
+    # Higher values reduce wall-clock time but increase GVM load.
+    # Set to 1 for fully sequential scanning (same as before).
+    'BATCH_CONCURRENCY': 4,
 }
 
 
@@ -103,6 +108,7 @@ def fetch_gvm_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
     settings['MAX_HOSTS'] = project.get('gvmMaxHosts', DEFAULT_GVM_SETTINGS['MAX_HOSTS'])
     settings['MAX_CHECKS'] = project.get('gvmMaxChecks', DEFAULT_GVM_SETTINGS['MAX_CHECKS'])
     settings['SCAN_PRESET'] = project.get('gvmScanPreset', DEFAULT_GVM_SETTINGS['SCAN_PRESET'])
+    settings['BATCH_CONCURRENCY'] = project.get('gvmBatchConcurrency', DEFAULT_GVM_SETTINGS['BATCH_CONCURRENCY'])
 
     logger.info(f"Loaded {len(settings)} GVM settings for project {project_id}")
     return settings

@@ -15,8 +15,7 @@ WORKDIR /app
 
 # Install dependencies (python-gvm for scanner, neo4j for graph updates)
 COPY gvm_scan/requirements.txt /tmp/gvm_requirements.txt
-RUN pip install --no-cache-dir -r /tmp/gvm_requirements.txt && \
-    pip install --no-cache-dir neo4j
+RUN pip install --no-cache-dir -r /tmp/gvm_requirements.txt
 
 # Copy project files (context is parent directory, so paths are relative to project root)
 COPY gvm_scan/ ./gvm_scan/

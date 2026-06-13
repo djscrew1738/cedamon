@@ -116,6 +116,16 @@ class GVMScanner:
         self.xml_format_id: Optional[str] = None
         self.port_list_id: Optional[str] = None
     
+    def __enter__(self):
+        """Context manager entry: auto-connect with default retries."""
+        if not self.connected:
+            self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit: auto-disconnect."""
+        self.disconnect()
+
     def connect(self, max_retries: int = 30, retry_interval: int = 5) -> bool:
         """
         Establish connection to GVMD with exponential-backoff retry logic.

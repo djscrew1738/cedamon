@@ -3,18 +3,28 @@ Unit tests for GVM scan workflow improvements:
 - target batching
 - scan preset application
 - feed-sync readiness probe parsing
+- parallel batch result merging
+- vulnerability deduplication
+- parallel batch isolation (error handling)
 """
 
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import xml.etree.ElementTree as ET
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from gvm_scan.main import _apply_scan_preset, _chunked
+from gvm_scan.main import (
+    _apply_scan_preset,
+    _chunked,
+    _merge_batch_results,
+    _deduplicate_vulnerabilities,
+    _run_phase,
+)
 from gvm_scan.ready_probe import _parse_feeds
 
 
@@ -32,6 +42,16 @@ class TestGvmBatching(unittest.TestCase):
         chunks = list(_chunked(items, 0))
         self.assertEqual(len(chunks), 3)
 
+    def test_chunked_empty(self):
+        self.assertEqual(list(_chunked([], 5)), [])
+
+    def test_chunked_exact_divisor(self):
+        items = list(range(6))
+        chunks = list(_chunked(items, 3))
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(chunks[0], [0, 1, 2])
+        self.assertEqual(chunks[1], [3, 4, 5])
+
 
 class TestGvmScanPresets(unittest.TestCase):
     def test_fast_preset_overrides_defaults(self):
@@ -48,6 +68,7 @@ class TestGvmScanPresets(unittest.TestCase):
         self.assertEqual(settings["PORT_LIST"], "All TCP and Nmap top 100 UDP")
         self.assertEqual(settings["POLL_INTERVAL"], 10)
         self.assertEqual(settings["TARGET_BATCH_SIZE"], 10)
+        self.assertEqual(settings["BATCH_CONCURRENCY"], 8)
         self.assertEqual(settings["MAX_HOSTS"], 20)
         self.assertEqual(settings["MAX_CHECKS"], 10)
         self.assertEqual(settings["SCAN_CONFIG"], "Full and fast")
@@ -71,6 +92,7 @@ class TestGvmScanPresets(unittest.TestCase):
         self.assertEqual(settings["MAX_CHECKS"], 4)
         self.assertEqual(settings["POLL_INTERVAL"], 10)
         self.assertEqual(settings["TARGET_BATCH_SIZE"], 10)
+        self.assertEqual(settings["BATCH_CONCURRENCY"], 8)
 
     def test_thorough_preset(self):
         settings = {
@@ -85,6 +107,7 @@ class TestGvmScanPresets(unittest.TestCase):
         self.assertEqual(settings["PORT_LIST"], "All IANA assigned TCP and UDP")
         self.assertEqual(settings["POLL_INTERVAL"], 30)
         self.assertEqual(settings["TARGET_BATCH_SIZE"], 1)
+        self.assertEqual(settings["BATCH_CONCURRENCY"], 1)
         self.assertEqual(settings["MAX_HOSTS"], 20)
         self.assertEqual(settings["MAX_CHECKS"], 10)
 
@@ -99,6 +122,283 @@ class TestGvmScanPresets(unittest.TestCase):
         self.assertEqual(settings["PORT_LIST"], "All IANA assigned TCP and UDP")
         self.assertEqual(settings["POLL_INTERVAL"], 30)
         self.assertEqual(settings["TARGET_BATCH_SIZE"], 5)
+        # default preset should not set BATCH_CONCURRENCY
+        self.assertNotIn("BATCH_CONCURRENCY", settings)
+
+
+class TestGvmMergeBatchResults(unittest.TestCase):
+    def setUp(self):
+        self.results = {
+            "scans": [],
+            "summary": {
+                "total_vulnerabilities": 0,
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "log": 0,
+                "hosts_scanned": 0,
+            },
+        }
+
+    def test_merge_normal_batch(self):
+        batch = {
+            "batch_index": 1,
+            "scan_type": "ip_scan",
+            "vulnerabilities": [{"oid": "1.2.3", "host": "10.0.0.1"}],
+            "hosts_scanned": 5,
+            "vulnerability_count": 1,
+            "severity_summary": {"critical": 1, "high": 0, "medium": 0, "low": 0},
+        }
+        _merge_batch_results(self.results, batch)
+        self.assertEqual(len(self.results["scans"]), 1)
+        self.assertEqual(self.results["summary"]["total_vulnerabilities"], 1)
+        self.assertEqual(self.results["summary"]["critical"], 1)
+        self.assertEqual(self.results["summary"]["hosts_scanned"], 5)
+
+    def test_merge_error_batch(self):
+        error_batch = {
+            "batch_index": 2,
+            "scan_type": "ip_scan",
+            "error": "Connection failed",
+            "vulnerabilities": [],
+            "hosts_scanned": 0,
+            "severity_summary": {},
+            "vulnerability_count": 0,
+        }
+        _merge_batch_results(self.results, error_batch)
+        self.assertEqual(len(self.results["scans"]), 1)
+        self.assertEqual(self.results["summary"]["total_vulnerabilities"], 0)
+
+    def test_merge_multiple_batches(self):
+        for i in range(3):
+            _merge_batch_results(self.results, {
+                "batch_index": i + 1,
+                "scan_type": "ip_scan",
+                "vulnerabilities": [{"oid": f"1.2.{i}", "host": f"10.0.0.{i}"}],
+                "hosts_scanned": 2,
+                "vulnerability_count": 1,
+                "severity_summary": {"high": 1},
+            })
+        self.assertEqual(len(self.results["scans"]), 3)
+        self.assertEqual(self.results["summary"]["total_vulnerabilities"], 3)
+        self.assertEqual(self.results["summary"]["high"], 3)
+        self.assertEqual(self.results["summary"]["hosts_scanned"], 6)
+
+
+class TestGvmDeduplication(unittest.TestCase):
+    def _make_results(self, vulns_by_batch):
+        """Build results dict from list of (batch_label, [vuln_dicts]) tuples."""
+        results = {"scans": []}
+        for label, vulns in vulns_by_batch:
+            results["scans"].append({
+                "scan_type": "ip_scan",
+                "vulnerabilities": vulns,
+            })
+        return results
+
+    def test_no_duplicates_returns_all(self):
+        vulns = [
+            {"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": [], "severity_float": 5.0},
+            {"host": "10.0.0.2", "port": "443", "oid": "1.2.4", "cves_extracted": [], "severity_float": 7.0},
+        ]
+        results = self._make_results([("batch1", vulns)])
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(len(deduped), 2)
+
+    def test_exact_duplicate_deduped(self):
+        vuln = {"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": [], "severity_float": 5.0}
+        results = self._make_results([
+            ("batch1", [vuln]),
+            ("batch2", [dict(vuln)]),
+        ])
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(len(deduped), 1)
+
+    def test_keeps_highest_severity(self):
+        low = {"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": [], "severity_float": 5.0}
+        high = {"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": [], "severity_float": 9.0}
+        results = self._make_results([
+            ("batch1", [low]),
+            ("batch2", [high]),
+        ])
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(deduped[0]["severity_float"], 9.0)
+
+    def test_different_oids_kept_separate(self):
+        vulns1 = [{"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": [], "severity_float": 5.0}]
+        vulns2 = [{"host": "10.0.0.1", "port": "80", "oid": "1.2.4", "cves_extracted": [], "severity_float": 7.0}]
+        results = self._make_results([("batch1", vulns1), ("batch2", vulns2)])
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(len(deduped), 2)
+
+    def test_cve_extracted_differentiation(self):
+        vuln_no_cve = {"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": [], "severity_float": 5.0}
+        vuln_with_cve = {"host": "10.0.0.1", "port": "80", "oid": "1.2.3", "cves_extracted": ["CVE-2024-0001"], "severity_float": 5.0}
+        results = self._make_results([("batch1", [vuln_no_cve]), ("batch2", [vuln_with_cve])])
+        deduped = _deduplicate_vulnerabilities(results)
+        # Different CVE sets → different dedup keys → both kept
+        self.assertEqual(len(deduped), 2)
+
+    def test_empty_scans_list(self):
+        results = {"scans": []}
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(deduped, [])
+
+    def test_missing_vulnerabilities_key(self):
+        results = {"scans": [{"scan_type": "ip_scan"}]}
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(deduped, [])
+
+    def test_large_batch_dedup_performance(self):
+        """Verify dedup handles many identical records efficiently."""
+        # 10 hosts × 5 OIDs = 50 unique combos, 10 copies each = 500 total
+        vulns = [
+            {"host": f"10.0.0.{h}", "port": "80", "oid": f"1.2.{o}",
+             "cves_extracted": [], "severity_float": float(h + o)}
+            for h in range(10) for o in range(5) for _ in range(10)
+        ]
+        results = self._make_results([("batch1", vulns)])
+        deduped = _deduplicate_vulnerabilities(results)
+        self.assertEqual(len(deduped), 50)
+
+
+class TestGvmParallelPhase(unittest.TestCase):
+    @patch("gvm_scan.main._run_batch_parallel")
+    def test_run_phase_with_no_targets(self, mock_run):
+        """With no targets no batches are submitted and save is not called."""
+        results = {"scans": [], "summary": {"total_vulnerabilities": 0}}
+        save_called = [False]
+
+        def save():
+            save_called[0] = True
+
+        _run_phase(
+            targets=[],
+            scan_type="ip_scan",
+            batch_size=5,
+            batch_concurrency=4,
+            cleanup=True,
+            results=results,
+            root_domain="test.local",
+            output_file=Path("/tmp/test_out.json"),
+            save_incremental=save,
+        )
+        mock_run.assert_not_called()
+        # No targets → short-circuit before save_incremental call
+        self.assertFalse(save_called[0])
+
+    @patch("gvm_scan.main._run_batch_parallel")
+    def test_run_phase_single_batch(self, mock_run):
+        mock_run.return_value = {
+            "batch_index": 1,
+            "scan_type": "ip_scan",
+            "vulnerabilities": [{"oid": "1.2.3", "host": "10.0.0.1"}],
+            "hosts_scanned": 2,
+            "vulnerability_count": 1,
+            "severity_summary": {"critical": 1},
+        }
+        results = {
+            "scans": [],
+            "summary": {
+                "total_vulnerabilities": 0,
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "log": 0,
+                "hosts_scanned": 0,
+            },
+        }
+
+        _run_phase(
+            targets=["10.0.0.1", "10.0.0.2"],
+            scan_type="ip_scan",
+            batch_size=5,
+            batch_concurrency=4,
+            cleanup=True,
+            results=results,
+            root_domain="test.local",
+            output_file=Path("/tmp/test_out.json"),
+            save_incremental=lambda: None,
+        )
+        mock_run.assert_called_once()
+        self.assertEqual(results["summary"]["total_vulnerabilities"], 1)
+        self.assertEqual(results["summary"]["critical"], 1)
+        self.assertEqual(results["summary"]["hosts_scanned"], 2)
+
+    @patch("gvm_scan.main._run_batch_parallel")
+    def test_run_phase_failing_batch_reported_as_error(self, mock_run):
+        """A batch that raises an exception should be caught and not crash the phase."""
+        mock_run.side_effect = RuntimeError("GMP connection lost")
+
+        results = {
+            "scans": [],
+            "summary": {
+                "total_vulnerabilities": 0,
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "log": 0,
+                "hosts_scanned": 0,
+            },
+        }
+
+        _run_phase(
+            targets=["10.0.0.1", "10.0.0.2"],
+            scan_type="ip_scan",
+            batch_size=5,
+            batch_concurrency=4,
+            cleanup=True,
+            results=results,
+            root_domain="test.local",
+            output_file=Path("/tmp/test_out.json"),
+            save_incremental=lambda: None,
+        )
+
+        # Error should be recorded as an error-scan in results
+        self.assertEqual(len(results["scans"]), 1)
+        self.assertIn("error", results["scans"][0])
+        self.assertIn("GMP connection lost", results["scans"][0]["error"])
+
+    @patch("gvm_scan.main._run_batch_parallel")
+    def test_run_phase_concurrency_respected(self, mock_run):
+        """Verify that concurrency is capped to number of batches."""
+        mock_run.return_value = {
+            "batch_index": 1,
+            "scan_type": "ip_scan",
+            "vulnerabilities": [],
+            "hosts_scanned": 0,
+            "vulnerability_count": 0,
+            "severity_summary": {},
+        }
+        results = {
+            "scans": [],
+            "summary": {
+                "total_vulnerabilities": 0,
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "log": 0,
+                "hosts_scanned": 0,
+            },
+        }
+
+        _run_phase(
+            targets=["10.0.0.1"],
+            scan_type="ip_scan",
+            batch_size=5,
+            batch_concurrency=99,  # Only 1 batch, so effective concurrency is 1
+            cleanup=True,
+            results=results,
+            root_domain="test.local",
+            output_file=Path("/tmp/test_out.json"),
+            save_incremental=lambda: None,
+        )
+        mock_run.assert_called_once()
 
 
 class TestGvmReadyProbe(unittest.TestCase):
@@ -123,6 +423,22 @@ class TestGvmReadyProbe(unittest.TestCase):
         self.assertEqual(syncing_count, 1)
         self.assertEqual(len(feeds), 2)
         self.assertTrue(feeds[1]["syncing"])
+        self.assertFalse(feeds[0]["syncing"])
+
+    def test_parse_feeds_all_synced(self):
+        xml = """
+        <get_feeds_response status="200" status_text="OK">
+            <feed>
+                <type>NVT</type>
+                <name>Greenbone NVT Feed</name>
+                <version>202606121755</version>
+            </feed>
+        </get_feeds_response>
+        """
+        root = ET.fromstring(xml)
+        syncing_count, feeds = _parse_feeds(root)
+        self.assertEqual(syncing_count, 0)
+        self.assertEqual(len(feeds), 1)
         self.assertFalse(feeds[0]["syncing"])
 
 
