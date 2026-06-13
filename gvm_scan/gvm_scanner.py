@@ -441,32 +441,42 @@ class GVMScanner:
         print(f"    [+] Created task '{name}': {task_id}")
         return task_id
     
-    def start_task(self, task_id: str) -> str:
+    def start_task(self, task_id: str) -> Optional[str]:
         """
         Start a scan task.
-        
+
         Args:
             task_id: Task ID to start
-            
+
         Returns:
-            Report ID for the running task
+            Report ID for the running task, or None if start failed
         """
-        response = self.gmp.start_task(task_id)
-        report_id = response.find('.//report_id')
-        report_id_str = report_id.text if report_id is not None else None
-        print(f"    [+] Started task {task_id}")
-        return report_id_str
+        try:
+            response = self.gmp.start_task(task_id)
+            report_id = response.find('.//report_id')
+            report_id_str = report_id.text if report_id is not None else None
+            if report_id_str is None:
+                print(f"    [!] Started task {task_id} but no report_id in response")
+            else:
+                print(f"    [+] Started task {task_id}")
+            return report_id_str
+        except Exception as e:
+            print(f"    [!] Failed to start task {task_id}: {e}")
+            return None
     
     def wait_for_task(self, task_id: str) -> Tuple[str, str]:
         """
-        Wait for task completion.
-        
+        Wait for task completion with adaptive polling.
+
+        Polls aggressively (5s) early on for short scans, then backs off
+        as the scan progresses to reduce GMP load.
+
         Args:
             task_id: Task ID to wait for
-            
+
         Returns:
             Tuple of (status, report_id)
-            
+
         Raises:
             TimeoutError: If task exceeds timeout
             RuntimeError: If task fails
@@ -477,23 +487,23 @@ class GVMScanner:
 
         while True:
             elapsed = time.time() - start_time
-            
+
             if self.task_timeout > 0 and elapsed > self.task_timeout:
                 raise TimeoutError(
                     f"Task {task_id} exceeded timeout of {self.task_timeout}s"
                 )
-            
+
             task = self.gmp.get_task(task_id)
             status = task.find('.//status')
             status_text = status.text if status is not None else "Unknown"
-            
+
             progress = task.find('.//progress')
             progress_text = progress.text if progress is not None else "0"
-            
+
             # Get report ID
             report = task.find('.//report')
             report_id = report.get('id') if report is not None else None
-            
+
             if progress_text in ("0", "-1"):
                 print(f"        Status: {status_text} | Scanning... | "
                       f"Elapsed: {int(elapsed)}s")
@@ -505,7 +515,7 @@ class GVMScanner:
                 print("        [i] GVM is running thousands of vulnerability checks. "
                       "This may take 15-45 minutes per target.")
                 progress_note_shown = True
-            
+
             if status_text == "Done":
                 return status_text, report_id
             elif status_text in ("Stopped", "Stop Requested"):
@@ -517,8 +527,15 @@ class GVMScanner:
                 )
             elif "Error" in status_text:
                 raise RuntimeError(f"Task failed: {status_text}")
-            
-            time.sleep(self.poll_interval)
+
+            # Adaptive polling: 5s for first min, 15s for next 5 min, then 30s
+            if elapsed < 60:
+                poll = 5
+            elif elapsed < 360:
+                poll = 15
+            else:
+                poll = 30
+            time.sleep(poll)
     
     def get_report(self, report_id: str) -> Dict:
         """
