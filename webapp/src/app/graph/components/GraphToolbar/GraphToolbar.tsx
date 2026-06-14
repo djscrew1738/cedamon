@@ -5,6 +5,8 @@ import { StealthIcon } from '@/components/icons/StealthIcon'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { ReconStatus, GvmStatus, GithubHuntStatus, TrufflehogStatus, PartialReconState } from '@/lib/recon-types'
 import { PartialReconBadges } from '@/components/PartialReconBadges'
+import { ScanProgressMonitor, type ActiveScan } from '@/app/graph/components/ScanProgressMonitor'
+import { GvmReadinessBanner } from '@/app/graph/components/GvmReadinessBanner'
 import styles from './GraphToolbar.module.css'
 
 interface GraphToolbarProps {
@@ -32,6 +34,8 @@ interface GraphToolbarProps {
   isLogsOpen?: boolean
   // GVM props
   gvmAvailable?: boolean
+  gvmReady?: boolean
+  gvmReadinessMessage?: string
   onStartGvm?: () => void
   onPauseGvm?: () => void
   onResumeGvm?: () => void
@@ -76,6 +80,8 @@ interface GraphToolbarProps {
   onEmergencyPauseAll?: () => void
   isAnyPipelineRunning?: boolean
   isEmergencyPausing?: boolean
+  // Live scan progress
+  activeScans?: ActiveScan[]
   // Tunnel status (displayed next to Pause All)
   tunnelStatus?: { ngrok?: { active: boolean; host?: string; port?: number }; chisel?: { active: boolean; host?: string; port?: number; srvPort?: number } }
   // Agent status
@@ -115,6 +121,8 @@ export function GraphToolbar({
   isLogsOpen = false,
   // GVM props
   gvmAvailable = true,
+  gvmReady = true,
+  gvmReadinessMessage,
   onStartGvm,
   onPauseGvm,
   onResumeGvm,
@@ -160,6 +168,8 @@ export function GraphToolbar({
   isAnyPipelineRunning = false,
   isEmergencyPausing = false,
   tunnelStatus,
+  // Live scan progress
+  activeScans = [],
   // Agent status
   agentActiveCount = 0,
   agentConversations = [],
@@ -197,8 +207,16 @@ export function GraphToolbar({
   }
 
   return (
-    <div className={styles.toolbar}>
-      <WikiInfoButton target="graph" title="Open Red Zone wiki page" />
+    <>
+      {gvmAvailable && !gvmReady && (
+        <GvmReadinessBanner
+          available={gvmAvailable}
+          ready={gvmReady}
+          message={gvmReadinessMessage}
+        />
+      )}
+      <div className={styles.toolbar}>
+        <WikiInfoButton target="graph" title="Open Red Zone wiki page" />
 
       {targetDomain && (
         <>
@@ -414,23 +432,26 @@ export function GraphToolbar({
               </button>
             </div>
 
-            {/* Other Scans (GitHub Hunt + TruffleHog) */}
+            {/* Other Scans (GVM, BadDNS, Nuclei, Takeover, JS Recon, GitHub Hunt, TruffleHog) */}
             <div className={styles.actionGroup}>
               <button
-                className={`${styles.githubHuntButton} ${(isGithubHuntActive || isTrufflehogActive) ? styles.githubHuntButtonActive : ''}`}
+                className={`${styles.githubHuntButton} ${(isGvmActive || isGithubHuntActive || isTrufflehogActive || hasActivePartialRecons) ? styles.githubHuntButtonActive : ''}`}
                 onClick={onToggleOtherScansModal}
-                title="Other Scans (GitHub Hunt, TruffleHog)"
+                title="Other Scans (GVM, BadDNS, Nuclei, Subdomain Takeover, JS Recon, GitHub Hunt, TruffleHog)"
               >
-                {(isGithubHuntRunning || isTrufflehogRunning) ? (
+                {(isGvmRunning || isGithubHuntRunning || isTrufflehogRunning || hasActivePartialRecons) ? (
                   <Loader2 size={14} className={styles.spinner} />
                 ) : (
                   <Github size={14} />
                 )}
-                <span>{(isGithubHuntBusy || isTrufflehogBusy) ? 'Scanning...' : 'Other Scans'}</span>
+                <span>{(isGvmBusy || isGithubHuntBusy || isTrufflehogBusy || hasActivePartialRecons) ? 'Scanning...' : 'Other Scans'}</span>
               </button>
             </div>
           </>
         )}
+
+        {/* Live scan progress monitor */}
+        <ScanProgressMonitor scans={activeScans} />
 
         {/* Agent Status Indicators */}
         {totalConversations > 0 && (
@@ -490,5 +511,6 @@ export function GraphToolbar({
         </div>
       </div>
     </div>
+    </>
   )
 }

@@ -149,8 +149,15 @@ def _apply_scan_preset(settings: dict) -> dict:
 
 
 def _chunked(items: list, size: int):
-    """Yield successive chunks of at most ``size`` items."""
-    for i in range(0, len(items), max(1, size)):
+    """Yield successive chunks of at most ``size`` items.
+
+    A non-positive ``size`` is treated as "all items in one batch" to avoid
+    an infinite loop or zero-width slicing.
+    """
+    if size <= 0:
+        yield items
+        return
+    for i in range(0, len(items), size):
         yield items[i:i + size]
 
 
@@ -316,7 +323,7 @@ def _run_phase(
           f"in {len(batches)} batch(es) (concurrency={batch_concurrency})...")
     print("-" * 50)
 
-    concurrency = min(batch_concurrency, len(batches))
+    concurrency = max(1, min(batch_concurrency, len(batches)))
     with cf.ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = {}
         for i, batch in enumerate(batches, 1):

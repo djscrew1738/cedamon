@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -12,11 +12,14 @@ import { useAuth } from '@/providers/AuthProvider'
 import { useProject } from '@/providers/ProjectProvider'
 import styles from './GlobalHeader.module.css'
 
+const SWIPE_CLOSE_THRESHOLD = 40
+
 export function GlobalHeader() {
   const pathname = usePathname()
   const { isAdmin } = useAuth()
   const { projectId } = useProject()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const touchStartXRef = useRef<number | null>(null)
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -147,7 +150,19 @@ export function GlobalHeader() {
 
       {/* Mobile slide-out menu */}
       {mobileMenuOpen && (
-        <div className={styles.mobileOverlay} onClick={() => setMobileMenuOpen(false)}>
+        <div
+          className={styles.mobileOverlay}
+          onClick={() => setMobileMenuOpen(false)}
+          onTouchStart={(e) => { touchStartXRef.current = e.changedTouches[0]?.clientX ?? null }}
+          onTouchEnd={(e) => {
+            const startX = touchStartXRef.current
+            const endX = e.changedTouches[0]?.clientX
+            if (startX != null && endX != null && Math.abs(endX - startX) > SWIPE_CLOSE_THRESHOLD) {
+              setMobileMenuOpen(false)
+            }
+            touchStartXRef.current = null
+          }}
+        >
           <nav className={styles.mobileMenu} onClick={e => e.stopPropagation()}>
             <div className={styles.mobileHeader}>
               <span className={styles.mobileTitle}>Navigation</span>

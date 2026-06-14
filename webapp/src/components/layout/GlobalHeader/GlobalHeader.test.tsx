@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import React from 'react'
 
 /* ------------------------------------------------------------------ */
@@ -172,5 +172,42 @@ describe('GlobalHeader – structure', () => {
       const link = screen.getByRole('link', { name: new RegExp(label, 'i') })
       expect(link).toBeDefined()
     }
+  })
+})
+
+describe('GlobalHeader – mobile menu', () => {
+  test('hamburger button is rendered', () => {
+    render(<GlobalHeader />)
+    const hamburger = screen.getByRole('button', { name: /open menu/i })
+    expect(hamburger).toBeDefined()
+  })
+
+  test('clicking hamburger opens the mobile menu', () => {
+    render(<GlobalHeader />)
+    const hamburger = screen.getByRole('button', { name: /open menu/i })
+    fireEvent.click(hamburger)
+    expect(screen.getByText('Navigation')).toBeDefined()
+    const closeButtons = screen.getAllByRole('button', { name: /close menu/i })
+    expect(closeButtons.length).toBeGreaterThanOrEqual(1)
+  })
+
+  test('mobile menu contains Core and Utilities links', () => {
+    render(<GlobalHeader />)
+    fireEvent.click(screen.getByRole('button', { name: /open menu/i }))
+    const menu = screen.getByText('Navigation').closest('nav')
+    if (!menu) throw new Error('Mobile menu not found')
+    for (const label of ['Red Zone', 'CypherFix', 'Insights', 'Reports', 'Projects', 'Settings']) {
+      const links = screen.getAllByRole('link', { name: new RegExp(label, 'i') })
+      expect(links.some(link => menu.contains(link))).toBe(true)
+    }
+  })
+
+  test('clicking overlay closes the mobile menu', () => {
+    render(<GlobalHeader />)
+    fireEvent.click(screen.getByRole('button', { name: /open menu/i }))
+    const overlay = screen.getByText('Navigation').closest('nav')?.parentElement
+    if (!overlay) throw new Error('Mobile overlay not found')
+    fireEvent.click(overlay)
+    expect(screen.queryByText('Navigation')).toBeNull()
   })
 })

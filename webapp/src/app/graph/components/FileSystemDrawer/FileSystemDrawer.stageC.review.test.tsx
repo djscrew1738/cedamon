@@ -16,6 +16,25 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { FileSystemDrawer } from './FileSystemDrawer'
 
+const alertSpies = vi.hoisted(() => ({
+  alert: vi.fn(async () => {}),
+  alertError: vi.fn(async () => {}),
+  alertWarning: vi.fn(async () => {}),
+  confirm: vi.fn(async () => true),
+  dangerConfirm: vi.fn(async () => true),
+}))
+vi.mock('@/components/ui', async (orig) => {
+  const real = (await orig()) as Record<string, unknown>
+  return {
+    ...real,
+    useAlertModal: () => alertSpies,
+  }
+})
+
+function renderDrawer(ui: React.ReactElement) {
+  return render(ui)
+}
+
 vi.mock('@/components/ui/Drawer', () => ({
   Drawer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="drawer">{children}</div>
@@ -158,7 +177,7 @@ describe('FileSystemDrawer Stage C: projectId switch clears state', () => {
 describe('FileSystemDrawer Stage C: tab switch preserves preview', () => {
   test('switching to Jobs and back keeps the preview open', async () => {
     setLayered({})
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('a.txt')).toBeInTheDocument())
     fireEvent.click(screen.getByText('a.txt'))
     await waitFor(() => expect(screen.getByText(/OLD-CONTENT/)).toBeInTheDocument())
@@ -180,7 +199,7 @@ describe('FileSystemDrawer Stage C: tab switch preserves preview', () => {
 describe('FileSystemDrawer Stage C: re-clicking refetches', () => {
   test('preview fetch fires for each file click, even on the same file', async () => {
     setLayered({})
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('a.txt')).toBeInTheDocument())
     fireEvent.click(screen.getByText('a.txt'))
     await waitFor(() => expect(screen.getByText(/OLD-CONTENT/)).toBeInTheDocument())

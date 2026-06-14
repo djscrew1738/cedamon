@@ -167,6 +167,8 @@
   bottom: 0;
   width: 300px;
   max-width: 85vw;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-default);
   display: flex;
@@ -228,7 +230,8 @@
   display: flex;
   align-items: center;
   gap: var(--space-2-5);
-  padding: var(--space-2) var(--space-2);
+  min-height: 44px;
+  padding: var(--space-3) var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -279,12 +282,19 @@
 /* ─── Responsive breakpoints ─── */
 
 @media (max-width: 900px) {
+  .header {
+    height: 48px;
+    padding: var(--space-1) var(--space-3);
+  }
+
   .actions {
     display: none;
   }
 
   .hamburger {
     display: flex;
+    width: 40px;
+    height: 40px;
   }
 
   .mobileOverlay {

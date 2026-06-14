@@ -17,6 +17,25 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { FileSystemDrawer } from './FileSystemDrawer'
 
+const alertSpies = vi.hoisted(() => ({
+  alert: vi.fn(async () => {}),
+  alertError: vi.fn(async () => {}),
+  alertWarning: vi.fn(async () => {}),
+  confirm: vi.fn(async () => true),
+  dangerConfirm: vi.fn(async () => true),
+}))
+vi.mock('@/components/ui', async (orig) => {
+  const real = (await orig()) as Record<string, unknown>
+  return {
+    ...real,
+    useAlertModal: () => alertSpies,
+  }
+})
+
+function renderDrawer(ui: React.ReactElement) {
+  return render(ui)
+}
+
 vi.mock('@/components/ui/Drawer', () => ({
   Drawer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="drawer">{children}</div>
@@ -69,7 +88,7 @@ const sampleWithProtected = [
 
 describe('FileSystemDrawer: protection coverage', () => {
   test('only the 4 default subdirs are gated, not look-alikes', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('notes-backup')).toBeInTheDocument())
 
     // 4 protected (notes, tool-outputs, jobs, uploads) -> 4 Lock badges
@@ -84,7 +103,7 @@ describe('FileSystemDrawer: protection coverage', () => {
   test('NOTES (case-sensitive) is NOT protected', async () => {
     // Regression: a future "normalize to lowercase" refactor would silently
     // gate "NOTES" - this would lock the user out of a folder they own.
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('NOTES')).toBeInTheDocument())
 
     // Find the row containing "NOTES" - it must have Rename + Delete actions,
@@ -109,7 +128,7 @@ describe('FileSystemDrawer: protection coverage', () => {
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" initialPath="notes" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" initialPath="notes" />)
     await waitFor(() => expect(screen.getByText('inner.txt')).toBeInTheDocument())
     expect(screen.queryAllByTitle(/Protected default folder/)).toHaveLength(0)
     expect(screen.getAllByTitle('Delete')).toHaveLength(1)
@@ -123,7 +142,7 @@ describe('FileSystemDrawer: protection coverage', () => {
 
 describe('FileSystemDrawer: drag-and-drop upload', () => {
   test('dropping a file triggers upload to currentPath', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" initialPath="uploads" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" initialPath="uploads" />)
     await waitFor(() => expect(screen.getByText('notes')).toBeInTheDocument())
 
     const dropZone = document.querySelector('[class*="dropZone"]') as HTMLElement
@@ -151,7 +170,7 @@ describe('FileSystemDrawer: drag-and-drop upload', () => {
   })
 
   test('drag overlay activates on dragover with Files type', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('notes')).toBeInTheDocument())
 
     const dropZone = document.querySelector('[class*="dropZone"]') as HTMLElement
@@ -180,7 +199,7 @@ describe('FileSystemDrawer: modal UX', () => {
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('free.txt')).toBeInTheDocument())
     fireEvent.click(screen.getByTitle('Delete'))
     await screen.findByText('Delete file?')
@@ -205,7 +224,7 @@ describe('FileSystemDrawer: modal UX', () => {
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('free.txt')).toBeInTheDocument())
     fireEvent.click(screen.getByTitle('Delete'))
     await screen.findByText('Delete file?')
@@ -225,7 +244,6 @@ describe('FileSystemDrawer: modal UX', () => {
 
 describe('FileSystemDrawer: mkdir input validation', () => {
   test('slash in new folder name is rejected client-side', async () => {
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
     fetchHandler = async (url) => {
       if (url.includes('/api/agent/workspace/list')) {
         return new Response(JSON.stringify({ entries: sampleWithProtected }), { status: 200 })
@@ -233,7 +251,7 @@ describe('FileSystemDrawer: mkdir input validation', () => {
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
 
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('notes')).toBeInTheDocument())
     fireEvent.click(screen.getByTitle('New folder in current directory'))
     const input = await screen.findByPlaceholderText('new folder name')
@@ -241,14 +259,13 @@ describe('FileSystemDrawer: mkdir input validation', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     // Alert fires, NO mkdir POST
-    expect(alertSpy).toHaveBeenCalled()
+    expect(alertSpies.alertWarning).toHaveBeenCalled()
     await new Promise((r) => setTimeout(r, 20))
     expect(fetchCalls.some(c => c.url.includes('/workspace/mkdir'))).toBe(false)
   })
 
   test('dot/dotdot names are rejected client-side', async () => {
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('notes')).toBeInTheDocument())
     fireEvent.click(screen.getByTitle('New folder in current directory'))
     const input = await screen.findByPlaceholderText('new folder name')
@@ -256,12 +273,12 @@ describe('FileSystemDrawer: mkdir input validation', () => {
       fireEvent.change(input, { target: { value: bad } })
       fireEvent.keyDown(input, { key: 'Enter' })
     }
-    expect(alertSpy.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(alertSpies.alertWarning.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(fetchCalls.some(c => c.url.includes('/workspace/mkdir'))).toBe(false)
   })
 
   test('empty / whitespace-only name closes input without POST', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('notes')).toBeInTheDocument())
     fireEvent.click(screen.getByTitle('New folder in current directory'))
     const input = await screen.findByPlaceholderText('new folder name')

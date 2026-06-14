@@ -194,6 +194,7 @@ describe('formatGraphRecords', () => {
     relId = 100,
   ) {
     return {
+      keys: ['n', 'r', 'm'],
       get(key: string) {
         if (key === 'n') return source
         if (key === 'm') return target
@@ -248,17 +249,20 @@ describe('formatGraphRecords', () => {
     expect(result.links).toEqual([])
   })
 
-  test('skips records with null nodes', () => {
-    const nullRecord = {
+  test('synthesizes a virtual node for scalar records', () => {
+    const scalarRecord = {
+      keys: ['name', 'count'],
       get(key: string) {
-        if (key === 'n') return null
-        if (key === 'm') return makeNode('Sub', { name: 'test' }, 5)
-        if (key === 'r') return { identity: { low: 1, high: 0 }, start: { low: 0, high: 0 }, end: { low: 5, high: 0 }, type: 'REL', properties: {} }
+        if (key === 'name') return 'example.com'
+        if (key === 'count') return 42
         return null
       },
     }
-    const result = formatGraphRecords([nullRecord])
-    expect(result.nodes).toEqual([])
+    const result = formatGraphRecords([scalarRecord])
+    expect(result.nodes).toHaveLength(1)
+    expect(result.nodes[0].type).toBe('QueryResult')
+    expect(result.nodes[0].name).toContain('example.com')
+    expect(result.nodes[0].name).toContain('42')
     expect(result.links).toEqual([])
   })
 

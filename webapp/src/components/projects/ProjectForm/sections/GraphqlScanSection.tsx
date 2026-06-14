@@ -314,7 +314,7 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
       {expanded && (
         <>
           <p className={styles.sectionDescription} style={{ marginTop: '8px' }}>
-            External Docker-based misconfig scanner (<code>dolevf/graphql-cop:1.14</code>).
+            External Docker-based misconfig scanner (<code>redamon-graphql-cop:1.16</code>).
             Runs 12 checks per endpoint across three groups: information disclosure (field
             suggestions, GraphiQL/Playground, trace mode, unhandled errors, introspection),
             CSRF / transport issues (GET queries/mutations, POST url-encoded), and resource
@@ -328,13 +328,13 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
             backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
             fontSize: '11px', color: '#f87171',
           }}>
-            <strong>Per-test toggles filter findings, not network traffic.</strong>{' '}
-            Because the pinned graphql-cop v1.14 image ignores the <code>-e</code> exclusion
-            flag, disabled tests still send probes. In stealth mode DoS findings are
-            suppressed and rate limits drop, but the DoS packets still fly. To completely
-            stop graphql-cop traffic, disable the master <em>Enable graphql-cop</em> toggle
-            below. True traffic-level exclusion requires a v1.15+ image (unreleased on
-            DockerHub as of this build).
+            <strong>Per-test toggles control both report findings and network traffic.</strong>{' '}
+            The default RedAmon image is built from upstream 1.16 source and honors the{' '}
+            <code>-e</code> exclusion flag, so disabled tests do not send probes.
+            Stealth mode autonomously passes <code>-e</code> for the four DoS tests while
+            keeping the low-traffic info-leak / CSRF checks running. If you override the
+            image to an older release (e.g. DockerHub 1.14), disabled tests will still fire
+            and only their findings are filtered.
           </div>
 
           <div className={styles.toggleRow}>
@@ -356,10 +356,10 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
                   <input
                     type="text"
                     className="textInput"
-                    value={(data as any).graphqlCopDockerImage ?? 'dolevf/graphql-cop:1.14'}
+                    value={(data as any).graphqlCopDockerImage ?? 'redamon-graphql-cop:1.16'}
                     onChange={(e) => updateField('graphqlCopDockerImage' as any, e.target.value)}
                   />
-                  <span className={styles.fieldHint}>Pinned to 1.14 (DockerHub tag). Override for custom forks.</span>
+                  <span className={styles.fieldHint}>Built from upstream 1.16 source. Supports -e exclusion so disabled tests skip traffic. Override only if you have a fork.</span>
                 </div>
                 <div className={styles.fieldGroup}>
                   <label className={styles.fieldLabel}>Timeout (seconds)</label>
@@ -401,7 +401,8 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
               </h4>
               <p className={styles.fieldHint} style={{ marginBottom: '8px' }}>
                 Each toggle controls whether findings from a graphql-cop test appear in the report.
-                In the pinned v1.14 image, disabled tests still send probes (see warning above).
+                With the default RedAmon 1.16 image, disabled tests are also skipped at the
+                traffic level via the <code>-e</code> flag.
               </p>
 
               <h5 className={styles.subSectionTitle} style={{ marginTop: '12px', fontSize: '11px', opacity: 0.9 }}>
@@ -497,9 +498,9 @@ function GraphqlCopSubSection({ data, updateField }: GraphqlCopSubSectionProps) 
                 backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)',
                 fontSize: '11px', color: '#f87171',
               }}>
-                <strong>DoS / resource exhaustion</strong> &mdash; toggling these off hides their findings
-                but the probes still run. In stealth mode the findings are suppressed; disable the
-                master <em>Enable graphql-cop</em> toggle to stop the traffic entirely.
+                <strong>DoS / resource exhaustion</strong> &mdash; toggling these off skips both their
+                findings and their probes in the default 1.16 image. In stealth mode these tests are
+                autonomously excluded via <code>-e</code> while the info-leak / CSRF checks continue.
               </div>
 
               <h5 className={styles.subSectionTitle} style={{ marginTop: '12px', fontSize: '11px', opacity: 0.9 }}>

@@ -1168,5 +1168,62 @@ class MemberInlineWritesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(finding_calls), 0)
 
 
+
+# =============================================================================
+# 10. Heuristic tool recommendations in member prompts
+# =============================================================================
+
+class MemberPromptHeuristicTests(unittest.TestCase):
+    def _build(self, target_info, execution_trace=None, parent_trace=None, declared_tools=None):
+        from orchestrator_helpers.nodes.fireteam_member_think_node import _build_member_prompt
+        return _build_member_prompt({
+            "current_phase": "informational",
+            "attack_path_type": "cve_exploit",
+            "max_iterations": 10,
+            "task": "Test WordPress surface",
+            "tools": declared_tools or [],
+            "target_info": target_info,
+            "execution_trace": execution_trace or [],
+            "_parent_execution_trace": parent_trace or [],
+            "_parent_chain_findings": [],
+            "_parent_chain_failures": [],
+            "_parent_chain_decisions": [],
+            "_peer_tasks": [],
+            "chain_findings_memory": [],
+            "chain_failures_memory": [],
+            "fallback_uses_this_run": 0,
+            "iterations_since_new_finding": 0,
+            "last_findings_count": 0,
+        })
+
+    @staticmethod
+    def _recommendations_section(prompt: str) -> str:
+        start = prompt.find("### Recommended Next Tools")
+        end = prompt.find("## Available tools", start)
+        return prompt[start:end] if start != -1 else ""
+
+    def test_prompt_includes_recommended_next_tools_section(self):
+        prompt = self._build({"technologies": ["wordpress"]})
+        self.assertIn("Recommended Next Tools", prompt)
+        self.assertIn("expert-heuristic", prompt)
+
+    def test_wordpress_surfaces_wpscan_recommendation(self):
+        prompt = self._build({"technologies": ["wordpress"]})
+        recs = self._recommendations_section(prompt)
+        self.assertIn("execute_wpscan", recs)
+
+    def test_already_run_tools_are_excluded(self):
+        prompt = self._build(
+            {"technologies": ["wordpress"]},
+            execution_trace=[{"tool_name": "execute_wpscan"}],
+        )
+        recs = self._recommendations_section(prompt)
+        self.assertNotIn("execute_wpscan", recs)
+
+    def test_no_target_info_shows_empty_recommendations(self):
+        prompt = self._build({})
+        self.assertIn("Recommended Next Tools", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -708,8 +708,8 @@ export const RECON_PARAMETER_CATALOG = `
 - jsluiceVerifyTimeout: integer - Per-request httpx timeout in seconds
 - jsluiceVerifyRateLimit: integer - Max probe requests per second
 - jsluiceVerifyThreads: integer - httpx worker threads
-- jsluiceVerifyAcceptStatus: array of integers - HTTP status codes treated as "live" by the verifier
-- jsluiceExcludePatterns: array of strings - Deny-list patterns. Extensions like ".js" match the path suffix only; everything else is a substring match against the URL path and query.
+- jsluiceVerifyAcceptStatus: integer[] - HTTP status codes treated as "live" by the verifier
+- jsluiceExcludePatterns: string[] - Deny-list patterns. Extensions like ".js" match the path suffix only; everything else is a substring match against the URL path and query.
 
 ## JavaScript Analysis - JS Recon (deep)
 - jsReconEnabled: boolean - Run deep JS analysis
@@ -749,7 +749,7 @@ export const RECON_PARAMETER_CATALOG = `
 
 ## GraphQL Cop (external Docker-based misconfig scanner - Phase 2)
 - graphqlCopEnabled: boolean - Master toggle for graphql-cop (default false, opt-in)
-- graphqlCopDockerImage: string - Pinned image tag (default "dolevf/graphql-cop:1.14")
+- graphqlCopDockerImage: string - Default image tag (default "redamon-graphql-cop:1.16"). Built from upstream source because DockerHub is stuck at 1.14; supports the -e exclusion flag so disabled tests don't send traffic.
 - graphqlCopTimeout: integer - Per-endpoint timeout in seconds (default 120)
 - graphqlCopForceScan: boolean - -f flag: scan even if endpoint doesn't look GraphQL-like
 - graphqlCopDebug: boolean - -d flag: adds X-GraphQL-Cop-Test header per request

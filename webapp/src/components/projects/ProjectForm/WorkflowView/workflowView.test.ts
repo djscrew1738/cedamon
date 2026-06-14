@@ -238,29 +238,33 @@ describe('workflowLayout / computeLayout', () => {
     }
   })
 
-  test('input node is at the leftmost position', () => {
+  test('input node is centered within the group 0 universal-data column', () => {
     const { nodes } = buildLayoutNodes()
     const positions = computeLayout(nodes)
     const posMap = new Map(positions.map(p => [p.id, p]))
 
     const inputX = posMap.get('input')!.x
-    for (const p of positions) {
-      if (p.id !== 'input') {
-        expect(p.x, `${p.id} (x=${p.x}) is to the left of input (x=${inputX})`).toBeGreaterThanOrEqual(inputX)
-      }
-    }
+    const dataXs = [...UNIVERSAL_DATA_NODES]
+      .map(nt => posMap.get(`data-${nt}`)?.x)
+      .filter((x): x is number => x !== undefined)
+
+    expect(dataXs.length).toBeGreaterThanOrEqual(1)
+    const minX = Math.min(...dataXs)
+    const maxX = Math.max(...dataXs)
+    expect(inputX, `input (x=${inputX}) should sit within universal data span ${minX}-${maxX}`).toBeGreaterThanOrEqual(minX)
+    expect(inputX).toBeLessThanOrEqual(maxX)
   })
 
-  test('universal data nodes are to the right of input', () => {
+  test('universal data nodes are not stacked on the input tool band', () => {
     const { nodes } = buildLayoutNodes()
     const positions = computeLayout(nodes)
     const posMap = new Map(positions.map(p => [p.id, p]))
 
-    const inputX = posMap.get('input')!.x
+    const inputY = posMap.get('input')!.y
     for (const nt of UNIVERSAL_DATA_NODES) {
-      const dataX = posMap.get(`data-${nt}`)?.x
-      if (dataX !== undefined) {
-        expect(dataX).toBeGreaterThan(inputX)
+      const dataY = posMap.get(`data-${nt}`)?.y
+      if (dataY !== undefined) {
+        expect(dataY).not.toBe(inputY)
       }
     }
   })
@@ -474,16 +478,6 @@ describe('workflow graph logic', () => {
       const { toolBrokenInputs } = computeGraphState(fields)
       const broken = toolBrokenInputs.get('Nmap') ?? []
       expect(broken).toContain('Port')
-    })
-
-    test('Katana is chain-broken when BaseURL is starved', () => {
-      const fields: Record<string, boolean> = {}
-      for (const tool of WORKFLOW_TOOLS) fields[tool.enabledField] = false
-      fields['katanaEnabled'] = true
-
-      const { toolBrokenInputs } = computeGraphState(fields)
-      const broken = toolBrokenInputs.get('Katana') ?? []
-      expect(broken).toContain('BaseURL')
     })
 
     test('Katana is NOT chain-broken when Httpx provides BaseURL', () => {

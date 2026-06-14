@@ -5,8 +5,11 @@ endpoint (alias overloading, batch query DoS, directive overloading, GraphiQL
 detection, trace mode, GET-based CSRF, unhandled errors, etc.) and normalizes
 the JSON output into RedAmon's Vulnerability dict shape.
 
-Pinned to `dolevf/graphql-cop:1.14` (DockerHub). Re-verify TITLE_TO_KEY on image
-bumps -- graphql-cop's JSON output discriminates by `title`, not by internal key.
+Default image is `redamon-graphql-cop:1.16`, built from upstream source because
+DockerHub is stuck at 1.14. The 1.16 source supports the `-e` exclusion flag, so
+per-test toggles now stop traffic for disabled tests. Re-verify TITLE_TO_KEY on
+image bumps -- graphql-cop's JSON output discriminates by `title`, not by
+internal key.
 
 Phase 2 integration per PLAN_INTEGRATION_GRAPH_QL.md §17.
 """
@@ -19,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 
-DEFAULT_IMAGE = 'dolevf/graphql-cop:1.14'
+DEFAULT_IMAGE = 'redamon-graphql-cop:1.16'
 
 # --------------------------------------------------------------------------
 # graphql-cop test registry
@@ -39,11 +42,10 @@ GRAPHQL_COP_TEST_TO_VULN_TYPE: Dict[str, str] = {
     'get_based_mutation':           'graphql_get_based_mutation',
     'post_based_csrf':              'graphql_post_csrf',
     'unhandled_error_detection':    'graphql_unhandled_error',
-    'field_duplication':            'graphql_field_duplication_allowed',
 }
 
-# JSON output discriminates by `title`. Verbatim from graphql-cop 1.14 source
-# (github.com/dolevf/graphql-cop/blob/main/lib/tests/*.py). Re-verify on image bump.
+# JSON output discriminates by `title`. Verbatim from graphql-cop 1.16 source
+# (github.com/dolevf/graphql-cop/blob/1.16/lib/tests/*.py). Re-verify on image bump.
 TITLE_TO_KEY: Dict[str, str] = {
     'Field Suggestions':                                'field_suggestions',
     'Introspection':                                    'introspection',
@@ -57,10 +59,6 @@ TITLE_TO_KEY: Dict[str, str] = {
     'Mutation is allowed over GET (possible CSRF)':     'get_based_mutation',
     'POST based url-encoded query (possible CSRF)':     'post_based_csrf',
     'Unhandled Errors Detection':                       'unhandled_error_detection',
-    # Field Duplication surfaced in graphql-cop 1.14 output but wasn't in the
-    # upstream test listing we audited against — duplicate-field queries are
-    # an Apollo-specific parser quirk that leaks schema info through errors.
-    'Field Duplication':                                'field_duplication',
 }
 
 # Tests that generate noisy/DoS-class traffic. Auto-excluded in stealth mode.
@@ -121,14 +119,18 @@ def run_graphql_cop(
     cmd = ['docker', 'run', '--rm', '--net=host', image,
            '-t', endpoint, '-o', 'json']
 
-    # NOTE: the dolevf/graphql-cop:1.14 Docker image does NOT support the `-e`
-    # exclusion flag (added in git main v1.15 but unreleased on DockerHub as of
-    # 2026-04-20). We post-filter findings Python-side instead. A side-effect:
-    # DoS probes still hit the target even when "excluded" by per-test toggles.
-    # For true stealth, disable the GRAPHQL_COP_ENABLED master toggle.
+    # If every test is disabled, skip the Docker run entirely.
     if excluded_set and len(excluded_set) == len(GRAPHQL_COP_TEST_TO_VULN_TYPE):
         print(f"[-][GraphQL-Cop] All tests excluded by per-test toggles -- skipping {endpoint}")
         return {'findings': [], 'raw': []}
+
+    # The default RedAmon image (redamon-graphql-cop:1.16) is built from upstream
+    # source and honors the `-e` exclusion flag. We pass excluded tests to the
+    # container so disabled probes do not hit the target. Python-side filtering
+    # is still applied to the output as defense-in-depth (e.g. for users who
+    # override the image back to an older release).
+    if excluded_set:
+        cmd += ['-e', ','.join(sorted(excluded_set))]
 
     if settings.get('GRAPHQL_COP_FORCE_SCAN', False):
         cmd.append('-f')
@@ -149,7 +151,7 @@ def run_graphql_cop(
 
     active_test_count = len(GRAPHQL_COP_TEST_TO_VULN_TYPE) - len(excluded_set)
     print(f"[*][GraphQL-Cop] {endpoint}  image={image}  tests={active_test_count}/12  timeout={timeout}s"
-          + (f"  (filtering {len(excluded_set)} excluded tests post-execution)" if excluded_set else ""))
+          + (f"  (excluding {len(excluded_set)} test(s) via -e)" if excluded_set else ""))
 
     try:
         result = subprocess.run(
@@ -194,9 +196,11 @@ def run_graphql_cop(
 def _filter_excluded(raw_findings: List[dict], excluded_keys: set) -> List[dict]:
     """Strip findings whose test-key (via TITLE_TO_KEY) is in the excluded set.
 
-    Used because graphql-cop 1.14 doesn't support the -e flag. Filtering is
-    applied to both `findings` (Vulnerability candidates) and `raw` (used for
-    capability flags), so user intent is enforced end-to-end in the graph.
+    Defense-in-depth filter. The default RedAmon image (1.16 source) honors the
+    `-e` flag, so excluded probes should not run at all, but we still filter the
+    output in case a user overrides the image to an older release that ignores
+    `-e`. Filtering is applied to both `findings` (Vulnerability candidates) and
+    `raw` (used for capability flags), so user intent is enforced end-to-end.
     """
     if not excluded_keys:
         return raw_findings

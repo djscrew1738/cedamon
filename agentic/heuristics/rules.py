@@ -1,0 +1,2416 @@
+"""
+Structured expert hacker heuristics.
+
+This module encodes patterned playbooks that an experienced penetration tester
+follows when scanning, reconnoitering, and attacking a target.  Rules are
+declarative and evaluated by ``HeuristicEngine`` so the LLM receives ranked,
+context-aware tool recommendations instead of having to reason from scratch.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+
+@dataclass(frozen=True)
+class HeuristicRule:
+    """A single structured heuristic rule."""
+
+    id: str
+    name: str
+    category: str  # 'port', 'technology', 'cve', 'service', 'combo', 'coverage', 'pipeline'
+    priority: int  # 1 = highest
+    tool_name: str
+    rationale: str
+    phase: str = "informational"
+    task_cluster: str = "recon"
+    cost_score: float = 0.5
+    suggested_args: dict[str, Any] = field(default_factory=dict)
+    follow_up: list[str] = field(default_factory=list)
+    # Optional condition override; if None the engine applies the rule via its
+    # category-specific registry.
+    condition: Callable[["RuleContext"], bool] | None = None
+
+
+@dataclass
+class RuleContext:
+    """Inputs against which heuristic rules are evaluated."""
+
+    phase: str = "informational"
+    technologies: list[str] = field(default_factory=list)
+    ports: list[int | str] = field(default_factory=list)
+    services: list[str] = field(default_factory=list)
+    cves: list[str] = field(default_factory=list)
+    target_info: dict[str, Any] = field(default_factory=dict)
+    already_run: set[str] = field(default_factory=set)
+    profile: str = "normal"
+    attack_path_type: str = ""
+    graph_client: Any = None
+
+    def has_tech(self, *names: str) -> bool:
+        techs = {t.lower() for t in self.technologies}
+        return any(n.lower() in techs for n in names)
+
+    def has_any_tech(self, names: set[str]) -> bool:
+        techs = {t.lower() for t in self.technologies}
+        return bool(techs.intersection({n.lower() for n in names}))
+
+    def has_port(self, port: int | str) -> bool:
+        try:
+            return int(port) in {int(p) for p in self.ports}
+        except (ValueError, TypeError):
+            return port in self.ports
+
+    def has_any_port(self, ports: set[int | str]) -> bool:
+        for p in ports:
+            if self.has_port(p):
+                return True
+        return False
+
+    def has_service(self, *names: str) -> bool:
+        svcs = {s.lower() for s in self.services}
+        return any(n.lower() in svcs for n in names)
+
+    def has_cve(self) -> bool:
+        return bool(self.cves)
+
+    def has_attack_path(self, *names: str) -> bool:
+        """True if the classified attack path matches any of the given names."""
+        if not self.attack_path_type:
+            return False
+        current = self.attack_path_type.lower().replace("-unclassified", "")
+        return any(n.lower() == current for n in names)
+
+
+# ---------------------------------------------------------------------------
+# Port-based heuristics
+# ---------------------------------------------------------------------------
+
+PORT_RULES: list[HeuristicRule] = [
+    HeuristicRule(
+        id="port-80-443-web-recon",
+        name="Web ports open — enumerate web surface",
+        category="port",
+        priority=1,
+        tool_name="execute_httpx",
+        rationale="Ports 80/443 indicate HTTP services; probe live hosts before deeper recon.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.1,
+        follow_up=["execute_katana", "execute_nuclei"],
+    ),
+    HeuristicRule(
+        id="port-80-443-crawl",
+        name="Web ports open — crawl endpoints",
+        category="port",
+        priority=2,
+        tool_name="execute_katana",
+        rationale="Crawl live HTTP services to discover endpoints, JS files, and parameters.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+    ),
+    HeuristicRule(
+        id="port-22-ssh-enum",
+        name="SSH port open — enumerate version and keys",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="SSH is a high-value target; enumerate algorithms and host keys.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ssh2-enum-algos,ssh-hostkey"},
+    ),
+    HeuristicRule(
+        id="port-21-ftp-enum",
+        name="FTP port open — check anonymous access",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="FTP often permits anonymous login; quickly verify before brute-force.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ftp-anon,ftp-vsftpd-backdoor"},
+    ),
+    HeuristicRule(
+        id="port-3306-mysql",
+        name="MySQL port open — enumerate auth/version",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="MySQL exposure is critical; enumerate version and auth methods.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "mysql-info,mysql-enum"},
+    ),
+    HeuristicRule(
+        id="port-5432-postgres",
+        name="PostgreSQL port open — enumerate auth/version",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="PostgreSQL exposure is critical; enumerate version and auth methods.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "postgresql-info"},
+    ),
+    HeuristicRule(
+        id="port-6379-redis",
+        name="Redis port open — check unauthenticated access",
+        category="port",
+        priority=1,
+        tool_name="execute_nmap",
+        rationale="Redis frequently lacks auth; confirm exposure immediately.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "redis-info"},
+    ),
+    HeuristicRule(
+        id="port-27017-mongo",
+        name="MongoDB port open — check unauthenticated access",
+        category="port",
+        priority=1,
+        tool_name="execute_nmap",
+        rationale="MongoDB often exposes data without auth; confirm exposure immediately.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "mongodb-info"},
+    ),
+    HeuristicRule(
+        id="port-445-smb",
+        name="SMB port open — enumerate shares and MS17-010",
+        category="port",
+        priority=1,
+        tool_name="execute_nmap",
+        rationale="SMB is rich in lateral-movement opportunities; enumerate shares and known vulns.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "smb-vuln-ms17-010,smb-enum-shares"},
+    ),
+    HeuristicRule(
+        id="port-3389-rdp",
+        name="RDP port open — check encryption and BlueKeep",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="RDP exposure warrants checking known vulnerabilities and encryption.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "rdp-vuln-ms12-020,rdp-enum-encryption"},
+    ),
+    HeuristicRule(
+        id="port-23-telnet",
+        name="Telnet port open — check cleartext auth",
+        category="port",
+        priority=1,
+        tool_name="execute_nmap",
+        rationale="Telnet transmits credentials in cleartext; enumerate and flag immediately.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+    ),
+    HeuristicRule(
+        id="port-53-dns",
+        name="DNS port open — test recursion and service discovery",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="DNS on port 53 may allow recursion or leak service records.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "dns-recursion,dns-service-discovery"},
+    ),
+    HeuristicRule(
+        id="port-88-kerberos",
+        name="Kerberos port open — enumerate users",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="Kerberos on port 88 supports user enumeration via KDC.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "krb5-enum-users"},
+    ),
+    HeuristicRule(
+        id="port-111-rpc",
+        name="RPC port open — enumerate RPC services",
+        category="port",
+        priority=3,
+        tool_name="execute_nmap",
+        rationale="RPC on port 111 leaks registered services via rpcinfo.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "rpcinfo"},
+    ),
+    HeuristicRule(
+        id="port-2049-nfs",
+        name="NFS port open — enumerate exports",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="NFS on port 2049 may expose shares; list mounts immediately.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "nfs-showmount,nfs-statfs"},
+    ),
+    HeuristicRule(
+        id="port-5985-winrm",
+        name="WinRM port open — check Windows remote management",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="WinRM on port 5985/5986 enables remote PowerShell and is a high-value target.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "http-winrm"},
+    ),
+    HeuristicRule(
+        id="port-7001-weblogic",
+        name="WebLogic port open — run WebLogic templates",
+        category="port",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="WebLogic on port 7001 has a history of critical deserialization CVEs.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["weblogic/"]},
+    ),
+    HeuristicRule(
+        id="port-9200-elasticsearch",
+        name="Elasticsearch port open — run ES templates",
+        category="port",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Elasticsearch on port 9200 is frequently exposed without auth.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["elasticsearch/"]},
+    ),
+    HeuristicRule(
+        id="port-11211-memcached",
+        name="Memcached port open — check stats exposure",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="Memcached on port 11211 often exposes stats and keys without auth.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "memcached-info"},
+    ),
+    HeuristicRule(
+        id="port-161-snmp",
+        name="SNMP port open — enumerate system info",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="SNMP on port 161 can leak system details and community strings.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "snmp-info,snmp-sysdescr"},
+    ),
+    HeuristicRule(
+        id="port-389-ldap",
+        name="LDAP port open — enumerate directory",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="LDAP on port 389 leaks naming context and user objects.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ldap-rootdse,ldap-search"},
+    ),
+    HeuristicRule(
+        id="port-636-ldaps",
+        name="LDAPS port open — secure directory enumeration",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="LDAPS on port 636 supports secure LDAP queries for AD recon.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ldap-rootdse,ldap-search"},
+    ),
+    HeuristicRule(
+        id="port-3268-global-catalog",
+        name="Global Catalog port open — AD enumeration",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="Global Catalog on port 3268 allows forest-wide AD queries.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ldap-search"},
+    ),
+    HeuristicRule(
+        id="port-2375-docker",
+        name="Docker daemon port open — unauthenticated API access",
+        category="port",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Docker daemon on port 2375/2376 may expose containers and images without auth.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/containers/json"},
+    ),
+    HeuristicRule(
+        id="port-6443-k8s-api",
+        name="Kubernetes API port open — cluster recon",
+        category="port",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Kubernetes API on port 6443 may allow unauthenticated cluster enumeration.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/api", "insecure": True},
+    ),
+    HeuristicRule(
+        id="port-10250-kubelet",
+        name="Kubelet port open — pod enumeration",
+        category="port",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Kubelet on port 10250 exposes pods and metrics; check for unauthenticated access.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/pods"},
+    ),
+    HeuristicRule(
+        id="port-11434-ollama",
+        name="Ollama port open — LLM runtime exposure",
+        category="port",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Ollama on port 11434 exposes local LLM models and chat endpoints.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/api/tags"},
+    ),
+    HeuristicRule(
+        id="port-6333-qdrant",
+        name="Qdrant port open — vector DB exposure",
+        category="port",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Qdrant on port 6333 may expose collections and vectors without auth.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/collections"},
+    ),
+    HeuristicRule(
+        id="port-25-smtp",
+        name="SMTP port open — email relay and commands",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="SMTP on port 25 may allow open relay and command enumeration.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "smtp-commands,smtp-open-relay"},
+    ),
+    HeuristicRule(
+        id="port-465-587-smtps",
+        name="SMTPS/submission open — secure email access",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="SMTPS/submission ports support TLS email submission; enumerate capabilities.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "smtp-commands"},
+    ),
+    HeuristicRule(
+        id="port-110-pop3",
+        name="POP3 port open — email retrieval",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="POP3 on port 110 exposes email retrieval capabilities.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "pop3-capabilities"},
+    ),
+    HeuristicRule(
+        id="port-995-pop3s",
+        name="POP3S port open — secure email retrieval",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="POP3S on port 995 exposes secure email retrieval capabilities.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "pop3-capabilities"},
+    ),
+    HeuristicRule(
+        id="port-143-imap",
+        name="IMAP port open — email access",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="IMAP on port 143 exposes email access capabilities.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "imap-capabilities"},
+    ),
+    HeuristicRule(
+        id="port-993-imaps",
+        name="IMAPS port open — secure email access",
+        category="port",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="IMAPS on port 993 exposes secure email access capabilities.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "imap-capabilities"},
+    ),
+    HeuristicRule(
+        id="port-500-ipsec",
+        name="IPsec/IKE port open — VPN exposure",
+        category="port",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="IPsec/IKE on port 500/4500 may expose VPN appliances.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["ipsec/"]},
+    ),
+    HeuristicRule(
+        id="port-1723-pptp",
+        name="PPTP port open — VPN exposure",
+        category="port",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="PPTP on port 1723 has known VPN vulnerabilities.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["pptp/"]},
+    ),
+    HeuristicRule(
+        id="port-3389-rdp-nuclei",
+        name="RDP port open — run RDP templates",
+        category="port",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="RDP on port 3389 has many known CVEs; run RDP-specific templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["rdp/"]},
+    ),
+    HeuristicRule(
+        id="port-5000-api-dev",
+        name="Port 5000 open — common dev API server",
+        category="port",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="Port 5000 commonly runs Flask/dev APIs; probe for API endpoints.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/v1/"},
+    ),
+    HeuristicRule(
+        id="port-8000-8081-8443-8888-web",
+        name="Alternate HTTP ports open — probe services",
+        category="port",
+        priority=2,
+        tool_name="execute_httpx",
+        rationale="Alternate HTTP ports may host admin panels or dev services.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.1,
+    ),
+    HeuristicRule(
+        id="port-9090-prometheus",
+        name="Prometheus port open — monitoring exposure",
+        category="port",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Prometheus on port 9090/9093 may expose metrics without auth.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["prometheus/"]},
+    ),
+    HeuristicRule(
+        id="port-9306-splunk",
+        name="Splunkd port open — SIEM exposure",
+        category="port",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Splunkd on port 9306 may expose management interface and CVEs.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["splunk/"]},
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Technology-based heuristics
+# ---------------------------------------------------------------------------
+
+# Maps rule id (without "tech-" prefix) to the technology keyword(s) it matches.
+# Single-keyword entries can be inferred from the rule id; multi-word or special
+# characters (e.g., "asp.net") must be listed explicitly here.
+TECH_KEYWORDS: dict[str, str | set[str]] = {
+    "aspnet": "asp.net",
+    "api": {"api", "api gateway", "gateway", "kong", "zuul"},
+    "oauth": {"oauth", "openid", "oidc", "openid connect"},
+    "active": {"active directory", "active-directory", "ad"},
+    "domain": {"domain controller", "domain-controller", "dc"},
+    "vector": {"vector db", "vector-db", "vector database", "vectordb", "qdrant", "chroma"},
+    "github": {"github actions", "github-actions", "actions"},
+    "swagger": {"swagger", "openapi", "api-docs"},
+    "load": {"load balancer", "load-balancer", "haproxy", "f5", "nginx plus"},
+    "vpn": {"vpn", "ssl-vpn", "openvpn", "wireguard", "ipsec", "pptp", "l2tp"},
+    "cdn": {"cdn", "fastly", "cloudfront", "akamai", "cloudflare"},
+}
+
+TECH_RULES: list[HeuristicRule] = [
+    HeuristicRule(
+        id="tech-wordpress",
+        name="WordPress detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_wpscan",
+        rationale="WordPress has a large attack surface; enumerate plugins, themes, users, and vulns.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.4,
+        suggested_args={"enum": "vp,tt,ap,u"},
+        follow_up=["execute_nuclei"],
+    ),
+    HeuristicRule(
+        id="tech-apache",
+        name="Apache detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="Apache has many known CVEs and misconfigurations; run targeted templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["apache/"]},
+    ),
+    HeuristicRule(
+        id="tech-nginx",
+        name="nginx detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="nginx has known CVEs and misconfigurations; run targeted templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["nginx/"]},
+    ),
+    HeuristicRule(
+        id="tech-iis",
+        name="IIS detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="IIS has known CVEs and misconfigurations; run targeted templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["iis/"]},
+    ),
+    HeuristicRule(
+        id="tech-drupal",
+        name="Drupal detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Drupal has a history of critical CVEs; run CMS-specific templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["drupal/"]},
+    ),
+    HeuristicRule(
+        id="tech-laravel",
+        name="Laravel detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Laravel debug mode and known CVEs are common findings.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["laravel/"]},
+    ),
+    HeuristicRule(
+        id="tech-graphql",
+        name="GraphQL detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_arjun",
+        rationale="GraphQL endpoints have introspection and query parameter attack surface.",
+        phase="informational",
+        task_cluster="fuzz",
+        cost_score=0.3,
+        suggested_args={"endpoint_discovery": True},
+        follow_up=["execute_curl"],
+    ),
+    HeuristicRule(
+        id="tech-react",
+        name="React SPA detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_jsluice",
+        rationale="React SPAs bundle JS that often leaks API endpoints and secrets.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+    ),
+    HeuristicRule(
+        id="tech-angular",
+        name="Angular SPA detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_jsluice",
+        rationale="Angular SPAs bundle JS that often leaks API endpoints and secrets.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+    ),
+    HeuristicRule(
+        id="tech-cloudflare",
+        name="Cloudflare detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_katana",
+        rationale="Cloudflare-protected sites may leak origin IPs in JS or historical DNS.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+    ),
+    HeuristicRule(
+        id="tech-akamai",
+        name="Akamai detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="Akamai-protected sites have known bypass and misconfiguration templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["akamai/"]},
+    ),
+    HeuristicRule(
+        id="tech-joomla",
+        name="Joomla detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Joomla has a history of critical CVEs; run CMS-specific templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["joomla/"]},
+    ),
+    HeuristicRule(
+        id="tech-aspnet",
+        name="ASP.NET detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="ASP.NET apps commonly expose viewstate, traces, and debug endpoints.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+    ),
+    HeuristicRule(
+        id="tech-aws",
+        name="AWS detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_katana",
+        rationale="AWS deployments may expose metadata endpoints or S3 buckets in JS.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+    ),
+    HeuristicRule(
+        id="tech-azure",
+        name="Azure detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_katana",
+        rationale="Azure deployments may expose metadata endpoints or storage in JS.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+    ),
+    HeuristicRule(
+        id="tech-gcp",
+        name="GCP detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_katana",
+        rationale="GCP deployments may expose metadata endpoints or storage in JS.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+    ),
+    HeuristicRule(
+        id="tech-tomcat",
+        name="Tomcat detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Tomcat manager and known CVEs are common attack surface.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["tomcat/"]},
+    ),
+    HeuristicRule(
+        id="tech-jenkins",
+        name="Jenkins detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Jenkins plugins and Groovy console are frequent exploitation targets.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["jenkins/"]},
+    ),
+    HeuristicRule(
+        id="tech-gitlab",
+        name="GitLab detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="GitLab CE/EE has a history of critical CVEs.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["gitlab/"]},
+    ),
+    HeuristicRule(
+        id="tech-elasticsearch",
+        name="Elasticsearch detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Elasticsearch often exposes data and has known CVEs.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["elasticsearch/"]},
+    ),
+    HeuristicRule(
+        id="tech-memcached",
+        name="Memcached detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="Memcached may expose stats and keys without authentication.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "memcached-info"},
+    ),
+    HeuristicRule(
+        id="tech-docker",
+        name="Docker detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="Docker daemon and registry exposure can lead to container escape.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["docker/"]},
+    ),
+    HeuristicRule(
+        id="tech-kubernetes",
+        name="Kubernetes detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Kubernetes API, etcd, and dashboard exposure are high-impact targets.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["kubernetes/"]},
+    ),
+    HeuristicRule(
+        id="tech-sap",
+        name="SAP detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="SAP Web Dispatcher and Portal have known critical vulnerabilities.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["sap/"]},
+    ),
+    HeuristicRule(
+        id="tech-api-gateway",
+        name="API gateway detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_arjun",
+        rationale="API gateways proxy many endpoints; discover hidden query parameters.",
+        phase="informational",
+        task_cluster="fuzz",
+        cost_score=0.3,
+        suggested_args={"endpoint_discovery": True},
+    ),
+    HeuristicRule(
+        id="tech-oauth",
+        name="OAuth / OpenID detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="OAuth/OpenID providers expose well-known endpoints that may leak metadata.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/.well-known/openid-configuration"},
+    ),
+    HeuristicRule(
+        id="tech-aws-metadata",
+        name="AWS detected — metadata SSRF probe",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="AWS instances expose IMDS at 169.254.169.254; SSRF or direct access leaks IAM role credentials.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"url": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"},
+    ),
+    HeuristicRule(
+        id="tech-azure-metadata",
+        name="Azure detected — metadata / Entra probe",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Azure VMs expose IMDS at 169.254.169.254 for managed-identity tokens.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"url": "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/", "headers": {"Metadata": "true"}},
+    ),
+    HeuristicRule(
+        id="tech-gcp-metadata",
+        name="GCP detected — metadata service probe",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="GCP instances expose metadata.google.internal for default service-account tokens.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"url": "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", "headers": {"Metadata-Flavor": "Google"}},
+    ),
+    HeuristicRule(
+        id="tech-active-directory",
+        name="Active Directory detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nmap",
+        rationale="Active Directory requires LDAP/Kerberos/SMB/MSRPC enumeration before attack-path selection.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ldap-rootdse,krb5-enum-users,smb-enum-shares"},
+    ),
+    HeuristicRule(
+        id="tech-domain-controller",
+        name="Domain Controller detected",
+        category="technology",
+        priority=1,
+        tool_name="kali_shell",
+        rationale="Domain Controllers are high-value; run enum4linux-ng and kerbrute for users/SIDs.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.4,
+        suggested_args={"command": "enum4linux-ng -A {{target}} && kerbrute userenum -d {{domain}} /usr/share/wordlists/seclists/Usernames/xato-net-10-million-usernames.txt"},
+    ),
+    HeuristicRule(
+        id="tech-llm",
+        name="LLM / AI runtime detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="LLM runtimes expose model lists and chat endpoints; enumerate before prompt-injection testing.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/v1/models"},
+    ),
+    HeuristicRule(
+        id="tech-mcp",
+        name="MCP server detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="MCP servers expose tool lists and may be vulnerable to tool poisoning.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/mcp", "data": '{"jsonrpc":"2.0","method":"tools/list","id":1}'},
+    ),
+    HeuristicRule(
+        id="tech-vector-db",
+        name="Vector database detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Vector DBs may expose collections and RAG context; enumerate before injection tests.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/collections"},
+    ),
+    HeuristicRule(
+        id="tech-npm",
+        name="npm registry / Node.js package detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="npm packages and registries are targets for dependency confusion and typosquatting.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/{{package}}"},
+    ),
+    HeuristicRule(
+        id="tech-github-actions",
+        name="GitHub Actions detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="GitHub Actions workflows may leak secrets, tokens, and CI/CD misconfigurations.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/.github/workflows/"},
+    ),
+    HeuristicRule(
+        id="tech-swagger",
+        name="Swagger / OpenAPI detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="Swagger/OpenAPI specs leak the full API surface and request schemas.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/openapi.json"},
+    ),
+    HeuristicRule(
+        id="tech-postman",
+        name="Postman detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="Postman collections may export full API endpoint definitions.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/postman.json"},
+    ),
+    HeuristicRule(
+        id="tech-soap",
+        name="SOAP / WSDL detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="WSDL endpoints expose SOAP service methods and data types.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "?wsdl"},
+    ),
+    HeuristicRule(
+        id="tech-grpc",
+        name="gRPC detected",
+        category="technology",
+        priority=2,
+        tool_name="kali_shell",
+        rationale="gRPC services may expose reflection; probe with grpcurl-style checks.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.3,
+        suggested_args={"command": "grpcurl -plaintext {{target}} list 2>/dev/null || echo 'grpcurl failed'"},
+    ),
+    HeuristicRule(
+        id="tech-email",
+        name="Email service detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="Email services expose MX/SMTP attack surface and open-relay risks.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "smtp-commands,smtp-open-relay"},
+    ),
+    HeuristicRule(
+        id="tech-dkim",
+        name="DKIM detected",
+        category="technology",
+        priority=3,
+        tool_name="execute_curl",
+        rationale="DKIM TXT records can reveal selector and key details for spoofing tests.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"url": "https://cloudflare-dns.com/dns-query?name=default._domainkey.{{domain}}&type=TXT", "headers": {"Accept": "application/dns-json"}},
+    ),
+    HeuristicRule(
+        id="tech-cdn",
+        name="CDN detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="CDNs can have takeover or misconfiguration exposures.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["cdn/"]},
+    ),
+    HeuristicRule(
+        id="tech-load-balancer",
+        name="Load balancer detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="Load balancers have known CVEs and misconfiguration templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["load-balancer/"]},
+    ),
+    HeuristicRule(
+        id="tech-vpn",
+        name="VPN detected",
+        category="technology",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="VPN appliances are high-value targets with many known CVEs.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["vpn/"]},
+    ),
+    HeuristicRule(
+        id="tech-ftp",
+        name="FTP/SFTP detected",
+        category="technology",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="FTP/SFTP services often permit anonymous access or weak auth.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "ftp-anon,ftp-vsftpd-backdoor,sftp-enum"},
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Combination rules (multi-signal expert playbooks)
+# ---------------------------------------------------------------------------
+
+COMBO_RULES: list[tuple[set[str], list[HeuristicRule]]] = [
+    (
+        {"wordpress", "cloudflare"},
+        [
+            HeuristicRule(
+                id="combo-wordpress-cloudflare",
+                name="WordPress + Cloudflare",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="Probe WordPress REST API for origin bypass via Cloudflare.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"path": "/wp-json/", "resolve": True},
+            ),
+        ],
+    ),
+    (
+        {"wordpress", "nginx"},
+        [
+            HeuristicRule(
+                id="combo-wordpress-nginx",
+                name="WordPress + nginx",
+                category="combo",
+                priority=2,
+                tool_name="execute_arjun",
+                rationale="Brute-force hidden parameters on WordPress/nginx stacks.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+            ),
+        ],
+    ),
+    (
+        {"graphql", "react"},
+        [
+            HeuristicRule(
+                id="combo-graphql-react",
+                name="GraphQL + React",
+                category="combo",
+                priority=1,
+                tool_name="execute_arjun",
+                rationale="GraphQL APIs behind React SPAs often have discoverable query parameters.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"endpoint_discovery": True},
+            ),
+            HeuristicRule(
+                id="combo-graphql-react-introspection",
+                name="GraphQL + React introspection",
+                category="combo",
+                priority=2,
+                tool_name="execute_curl",
+                rationale="Send an introspection query to confirm schema leakage.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"data": '{"query":"{__schema{types{name}}}"}'},
+            ),
+        ],
+    ),
+    (
+        {"iis", "asp.net"},
+        [
+            HeuristicRule(
+                id="combo-iis-aspnet",
+                name="IIS + ASP.NET",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="IIS/ASP.NET apps commonly expose .asmx, .svc, .config, and .aspx paths.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.4,
+                suggested_args={"extensions": [".asmx", ".svc", ".config", ".aspx"]},
+            ),
+        ],
+    ),
+    (
+        {"jenkins", "gitlab"},
+        [
+            HeuristicRule(
+                id="combo-cicd-pipeline",
+                name="Jenkins + GitLab",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="CI/CD pipeline stack; run Jenkins/GitLab misconfiguration and CVE templates.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.2,
+                suggested_args={"templates": ["jenkins/", "gitlab/"]},
+            ),
+            HeuristicRule(
+                id="combo-cicd-crawl",
+                name="Jenkins + GitLab crawl",
+                category="combo",
+                priority=2,
+                tool_name="execute_katana",
+                rationale="Crawl CI/CD web interfaces for exposed build logs and pipeline configs.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.2,
+            ),
+            HeuristicRule(
+                id="combo-cicd-exploit",
+                name="Jenkins + GitLab exploitation",
+                category="combo",
+                priority=1,
+                tool_name="kali_shell",
+                rationale="CI/CD stack in exploitation phase; probe Groovy console, runner escapes, and pipeline secrets.",
+                phase="exploitation",
+                task_cluster="exploit",
+                cost_score=0.5,
+                suggested_args={"command": "echo 'Probe Jenkins script console and GitLab CI runner config for secrets'"},
+            ),
+        ],
+    ),
+    (
+        {"tomcat", "java"},
+        [
+            HeuristicRule(
+                id="combo-tomcat-java",
+                name="Tomcat + Java",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="Tomcat/Java stacks commonly expose manager, .war uploads, and JMX endpoints.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.4,
+                suggested_args={"extensions": [".war", ".jar", ".jsp"]},
+            ),
+        ],
+    ),
+    (
+        {"docker", "kubernetes"},
+        [
+            HeuristicRule(
+                id="combo-container-k8s",
+                name="Docker + Kubernetes",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="Container orchestration exposure; run Docker and Kubernetes templates.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.2,
+                suggested_args={"templates": ["docker/", "kubernetes/"]},
+            ),
+            HeuristicRule(
+                id="combo-container-api",
+                name="Docker + Kubernetes API probe",
+                category="combo",
+                priority=2,
+                tool_name="execute_curl",
+                rationale="Probe Docker socket and Kubernetes API for unauthenticated access.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"path": "/version"},
+            ),
+        ],
+    ),
+    (
+        {"aws", "s3"},
+        [
+            HeuristicRule(
+                id="combo-aws-s3",
+                name="AWS + S3 exposure",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="AWS S3 buckets may be listable or writable anonymously; probe bucket ACLs.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"method": "GET", "path": "/?acl"},
+            ),
+            HeuristicRule(
+                id="combo-aws-s3-kali",
+                name="AWS + S3 enumeration",
+                category="combo",
+                priority=2,
+                tool_name="kali_shell",
+                rationale="Enumerate S3 buckets, IAM policies, and public access blocks with AWS CLI.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.3,
+                suggested_args={"command": "aws s3 ls s3://{{bucket}} --no-sign-request && aws s3api get-public-access-block --bucket {{bucket}} --no-sign-request"},
+            ),
+        ],
+    ),
+    (
+        {"azure", "storage"},
+        [
+            HeuristicRule(
+                id="combo-azure-storage",
+                name="Azure + Storage exposure",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="Azure Blob Storage may allow anonymous container enumeration.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"method": "GET", "path": "?restype=container&comp=list"},
+            ),
+        ],
+    ),
+    (
+        {"gcp", "storage"},
+        [
+            HeuristicRule(
+                id="combo-gcp-storage",
+                name="GCP + Storage exposure",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="Google Cloud Storage buckets may be world-readable.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"method": "GET", "path": "?storageClass"},
+            ),
+        ],
+    ),
+    (
+        {"swagger", "react"},
+        [
+            HeuristicRule(
+                id="combo-swagger-react",
+                name="Swagger + React",
+                category="combo",
+                priority=2,
+                tool_name="execute_arjun",
+                rationale="Swagger/OpenAPI behind React SPAs may have discoverable parameters.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"endpoint_discovery": True},
+            ),
+            HeuristicRule(
+                id="combo-swagger-react-jsluice",
+                name="Swagger + React JS extraction",
+                category="combo",
+                priority=2,
+                tool_name="execute_jsluice",
+                rationale="React bundles may reference OpenAPI endpoints and auth tokens.",
+                phase="informational",
+                task_cluster="enum",
+                cost_score=0.3,
+            ),
+        ],
+    ),
+    (
+        {"api gateway", "swagger"},
+        [
+            HeuristicRule(
+                id="combo-api-gateway-swagger",
+                name="API gateway + Swagger",
+                category="combo",
+                priority=1,
+                tool_name="execute_katana",
+                rationale="Crawl documented API endpoints behind the gateway for auth and input flaws.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.2,
+            ),
+        ],
+    ),
+    (
+        {"email", "domain"},
+        [
+            HeuristicRule(
+                id="combo-email-domain",
+                name="Email + Domain",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="Fetch SPF, DKIM, and DMARC TXT records for email-security assessment.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"url": "https://cloudflare-dns.com/dns-query?name=_dmarc.{{domain}}&type=TXT", "headers": {"Accept": "application/dns-json"}},
+            ),
+            HeuristicRule(
+                id="combo-email-domain-mx",
+                name="Email + Domain MX",
+                category="combo",
+                priority=2,
+                tool_name="execute_nmap",
+                rationale="Enumerate MX records and SMTP capabilities for the domain.",
+                phase="informational",
+                task_cluster="enum",
+                cost_score=0.3,
+                suggested_args={"script": "dns-brute,smtp-commands"},
+            ),
+        ],
+    ),
+    (
+        {"load balancer", "cdn"},
+        [
+            HeuristicRule(
+                id="combo-lb-cdn",
+                name="Load balancer + CDN",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="CDN/load-balancer stacks are prone to takeover and cache poisoning.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.2,
+                suggested_args={"templates": ["takeover/", "cdn/", "load-balancer/"]},
+            ),
+        ],
+    ),
+    (
+        {"vpn", "https"},
+        [
+            HeuristicRule(
+                id="combo-vpn-https",
+                name="VPN + HTTPS",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="SSL-VPN appliances on HTTPS often have critical CVEs.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.2,
+                suggested_args={"templates": ["vpn/", "sslvpn/"]},
+            ),
+        ],
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# CVE / exploit chaining heuristics
+# ---------------------------------------------------------------------------
+
+CVE_RULES: list[HeuristicRule] = [
+    HeuristicRule(
+        id="cve-searchsploit",
+        name="CVE identified — find exploit",
+        category="cve",
+        priority=1,
+        tool_name="execute_searchsploit",
+        rationale="A CVE was discovered; map it to a known exploit with searchsploit.",
+        phase="exploitation",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+    ),
+    HeuristicRule(
+        id="cve-nuclei-verify",
+        name="CVE identified — verify with Nuclei",
+        category="cve",
+        priority=2,
+        tool_name="execute_nuclei",
+        rationale="Use Nuclei CVE templates to verify the discovered vulnerability.",
+        phase="exploitation",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["cve/"]},
+    ),
+    HeuristicRule(
+        id="cve-metasploit",
+        name="CVE identified — attempt exploit",
+        category="cve",
+        priority=3,
+        tool_name="metasploit_console",
+        rationale="If a verified CVE has a Metasploit module, attempt exploitation.",
+        phase="exploitation",
+        task_cluster="exploit",
+        cost_score=0.8,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# CVE intelligence enrichment
+# ---------------------------------------------------------------------------
+
+CVE_INTEL_RULES: list[HeuristicRule] = [
+    HeuristicRule(
+        id="cve-intel-enrich",
+        name="CVE identified — enrich with CVE intelligence",
+        category="cve_intel",
+        priority=1,
+        tool_name="cve_intel",
+        rationale="Enrich discovered CVEs with NVD, KEV, EPSS, and PoC metadata before exploitation.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.1,
+        suggested_args={"query": "{{cve}}", "json": True, "limit": 10},
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Pipeline meta-recommendations
+# ---------------------------------------------------------------------------
+
+PIPELINE_RULES: list[dict[str, Any]] = [
+    {
+        "id": "port_scan_pipeline",
+        "trigger": lambda ctx: bool(ctx.ports) or ctx.has_tech("ip"),
+        "steps": [
+            {"tool": "execute_naabu", "phase": "informational", "rationale": "Fast port discovery on target IPs."},
+            {"tool": "execute_nmap", "phase": "informational", "rationale": "Service/version enumeration on open ports."},
+        ],
+    },
+    {
+        "id": "web_recon_pipeline",
+        "trigger": lambda ctx: ctx.has_any_tech({"http", "https", "wordpress", "apache", "nginx", "iis", "tomcat"})
+                               or ctx.has_any_port({80, 443, 8080, 8443}),
+        "steps": [
+            {"tool": "execute_httpx", "phase": "informational", "rationale": "Probe live HTTP hosts from discovered endpoints."},
+            {"tool": "execute_katana", "phase": "informational", "rationale": "Crawl live hosts for endpoints and JS paths."},
+            {"tool": "execute_nuclei", "phase": "informational", "rationale": "Run threat templates against web endpoints."},
+        ],
+    },
+    {
+        "id": "subdomain_pipeline",
+        "trigger": lambda ctx: ctx.has_tech("domain"),
+        "steps": [
+            {"tool": "execute_subfinder", "phase": "informational", "rationale": "Enumerate subdomains via passive sources."},
+            {"tool": "execute_amass", "phase": "informational", "rationale": "Broad DNS enumeration for subdomains."},
+            {"tool": "execute_httpx", "phase": "informational", "rationale": "Probe HTTP services on resolved subdomains."},
+        ],
+    },
+    {
+        "id": "exploit_pipeline",
+        "trigger": lambda ctx: bool(ctx.cves) or ctx.has_any_tech({"cve", "vulnerability", "exploit"}),
+        "steps": [
+            {"tool": "execute_searchsploit", "phase": "exploitation", "rationale": "Search known exploits for identified CVEs."},
+            {"tool": "metasploit_console", "phase": "exploitation", "rationale": "Launch Metasploit exploit module."},
+        ],
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Coverage-gap rules
+# ---------------------------------------------------------------------------
+
+COVERAGE_RULES: list[Callable[[RuleContext], list[HeuristicRule]]] = [
+    # 1. Ports known but no detailed service scan
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-nmap-service",
+            name="Open ports without service scan",
+            category="coverage",
+            priority=2,
+            tool_name="execute_nmap",
+            rationale=f"{len(ctx.ports)} port(s) open but no detailed service scan performed.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.5,
+            suggested_args={"script": "default,safe"},
+        )
+    ] if ctx.ports and "execute_nmap" not in ctx.already_run else [],
+    # 2. Web tech present but no vuln scan
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-nuclei-web",
+            name="Web tech without vulnerability scan",
+            category="coverage",
+            priority=3,
+            tool_name="execute_nuclei",
+            rationale="Web technologies detected but no vulnerability scan performed yet.",
+            phase="informational",
+            task_cluster="vuln_scan",
+            cost_score=0.2,
+        )
+    ] if (ctx.has_any_tech({"http", "https", "wordpress", "apache", "nginx", "iis", "tomcat"})
+          and "execute_nuclei" not in ctx.already_run) else [],
+    # 3. Domain known but no subdomain enum
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-subfinder",
+            name="Domain without subdomain enumeration",
+            category="coverage",
+            priority=2,
+            tool_name="execute_subfinder",
+            rationale="Domain detected but no subdomain enumeration performed.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.3,
+        )
+    ] if (ctx.has_tech("domain") and "execute_subfinder" not in ctx.already_run
+          and ctx.phase == "informational") else [],
+    # 4. JS files present but not analyzed
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-jsluice",
+            name="JS resources without secret/endpoint extraction",
+            category="coverage",
+            priority=2,
+            tool_name="execute_jsluice",
+            rationale="JavaScript resources present but not analyzed for secrets or endpoints.",
+            phase="informational",
+            task_cluster="enum",
+            cost_score=0.3,
+        )
+    ] if (ctx.has_tech("javascript", "js") and "execute_jsluice" not in ctx.already_run) else [],
+    # 5. Exploitation phase with no exploit tool used
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-exploit-tool",
+            name="Exploitation phase with no exploit attempt",
+            category="coverage",
+            priority=4,
+            tool_name="execute_hydra",
+            rationale="In exploitation phase but no brute-force/exploit tool used yet.",
+            phase="exploitation",
+            task_cluster="exploit",
+            cost_score=0.7,
+        )
+    ] if (ctx.phase in ("exploitation", "post_exploitation")
+          and "execute_hydra" not in ctx.already_run
+          and "metasploit_console" not in ctx.already_run) else [],
+    # 6. Discovered credentials → brute-force / spray
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-credentials-hydra",
+            name="Discovered credentials without brute-force",
+            category="coverage",
+            priority=2,
+            tool_name="execute_hydra",
+            rationale="Credentials discovered but no brute-force/spray attempt performed.",
+            phase="exploitation",
+            task_cluster="exploit",
+            cost_score=0.6,
+        )
+    ] if (ctx.target_info.get("credentials")
+          and "execute_hydra" not in ctx.already_run
+          and ctx.phase == "exploitation") else [],
+    # 7. Discovered endpoints → parameter discovery
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-endpoints-arjun",
+            name="Discovered endpoints without parameter fuzzing",
+            category="coverage",
+            priority=3,
+            tool_name="execute_arjun",
+            rationale="Known endpoints present; discover hidden query/body parameters.",
+            phase="informational",
+            task_cluster="fuzz",
+            cost_score=0.3,
+            suggested_args={"endpoint_discovery": True},
+        )
+    ] if (ctx.target_info.get("endpoints")
+          and "execute_arjun" not in ctx.already_run
+          and "execute_ffuf" not in ctx.already_run) else [],
+    # 8. JS files present → jsluice
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-jsfiles-jsluice",
+            name="JavaScript files without extraction",
+            category="coverage",
+            priority=2,
+            tool_name="execute_jsluice",
+            rationale="JavaScript files discovered; extract secrets, endpoints, and source maps.",
+            phase="informational",
+            task_cluster="enum",
+            cost_score=0.3,
+        )
+    ] if (ctx.target_info.get("js_files")
+          and "execute_jsluice" not in ctx.already_run) else [],
+    # 9. Live hosts present → nuclei
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-livehosts-nuclei",
+            name="Live hosts without vulnerability scan",
+            category="coverage",
+            priority=3,
+            tool_name="execute_nuclei",
+            rationale="Confirmed live hosts exist but no vulnerability scan performed.",
+            phase="informational",
+            task_cluster="vuln_scan",
+            cost_score=0.2,
+        )
+    ] if (ctx.target_info.get("live_hosts")
+          and "execute_nuclei" not in ctx.already_run) else [],
+    # 10. Subdomains present → httpx probe
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-subdomains-httpx",
+            name="Subdomains without HTTP probe",
+            category="coverage",
+            priority=2,
+            tool_name="execute_httpx",
+            rationale="Discovered subdomains should be probed for live HTTP services.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.1,
+        )
+    ] if (ctx.target_info.get("subdomains")
+          and "execute_httpx" not in ctx.already_run) else [],
+    # 11. Domain users present → Kerberoast / AS-REP roast
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-users-kerberoast",
+            name="Domain users without Kerberoasting",
+            category="coverage",
+            priority=2,
+            tool_name="kali_shell",
+            rationale="Domain user list present; attempt AS-REP roasting and Kerberoasting.",
+            phase="informational",
+            task_cluster="enum",
+            cost_score=0.5,
+            suggested_args={"command": "impacket-GetNPUsers -usersfile {{users}} -dc-ip {{target}} && impacket-GetUserSPNs -request -usersfile {{users}} -dc-ip {{target}}"},
+        )
+    ] if (ctx.target_info.get("users")
+          and "kali_shell" not in ctx.already_run
+          and ctx.phase == "informational") else [],
+    # 12. Active session → post-exploitation enumeration
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-sessions-post-exploit",
+            name="Active session without post-exploitation",
+            category="coverage",
+            priority=1,
+            tool_name="metasploit_console",
+            rationale="Active session(s) present; run post-exploitation enumeration modules.",
+            phase="post_exploitation",
+            task_cluster="exploit",
+            cost_score=0.5,
+            suggested_args={"commands": ["sessions -l", "use post/windows/gather/hashdump", "run"]},
+        )
+    ] if (ctx.target_info.get("sessions")
+          and "metasploit_console" not in ctx.already_run
+          and ctx.phase == "post_exploitation") else [],
+    # 13. Container foothold → escape assessment
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-container-escape",
+            name="Container foothold without escape assessment",
+            category="coverage",
+            priority=1,
+            tool_name="kali_shell",
+            rationale="Inside a container; assess escape paths, socket abuse, and privileged flags.",
+            phase="post_exploitation",
+            task_cluster="exploit",
+            cost_score=0.4,
+            suggested_args={"command": "deepce.sh --no-update"},
+        )
+    ] if (ctx.target_info.get("container_foothold")
+          and "kali_shell" not in ctx.already_run
+          and ctx.phase in ("exploitation", "post_exploitation")) else [],
+    # 14. Credentials + lateral-movement protocols → lateral movement
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-credentials-lateral",
+            name="Credentials with lateral-movement protocols",
+            category="coverage",
+            priority=1,
+            tool_name="kali_shell",
+            rationale="Discovered credentials and lateral-movement protocols present; attempt pass-the-hash/spray.",
+            phase="exploitation",
+            task_cluster="exploit",
+            cost_score=0.6,
+            suggested_args={"command": "nxc smb {{target}} -u {{user}} -p {{pass}} && nxc winrm {{target}} -u {{user}} -p {{pass}}"},
+        )
+    ] if (ctx.target_info.get("credentials")
+          and ctx.has_any_port({445, 5985, 5986, 22})
+          and "kali_shell" not in ctx.already_run
+          and ctx.phase == "exploitation") else [],
+    # 15. New internal subnet → pivot setup
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-subnets-pivot",
+            name="Internal subnet discovered without pivot",
+            category="coverage",
+            priority=2,
+            tool_name="kali_shell",
+            rationale="New internal subnet discovered; establish a pivot for lateral access.",
+            phase="post_exploitation",
+            task_cluster="exploit",
+            cost_score=0.5,
+            suggested_args={"command": "chisel server -p 8080 --socks5 & chisel client {{lhost}}:8080 socks"},
+        )
+    ] if (ctx.target_info.get("subnets")
+          and "kali_shell" not in ctx.already_run
+          and ctx.phase == "post_exploitation") else [],
+    # 16. Cloud provider identified → cloud enumeration
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-cloud-enumeration",
+            name="Cloud provider identified without enumeration",
+            category="coverage",
+            priority=2,
+            tool_name="kali_shell",
+            rationale="Cloud provider identified; enumerate IAM, storage, and compute metadata.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.4,
+            suggested_args={"command": "echo 'Run cloud-specific enumeration (aws/azure/gcp)'"},
+        )
+    ] if (ctx.target_info.get("cloud_provider")
+          and "kali_shell" not in ctx.already_run
+          and ctx.phase == "informational") else [],
+    # 17. CVEs present but no CVE intelligence gathered
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-cve-intel",
+            name="CVEs without intelligence enrichment",
+            category="coverage",
+            priority=1,
+            tool_name="cve_intel",
+            rationale="CVEs discovered but not enriched with CVE intelligence metadata.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.1,
+            suggested_args={"query": "{{cve}}", "json": True, "limit": 10},
+        )
+    ] if (ctx.cves and "cve_intel" not in ctx.already_run) else [],
+    # 18. Swagger/OpenAPI present but no API crawl
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-swagger-katana",
+            name="Swagger/OpenAPI without API crawl",
+            category="coverage",
+            priority=2,
+            tool_name="execute_katana",
+            rationale="API specification present; crawl documented endpoints for attack surface.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.2,
+        )
+    ] if (ctx.has_any_tech({"swagger", "openapi", "api-docs"})
+          and "execute_katana" not in ctx.already_run) else [],
+    # 19. Email ports/tech present but no email security scan
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-email-security",
+            name="Email indicators without email security scan",
+            category="coverage",
+            priority=2,
+            tool_name="execute_nmap",
+            rationale="Email services or ports detected but no email security assessment performed.",
+            phase="informational",
+            task_cluster="enum",
+            cost_score=0.3,
+            suggested_args={"script": "smtp-commands,smtp-open-relay,pop3-capabilities,imap-capabilities"},
+        )
+    ] if ((ctx.has_any_tech({"email", "smtp", "mx", "dkim", "spf", "dmarc"})
+           or ctx.has_any_port({25, 465, 587, 110, 995, 143, 993}))
+          and "execute_nmap" not in ctx.already_run
+          and ctx.phase == "informational") else [],
+    # 20. Graph: subdomains without open ports
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="subdomains_without_ports",
+        cypher="""
+            // query_key: subdomains_without_ports
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(s:Subdomain)
+            WHERE NOT (s)-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(:Port)
+            RETURN s.name AS name LIMIT 10
+        """,
+        tool_name="execute_httpx",
+        rule_id="graph-subdomains-without-ports",
+        name="Subdomains without open ports",
+        rationale="Graph shows subdomains with no discovered open ports; probe for live HTTP services.",
+        priority=2,
+        cost_score=0.1,
+    ),
+    # 21. Graph: IPs with ports but no service enumeration
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="ips_without_services",
+        cypher="""
+            // query_key: ips_without_services
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(:Subdomain)-[:RESOLVES_TO]->(ip:IP)-[:HAS_PORT]->(p:Port)
+            WHERE NOT (p)-[:RUNS_SERVICE]->(:Service)
+            RETURN DISTINCT ip.address AS ip LIMIT 10
+        """,
+        tool_name="execute_nmap",
+        rule_id="graph-ips-without-services",
+        name="IPs without service enumeration",
+        rationale="Graph shows open ports without service details; run service/version enumeration.",
+        priority=2,
+        cost_score=0.5,
+        suggested_args={"script": "default,safe"},
+    ),
+    # 22. Graph: web ports without BaseURL
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="web_ports_without_baseurl",
+        cypher="""
+            // query_key: web_ports_without_baseurl
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(:Subdomain)-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(p:Port)
+            WHERE p.number IN [80, 443, 8080, 8443, 8000, 8081, 8888, 5000]
+              AND NOT (p)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(:BaseURL)
+            RETURN DISTINCT p.number AS port LIMIT 10
+        """,
+        tool_name="execute_httpx",
+        rule_id="graph-web-ports-without-baseurl",
+        name="Web ports without BaseURL",
+        rationale="Graph shows web ports with no discovered BaseURL; probe for live web services.",
+        priority=2,
+        cost_score=0.1,
+    ),
+    # 23. Graph: BaseURLs without endpoints
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="baseurls_without_endpoints",
+        cypher="""
+            // query_key: baseurls_without_endpoints
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(:Subdomain)-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(:Port)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(b:BaseURL)
+            WHERE NOT (b)-[:HAS_ENDPOINT]->(:Endpoint)
+            RETURN b.url AS url LIMIT 10
+        """,
+        tool_name="execute_katana",
+        rule_id="graph-baseurls-without-endpoints",
+        name="BaseURLs without endpoints",
+        rationale="Graph shows live BaseURLs with no crawled endpoints; crawl for attack surface.",
+        priority=2,
+        cost_score=0.2,
+    ),
+    # 24. Graph: services without vulnerability findings
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="services_without_vulns",
+        cypher="""
+            // query_key: services_without_vulns
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(:Subdomain)-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(:Port)-[:RUNS_SERVICE]->(s:Service)
+            WHERE NOT (s)<-[:FOUND_ON|AFFECTS]-(:Vulnerability)
+            RETURN s.name AS service LIMIT 10
+        """,
+        tool_name="execute_nuclei",
+        rule_id="graph-services-without-vulns",
+        name="Services without vulnerability findings",
+        rationale="Graph shows services with no vulnerability findings; run a vulnerability scan.",
+        priority=3,
+        cost_score=0.2,
+    ),
+    # 25. Graph: technologies with known CVEs but no vuln scan
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="tech_with_cves_without_vulns",
+        cypher="""
+            // query_key: tech_with_cves_without_vulns
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(:Subdomain)-[:RESOLVES_TO]->(:IP)-[:HAS_PORT]->(:Port)-[:RUNS_SERVICE]->(:Service)-[:SERVES_URL]->(:BaseURL)-[:USES_TECHNOLOGY]->(t:Technology)-[:HAS_KNOWN_CVE]->(:CVE)
+            WHERE NOT (t)<-[:FOUND_ON]-(:Vulnerability)
+            RETURN t.name AS tech LIMIT 10
+        """,
+        tool_name="execute_nuclei",
+        rule_id="graph-tech-cves-without-vulns",
+        name="Technologies with known CVEs but no findings",
+        rationale="Graph shows technologies with known CVEs but no vulnerability findings; verify with nuclei.",
+        priority=1,
+        cost_score=0.2,
+    ),
+    # 26. Graph: open ports without traceroute
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="ports_without_traceroute",
+        cypher="""
+            // query_key: ports_without_traceroute
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})-[:HAS_SUBDOMAIN]->(:Subdomain)-[:RESOLVES_TO]->(ip:IP)-[:HAS_PORT]->(:Port)
+            WHERE NOT (ip)-[:HAS_TRACEROUTE]->(:Traceroute)
+            RETURN DISTINCT ip.address AS ip LIMIT 10
+        """,
+        tool_name="execute_nmap",
+        rule_id="graph-ports-without-traceroute",
+        name="IPs without traceroute",
+        rationale="Graph shows IPs with open ports but no traceroute data; map network path.",
+        priority=3,
+        cost_score=0.4,
+        suggested_args={"script": "traceroute-geolocation"},
+    ),
+    # 27. Graph: domain without subdomain enumeration
+    lambda ctx: _graph_gap(
+        ctx,
+        query_key="domain_without_subdomains",
+        cypher="""
+            // query_key: domain_without_subdomains
+            MATCH (d:Domain {user_id: $uid, project_id: $pid})
+            OPTIONAL MATCH (d)-[:HAS_SUBDOMAIN]->(s:Subdomain)
+            WITH d, count(s) AS sub_count
+            WHERE sub_count = 0
+            RETURN d.name AS domain LIMIT 1
+        """,
+        tool_name="execute_subfinder",
+        rule_id="graph-domain-without-subdomains",
+        name="Domain without subdomain enumeration",
+        rationale="Graph shows the project domain has no subdomains discovered yet.",
+        priority=2,
+        cost_score=0.3,
+    ),
+]
+
+
+def _graph_gap(
+    ctx: RuleContext,
+    query_key: str,
+    cypher: str,
+    tool_name: str,
+    rule_id: str,
+    name: str,
+    rationale: str,
+    priority: int,
+    cost_score: float,
+    suggested_args: dict[str, Any] | None = None,
+) -> list[HeuristicRule]:
+    """Helper to run a graph coverage-gap query and return a rule if gaps exist."""
+    if not ctx.graph_client:
+        return []
+    if tool_name in ctx.already_run:
+        return []
+    if ctx.phase != "informational":
+        return []
+    try:
+        rows = ctx.graph_client.query(cypher)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Graph gap query %s failed: %s", query_key, exc)
+        return []
+    if not rows:
+        return []
+    return [
+        HeuristicRule(
+            id=rule_id,
+            name=name,
+            category="coverage",
+            priority=priority,
+            tool_name=tool_name,
+            rationale=rationale,
+            phase="informational",
+            task_cluster="recon",
+            cost_score=cost_score,
+            suggested_args=dict(suggested_args or {}),
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Attack-path biases (lightweight nudges, additive only)
+# ---------------------------------------------------------------------------
+
+PATH_BIAS_RULES: list[HeuristicRule] = [
+    HeuristicRule(
+        id="bias-sql-injection",
+        name="SQL injection attack path",
+        category="path_bias",
+        priority=3,
+        tool_name="execute_arjun",
+        rationale="SQL injection path benefits from discovering hidden parameters.",
+        phase="informational",
+        task_cluster="fuzz",
+        cost_score=0.3,
+        condition=lambda ctx: ctx.has_attack_path("sql_injection"),
+    ),
+    HeuristicRule(
+        id="bias-xss",
+        name="XSS attack path",
+        category="path_bias",
+        priority=3,
+        tool_name="execute_katana",
+        rationale="XSS path benefits from crawling input vectors and forms.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+        condition=lambda ctx: ctx.has_attack_path("xss"),
+    ),
+    HeuristicRule(
+        id="bias-rce",
+        name="RCE attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_searchsploit",
+        rationale="RCE path should map known CVEs to exploit code.",
+        phase="exploitation",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        condition=lambda ctx: ctx.has_attack_path("rce"),
+    ),
+    HeuristicRule(
+        id="bias-rce-metasploit",
+        name="RCE attack path — Metasploit",
+        category="path_bias",
+        priority=3,
+        tool_name="metasploit_console",
+        rationale="RCE path may use Metasploit modules for verified CVEs.",
+        phase="exploitation",
+        task_cluster="exploit",
+        cost_score=0.8,
+        condition=lambda ctx: ctx.has_attack_path("rce"),
+    ),
+    HeuristicRule(
+        id="bias-container-k8s",
+        name="Container/Kubernetes attack path",
+        category="path_bias",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Container path should run Kubernetes-specific templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["kubernetes/"]},
+        condition=lambda ctx: ctx.has_attack_path("container_k8s"),
+    ),
+    HeuristicRule(
+        id="bias-brute-force",
+        name="Brute-force credential guess path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_hydra",
+        rationale="Brute-force path should attempt credential spraying.",
+        phase="exploitation",
+        task_cluster="exploit",
+        cost_score=0.7,
+        condition=lambda ctx: ctx.has_attack_path("brute_force_credential_guess"),
+    ),
+    HeuristicRule(
+        id="bias-ssrf",
+        name="SSRF attack path",
+        category="path_bias",
+        priority=3,
+        tool_name="execute_curl",
+        rationale="SSRF path benefits from manual endpoint probing.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        condition=lambda ctx: ctx.has_attack_path("ssrf"),
+    ),
+    HeuristicRule(
+        id="bias-cicd",
+        name="CI/CD pipeline attack path",
+        category="path_bias",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="CI/CD path should run Jenkins/GitLab/Actions templates.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["jenkins/", "gitlab/"]},
+        condition=lambda ctx: ctx.has_attack_path("cicd_pipeline"),
+    ),
+    HeuristicRule(
+        id="bias-active-directory",
+        name="Active Directory attack path",
+        category="path_bias",
+        priority=1,
+        tool_name="kali_shell",
+        rationale="AD path should run BloodHound / netexec / Kerberoast collection.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.5,
+        suggested_args={"command": "bloodhound-python -d {{domain}} -c Group,ACL,Trusts -ns {{target}}"},
+        condition=lambda ctx: ctx.has_attack_path("active_directory", "hybrid_identity"),
+    ),
+    HeuristicRule(
+        id="bias-llm-security",
+        name="LLM security attack path",
+        category="path_bias",
+        priority=1,
+        tool_name="execute_curl",
+        rationale="LLM path should probe chat endpoints for prompt-injection and model extraction.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/v1/chat/completions", "data": '{"messages":[{"role":"user","content":"Say exactly PONG"}]}'},
+        condition=lambda ctx: ctx.has_attack_path("llm_security"),
+    ),
+    HeuristicRule(
+        id="bias-phishing",
+        name="Phishing / social engineering attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_playwright",
+        rationale="Phishing path benefits from rendering landing pages and capturing form behavior.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+        suggested_args={"action": "screenshot"},
+        condition=lambda ctx: ctx.has_attack_path("phishing_social_engineering"),
+    ),
+    HeuristicRule(
+        id="bias-dos",
+        name="Denial of service attack path",
+        category="path_bias",
+        priority=3,
+        tool_name="kali_shell",
+        rationale="DoS path may validate vector existence with low-bandwidth hping3/slowloris probes.",
+        phase="exploitation",
+        task_cluster="exploit",
+        cost_score=0.5,
+        suggested_args={"command": "hping3 -S -p {{port}} --flood {{target}} -c 100"},
+        condition=lambda ctx: ctx.has_attack_path("denial_of_service"),
+    ),
+    HeuristicRule(
+        id="bias-browser-exploitation",
+        name="Browser exploitation attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_playwright",
+        rationale="Browser path uses automation to probe XSS filters and DOM-based sinks.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.2,
+        suggested_args={"action": "evaluate", "script": "document.documentElement.innerHTML"},
+        condition=lambda ctx: ctx.has_attack_path("browser_exploitation"),
+    ),
+    HeuristicRule(
+        id="bias-supply-chain",
+        name="Supply chain attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="kali_shell",
+        rationale="Supply-chain path should audit dependencies and CI artifacts for poisoning.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.3,
+        suggested_args={"command": "echo 'Check package registries and CI artifacts for dependency confusion / typosquatting'"},
+        condition=lambda ctx: ctx.has_attack_path("supply_chain"),
+    ),
+    HeuristicRule(
+        id="bias-path-traversal",
+        name="Path traversal attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_ffuf",
+        rationale="Path traversal path benefits from fuzzing path parameters and traversal payloads.",
+        phase="informational",
+        task_cluster="fuzz",
+        cost_score=0.4,
+        suggested_args={"extensions": [".txt", ".log", ".bak", ".old"]},
+        condition=lambda ctx: ctx.has_attack_path("path_traversal"),
+    ),
+    HeuristicRule(
+        id="bias-api-security",
+        name="API security attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_arjun",
+        rationale="API security path should discover hidden query/body parameters and auth flaws.",
+        phase="informational",
+        task_cluster="fuzz",
+        cost_score=0.3,
+        suggested_args={"endpoint_discovery": True},
+        condition=lambda ctx: ctx.has_attack_path("api_security"),
+    ),
+    HeuristicRule(
+        id="bias-domain-takeover",
+        name="Domain takeover attack path",
+        category="path_bias",
+        priority=1,
+        tool_name="execute_nuclei",
+        rationale="Domain takeover path should run takeover templates against dangling assets.",
+        phase="informational",
+        task_cluster="vuln_scan",
+        cost_score=0.2,
+        suggested_args={"templates": ["takeover/"]},
+        condition=lambda ctx: ctx.has_attack_path("domain_takeover"),
+    ),
+    HeuristicRule(
+        id="bias-transport-security",
+        name="Transport security attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="Transport security path should probe TLS versions, ciphers, and security headers.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"url": "https://{{target}}", "insecure": True, "verbose": True},
+        condition=lambda ctx: ctx.has_attack_path("transport_security"),
+    ),
+    HeuristicRule(
+        id="bias-email-security",
+        name="Email security attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_nmap",
+        rationale="Email security path should enumerate MX, SPF, DKIM, DMARC, and open relays.",
+        phase="informational",
+        task_cluster="enum",
+        cost_score=0.3,
+        suggested_args={"script": "smtp-commands,smtp-open-relay,dns-brute"},
+        condition=lambda ctx: ctx.has_attack_path("email_security"),
+    ),
+    HeuristicRule(
+        id="bias-web-cache-poisoning",
+        name="Web cache poisoning attack path",
+        category="path_bias",
+        priority=2,
+        tool_name="execute_curl",
+        rationale="Web cache poisoning path should probe cache behavior with dynamic cache-busting headers.",
+        phase="informational",
+        task_cluster="recon",
+        cost_score=0.05,
+        suggested_args={"path": "/?cachebuster=1", "headers": {"X-Forwarded-Host": "evil.com", "X-Cache": "true"}},
+        condition=lambda ctx: ctx.has_attack_path("web_cache_poisoning"),
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Port → common service mapping (used for service inference)
+# ---------------------------------------------------------------------------
+
+PORT_SERVICE_MAP: dict[int, str] = {
+    21: "ftp",
+    22: "ssh",
+    23: "telnet",
+    25: "smtp",
+    53: "dns",
+    80: "http",
+    88: "kerberos",
+    110: "pop3",
+    111: "rpcbind",
+    143: "imap",
+    161: "snmp",
+    389: "ldap",
+    443: "https",
+    445: "smb",
+    465: "smtps",
+    500: "ipsec",
+    587: "smtp-submission",
+    636: "ldaps",
+    993: "imaps",
+    995: "pop3s",
+    10250: "kubelet",
+    1723: "pptp",
+    2049: "nfs",
+    2375: "docker",
+    2376: "docker",
+    3268: "global-catalog",
+    3269: "global-catalog",
+    3306: "mysql",
+    3389: "rdp",
+    4500: "ipsec",
+    5000: "http",
+    5432: "postgresql",
+    5985: "winrm",
+    5986: "winrm",
+    6333: "qdrant",
+    6379: "redis",
+    6443: "k8s-api",
+    7001: "weblogic",
+    8000: "http",
+    8080: "http",
+    8081: "http",
+    8443: "https",
+    8888: "http",
+    9090: "prometheus",
+    9093: "prometheus",
+    9200: "elasticsearch",
+    9306: "splunk",
+    11211: "memcached",
+    11434: "ollama",
+    27017: "mongodb",
+}

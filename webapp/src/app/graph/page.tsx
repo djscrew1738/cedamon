@@ -49,7 +49,7 @@ import { useGraphTypeFilterPrefs, useGraphViewPrefs } from '@/hooks/useUserPrefe
 import { useProject } from '@/providers/ProjectProvider'
 import { GVM_PHASES, GITHUB_HUNT_PHASES, TRUFFLEHOG_PHASES, PARTIAL_RECON_PHASE_MAP } from '@/lib/recon-types'
 import { WORKFLOW_TOOLS } from '@/components/projects/ProjectForm/WorkflowView/workflowDefinition'
-import type { ReconStatus } from '@/lib/recon-types'
+import type { ReconStatus, PartialReconState } from '@/lib/recon-types'
 import { OtherScansModal } from './components/OtherScansModal/OtherScansModal'
 import { useAlertModal, useToast } from '@/components/ui'
 import styles from './page.module.css'
@@ -82,6 +82,8 @@ export default function GraphPage() {
   const [hasGithubHuntData, setHasGithubHuntData] = useState(false)
   const [hasTrufflehogData, setHasTrufflehogData] = useState(false)
   const [gvmAvailable, setGvmAvailable] = useState(true)
+  const [gvmReady, setGvmReady] = useState(true)
+  const [gvmReadinessMessage, setGvmReadinessMessage] = useState<string | undefined>()
   const [isOtherScansModalOpen, setIsOtherScansModalOpen] = useState(false)
   const [hasGithubToken, setHasGithubToken] = useState(false)
   const [graphStats, setGraphStats] = useState<{ totalNodes: number; nodesByType: Record<string, number> } | null>(null)
@@ -136,12 +138,19 @@ export default function GraphPage() {
     window.addEventListener('resize', update)
     return () => { ro.disconnect(); window.removeEventListener('resize', update) }
   }, [])
-  // Check if GVM stack is installed
+  // Check if GVM stack is installed and whether feed sync is complete
   useEffect(() => {
     fetch('/api/gvm/available')
       .then(res => res.json())
-      .then(data => setGvmAvailable(data.available ?? false))
-      .catch(() => setGvmAvailable(false))
+      .then(data => {
+        setGvmAvailable(data.available ?? false)
+        setGvmReady(data.ready ?? false)
+        setGvmReadinessMessage(data.message)
+      })
+      .catch(() => {
+        setGvmAvailable(false)
+        setGvmReady(false)
+      })
   }, [])
 
   const { isDark } = useTheme()
@@ -251,6 +260,12 @@ export default function GraphPage() {
   } = useReconStatus({
     projectId,
     enabled: !!projectId,
+    onComplete: useCallback(() => {
+      toast.success('Recon scan completed')
+    }, [toast]),
+    onError: useCallback((error: string) => {
+      toast.error(`Recon scan failed: ${error}`)
+    }, [toast]),
   })
 
   // Check if recon is running to enable auto-refresh of graph data
@@ -309,6 +324,7 @@ export default function GraphPage() {
     currentPhase,
     currentPhaseNumber,
     clearLogs,
+    isConnected: reconLogsConnected,
   } = useReconSSE({
     projectId,
     enabled: reconState?.status === 'running' || reconState?.status === 'starting' || reconState?.status === 'paused' || reconState?.status === 'stopping',
@@ -320,6 +336,7 @@ export default function GraphPage() {
     runs: allPartialReconRuns,
     activeRuns: activePartialRecons,
     isAnyRunning: isPartialReconRunning,
+    startPartialRecon,
     stopPartialRecon,
     refetch: refetchPartialReconStatuses,
   } = useMultiPartialReconStatus({
@@ -337,6 +354,7 @@ export default function GraphPage() {
     logsMap: partialReconLogsMap,
     phaseMap: partialReconPhaseMap,
     clearLogsForRun: clearPartialReconLogsForRun,
+    isConnected: partialReconLogsConnected,
   } = useMultiPartialReconSSE({
     projectId,
     activeRunId: activePartialReconRunId,
@@ -359,6 +377,12 @@ export default function GraphPage() {
   } = useGvmStatus({
     projectId,
     enabled: !!projectId,
+    onComplete: useCallback(() => {
+      toast.success('GVM scan completed')
+    }, [toast]),
+    onError: useCallback((error: string) => {
+      toast.error(`GVM scan failed: ${error}`)
+    }, [toast]),
   })
 
   const isGvmRunning = gvmState?.status === 'running' || gvmState?.status === 'starting'
@@ -369,6 +393,7 @@ export default function GraphPage() {
     currentPhase: gvmCurrentPhase,
     currentPhaseNumber: gvmCurrentPhaseNumber,
     clearLogs: clearGvmLogs,
+    isConnected: gvmLogsConnected,
   } = useGvmSSE({
     projectId,
     enabled: gvmState?.status === 'running' || gvmState?.status === 'starting' || gvmState?.status === 'paused' || gvmState?.status === 'stopping',
@@ -385,6 +410,12 @@ export default function GraphPage() {
   } = useGithubHuntStatus({
     projectId,
     enabled: !!projectId,
+    onComplete: useCallback(() => {
+      toast.success('GitHub Hunt completed')
+    }, [toast]),
+    onError: useCallback((error: string) => {
+      toast.error(`GitHub Hunt failed: ${error}`)
+    }, [toast]),
   })
 
   const isGithubHuntRunning = githubHuntState?.status === 'running' || githubHuntState?.status === 'starting'
@@ -395,6 +426,7 @@ export default function GraphPage() {
     currentPhase: githubHuntCurrentPhase,
     currentPhaseNumber: githubHuntCurrentPhaseNumber,
     clearLogs: clearGithubHuntLogs,
+    isConnected: githubHuntLogsConnected,
   } = useGithubHuntSSE({
     projectId,
     enabled: githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'paused' || githubHuntState?.status === 'stopping',
@@ -410,6 +442,12 @@ export default function GraphPage() {
   } = useTrufflehogStatus({
     projectId,
     enabled: !!projectId,
+    onComplete: useCallback(() => {
+      toast.success('TruffleHog scan completed')
+    }, [toast]),
+    onError: useCallback((error: string) => {
+      toast.error(`TruffleHog scan failed: ${error}`)
+    }, [toast]),
   })
 
   const isTrufflehogRunning = trufflehogState?.status === 'running' || trufflehogState?.status === 'starting'
@@ -420,6 +458,7 @@ export default function GraphPage() {
     currentPhase: trufflehogCurrentPhase,
     currentPhaseNumber: trufflehogCurrentPhaseNumber,
     clearLogs: clearTrufflehogLogs,
+    isConnected: trufflehogLogsConnected,
   } = useTrufflehogSSE({
     projectId,
     enabled: trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused' || trufflehogState?.status === 'stopping',
@@ -430,6 +469,58 @@ export default function GraphPage() {
     enabled: true,
     fastPoll: activeView === 'sessions',
   })
+
+  // Live scan progress monitor data
+  const activeScans = useMemo(() => {
+    const scans: import('@/app/graph/components/ScanProgressMonitor').ActiveScan[] = []
+    if (reconState?.status === 'running' || reconState?.status === 'starting' || reconState?.status === 'paused') {
+      scans.push({
+        label: 'Recon',
+        status: reconState.status,
+        phase: reconState.current_phase,
+        phaseNumber: reconState.phase_number,
+        totalPhases: reconState.total_phases,
+      })
+    }
+    if (gvmState?.status === 'running' || gvmState?.status === 'starting' || gvmState?.status === 'paused') {
+      scans.push({
+        label: 'GVM',
+        status: gvmState.status,
+        phase: gvmState.current_phase,
+        phaseNumber: gvmState.phase_number,
+        totalPhases: gvmState.total_phases,
+      })
+    }
+    if (githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'paused') {
+      scans.push({
+        label: 'GitHub Hunt',
+        status: githubHuntState.status,
+        phase: githubHuntState.current_phase,
+        phaseNumber: githubHuntState.phase_number,
+        totalPhases: githubHuntState.total_phases,
+      })
+    }
+    if (trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused') {
+      scans.push({
+        label: 'TruffleHog',
+        status: trufflehogState.status,
+        phase: trufflehogState.current_phase,
+        phaseNumber: trufflehogState.phase_number,
+        totalPhases: trufflehogState.total_phases,
+      })
+    }
+    activePartialRecons.forEach(run => {
+      const phases = PARTIAL_RECON_PHASE_MAP[run.tool_id || ''] || ['Running']
+      scans.push({
+        label: run.tool_id,
+        status: run.status,
+        phase: phases[0] || 'Running',
+        phaseNumber: 1,
+        totalPhases: phases.length,
+      })
+    })
+    return scans
+  }, [reconState, gvmState, githubHuntState, trufflehogState, activePartialRecons])
 
   // ── Table view state (lifted from DataTable) ──────────────────────────
   const tableRows = useTableData(data)
@@ -1066,6 +1157,43 @@ export default function GraphPage() {
     setActiveLogsDrawer(prev => prev === 'trufflehog' ? null : 'trufflehog')
   }, [])
 
+  // Other Scans - partial recon scan helpers
+  const getActivePartialRunForTool = useCallback((toolId: string) => {
+    return activePartialRecons.find(r => r.tool_id === toolId)
+  }, [activePartialRecons])
+
+  const handleStartPartialScan = useCallback(async (toolId: string) => {
+    const domain = currentProject?.targetDomain
+    if (!projectId || !domain) return
+    try {
+      const result = await startPartialRecon({
+        tool_id: toolId,
+        graph_inputs: { domain },
+        user_inputs: [],
+      })
+      if (result) {
+        toast.info(`${toolId} scan started`)
+      }
+    } catch (err) {
+      console.error(`Failed to start ${toolId}:`, err)
+      toast.error(`Failed to start ${toolId}`)
+    }
+  }, [currentProject?.targetDomain, projectId, startPartialRecon, toast])
+
+  const handleStopPartialScan = useCallback(async (toolId: string) => {
+    const run = getActivePartialRunForTool(toolId)
+    if (run) {
+      await stopPartialRecon(run.run_id)
+      toast.info(`${toolId} scan stopped`)
+    }
+  }, [getActivePartialRunForTool, stopPartialRecon, toast])
+
+  const handleTogglePartialScanLogs = useCallback((toolId: string) => {
+    const run = getActivePartialRunForTool(toolId)
+    if (!run) return
+    setActiveLogsDrawer(prev => prev === `partialRecon:${run.run_id}` ? null : `partialRecon:${run.run_id}`)
+  }, [getActivePartialRunForTool])
+
   // Auto-open partial recon logs drawer when a new run appears or transitions to running
   const prevPartialRunStatusMapRef = useRef<Record<string, string>>({})
   useEffect(() => {
@@ -1103,6 +1231,12 @@ export default function GraphPage() {
   const handleTogglePartialReconLogs = useCallback((runId: string) => {
     setActiveLogsDrawer(prev => prev === `partialRecon:${runId}` ? null : `partialRecon:${runId}`)
   }, [])
+
+  const handleRequestReverseShell = useCallback((run: PartialReconState) => {
+    setActiveView('sessions')
+    setActiveLogsDrawer(null)
+    toast.info(`Switching to Sessions — monitor for ${run.tool_id} reverse shell`, 'Escalating to reverse shell')
+  }, [toast])
 
   // Emergency Pause All — freezes every running pipeline and agent at once
   const isAnyPipelineRunning = isReconRunning || isGvmRunning || isGithubHuntRunning || isTrufflehogRunning || isAgentRunning || isPartialReconRunning
@@ -1182,6 +1316,8 @@ export default function GraphPage() {
         isLogsOpen={activeLogsDrawer === 'recon'}
         // GVM props
         gvmAvailable={gvmAvailable}
+        gvmReady={gvmReady}
+        gvmReadinessMessage={gvmReadinessMessage}
         onStartGvm={handleStartGvm}
         onPauseGvm={handlePauseGvm}
         onResumeGvm={handleResumeGvm}
@@ -1227,6 +1363,8 @@ export default function GraphPage() {
         isAnyPipelineRunning={isAnyPipelineRunning}
         isEmergencyPausing={isEmergencyPausing}
         tunnelStatus={tunnelStatus}
+        // Live scan progress
+        activeScans={activeScans}
         // Agent status
         agentActiveCount={agentSummary.activeCount}
         agentConversations={agentSummary.conversations}
@@ -1237,6 +1375,17 @@ export default function GraphPage() {
         onClose={() => setIsOtherScansModalOpen(false)}
         hasReconData={hasReconData}
         hasGithubToken={hasGithubToken}
+        // GVM
+        onStartGvm={handleStartGvm}
+        onPauseGvm={handlePauseGvm}
+        onResumeGvm={handleResumeGvm}
+        onStopGvm={handleStopGvm}
+        onDownloadGvmJSON={handleDownloadGvmJSON}
+        onToggleGvmLogs={handleToggleGvmLogs}
+        gvmStatus={gvmState?.status || 'idle'}
+        gvmAvailable={gvmAvailable}
+        hasGvmData={hasGvmData}
+        isGvmLogsOpen={activeLogsDrawer === 'gvm'}
         // GitHub Hunt
         onStartGithubHunt={handleStartGithubHunt}
         onPauseGithubHunt={handlePauseGithubHunt}
@@ -1257,6 +1406,12 @@ export default function GraphPage() {
         trufflehogStatus={trufflehogState?.status || 'idle'}
         hasTrufflehogData={hasTrufflehogData}
         isTrufflehogLogsOpen={activeLogsDrawer === 'trufflehog'}
+        // Partial recon scans
+        partialReconRuns={allPartialReconRuns}
+        activePartialReconRunId={activePartialReconRunId}
+        onStartPartialScan={handleStartPartialScan}
+        onStopPartialScan={handleStopPartialScan}
+        onTogglePartialScanLogs={handleTogglePartialScanLogs}
       />
 
       <ViewTabs
@@ -1408,7 +1563,11 @@ export default function GraphPage() {
           ) : activeView === 'terminal' ? (
             <KaliTerminal userId={userId} projectId={projectId} />
           ) : activeView === 'attack' ? (
-            <AttackPanel projectId={projectId} />
+            <AttackPanel
+              projectId={projectId}
+              onTogglePartialReconLogs={handleTogglePartialReconLogs}
+              onRequestReverseShell={handleRequestReverseShell}
+            />
           ) : activeView === 'roe' ? (
             <RoeViewer
               projectId={projectId || ''}
@@ -1431,6 +1590,7 @@ export default function GraphPage() {
         onPause={handlePauseRecon}
         onResume={handleResumeRecon}
         onStop={handleStopRecon}
+        isConnected={reconLogsConnected}
       />
 
       <ReconLogsDrawer
@@ -1448,6 +1608,7 @@ export default function GraphPage() {
         title="GVM Vulnerability Scan Logs"
         phases={GVM_PHASES}
         totalPhases={4}
+        isConnected={gvmLogsConnected}
       />
 
       <ReconLogsDrawer
@@ -1465,6 +1626,7 @@ export default function GraphPage() {
         title="GitHub Secret Hunt Logs"
         phases={GITHUB_HUNT_PHASES}
         totalPhases={3}
+        isConnected={githubHuntLogsConnected}
       />
 
       <ReconLogsDrawer
@@ -1482,6 +1644,7 @@ export default function GraphPage() {
         title="TruffleHog Secret Scanner Logs"
         phases={TRUFFLEHOG_PHASES}
         totalPhases={3}
+        isConnected={trufflehogLogsConnected}
       />
 
       {allPartialReconRuns.map(run => (
@@ -1500,6 +1663,7 @@ export default function GraphPage() {
           phases={PARTIAL_RECON_PHASE_MAP[run.tool_id || ''] || ['Running']}
           totalPhases={(PARTIAL_RECON_PHASE_MAP[run.tool_id || ''] || ['Running']).length}
           hidePhaseProgress
+          isConnected={activePartialReconRunId === run.run_id ? partialReconLogsConnected : false}
         />
       ))}
 

@@ -10,9 +10,41 @@ import httpx
 from state import AgentState
 from orchestrator_helpers.json_utils import json_dumps_safe
 from orchestrator_helpers.config import get_identifiers
+from orchestrator_helpers.error_class import classify_error_class
 from tools import set_tenant_context, set_phase_context, set_graph_view_context
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Retry configuration ──────────────────────────────────────────────────
+# Tools whose failures are often transient and worth retrying.
+_RETRYABLE_TOOLS: set[str] = {
+    "execute_nmap", "execute_naabu", "execute_httpx", "execute_nuclei",
+    "execute_subfinder", "execute_amass", "execute_gau", "execute_katana",
+    "execute_ffuf", "execute_arjun", "execute_jsluice", "execute_wpscan",
+    "execute_hydra", "execute_curl",
+}
+# Non-retryable even if listed above — these are idempotent / zero-side-effect
+# but tend to produce the same failure on retry, so just fail fast.
+_NON_RETRYABLE_OVERRIDE: set[str] = set()
+
+_MAX_RETRIES = 2  # first attempt + 2 retries = 3 total tries
+_RETRY_BASE_DELAY_S = 2.0  # exponential backoff: 2s, 4s
+
+
+def _is_retryable(tool_name: str, error_msg: str, error_class: str | None) -> bool:
+    """Decide whether a tool failure is worth retrying."""
+    if tool_name in _NON_RETRYABLE_OVERRIDE:
+        return False
+    if tool_name not in _RETRYABLE_TOOLS:
+        return False
+    # Don't retry user-cancelled or parse-time crashes
+    if error_class in ("USER_CANCELLED", "PARSE_CRASH"):
+        return False
+    # Don't retry 4xx auth issues
+    if error_class == "HTTP_ERROR" and error_msg and "403" in error_msg:
+        return False
+    return True
 
 
 # Patterns that indicate an MCP-server-wrapped failure returned with success=True.
@@ -141,12 +173,28 @@ async def execute_tool_node(
     )
     is_long_running_hydra = (tool_name == "execute_hydra")
 
+    # ─── Apply scan profile timing modifiers ────────────────────────────
+    try:
+        from scan_profiles import apply_profile
+        _profile = str(get_setting("SCAN_PROFILE", "normal"))
+        tool_args = apply_profile(tool_name, tool_args, profile=_profile)
+        step_data["scan_profile"] = _profile
+    except Exception:
+        pass  # Best-effort; don't break execution on import failure
+    # ──────────────────────────────────────────────────────────────────────
+
     # Execute the tool (with progress streaming for long-running commands)
     from orchestrator_helpers.member_streaming import resolve_streaming_callback
     import time as _time
     streaming_cb = resolve_streaming_callback(streaming_callbacks, session_id)
     _tool_t0 = _time.monotonic()
     user_stopped = False
+
+    # Retry loop for non-streaming tool executions
+    _attempt = 0
+    _max_attempts = 1  # default: no retry
+    result = None
+
     if is_long_running_msf and streaming_cb:
         logger.info(f"[{user_id}/{project_id}/{session_id}] Using execute_with_progress for long-running MSF command")
         _tool_coro = tool_executor.execute_with_progress(
@@ -155,6 +203,30 @@ async def execute_tool_node(
             phase,
             progress_callback=streaming_cb.on_tool_output_chunk
         )
+        _tool_task = asyncio.ensure_future(_tool_coro)
+        if streaming_cb and hasattr(streaming_cb, "register_tool_task"):
+            try:
+                streaming_cb.register_tool_task(tool_name, None, None, _tool_task)
+            except Exception as e:
+                logger.debug(f"register_tool_task failed: {e}")
+        try:
+            try:
+                result = await _tool_task
+            except asyncio.CancelledError:
+                _cur = asyncio.current_task()
+                outer_being_cancelled = bool(_cur and _cur.cancelling())
+                if outer_being_cancelled:
+                    if not _tool_task.done():
+                        _tool_task.cancel()
+                    raise
+                user_stopped = True
+                result = {"success": False, "error": "Stopped by user", "output": "Stopped by user"}
+        finally:
+            if streaming_cb and hasattr(streaming_cb, "unregister_tool_task"):
+                try:
+                    streaming_cb.unregister_tool_task(tool_name, None, None)
+                except Exception:
+                    pass
     elif is_long_running_hydra and streaming_cb:
         logger.info(f"[{user_id}/{project_id}/{session_id}] Using execute_with_progress for Hydra brute force")
         _tool_coro = tool_executor.execute_with_progress(
@@ -164,45 +236,83 @@ async def execute_tool_node(
             progress_callback=streaming_cb.on_tool_output_chunk,
             progress_url=os.environ.get('MCP_HYDRA_PROGRESS_URL', 'http://kali-sandbox:8014/progress')
         )
-    else:
-        _tool_coro = tool_executor.execute(tool_name, tool_args, phase)
-
-    # Wrap in a cancellable inner task so the per-tool Stop button can cancel
-    # just this tool without tearing down the whole orchestrator run. If the
-    # user clicks Stop, we recover the CancelledError here, mark the tool as
-    # failed, and let the agent loop proceed to the next iteration normally.
-    _tool_task = asyncio.ensure_future(_tool_coro)
-    if streaming_cb and hasattr(streaming_cb, "register_tool_task"):
-        try:
-            streaming_cb.register_tool_task(tool_name, None, None, _tool_task)
-        except Exception as e:
-            logger.debug(f"register_tool_task failed: {e}")
-    try:
-        try:
-            result = await _tool_task
-        except asyncio.CancelledError:
-            # See execute_plan_node for the rationale: use current_task().cancelling()
-            # (not _tool_task.cancelled()) to tell a per-tool Stop apart from
-            # an outer cancel. Python propagates an outer cancel down into
-            # awaited tasks, so both scenarios leave _tool_task cancelled.
-            _cur = asyncio.current_task()
-            outer_being_cancelled = bool(_cur and _cur.cancelling())
-            if outer_being_cancelled:
-                if not _tool_task.done():
-                    _tool_task.cancel()
-                raise
-            user_stopped = True
-            result = {
-                "success": False,
-                "error": "Stopped by user",
-                "output": "Stopped by user",
-            }
-    finally:
-        if streaming_cb and hasattr(streaming_cb, "unregister_tool_task"):
+        _tool_task = asyncio.ensure_future(_tool_coro)
+        if streaming_cb and hasattr(streaming_cb, "register_tool_task"):
             try:
-                streaming_cb.unregister_tool_task(tool_name, None, None)
-            except Exception:
-                pass
+                streaming_cb.register_tool_task(tool_name, None, None, _tool_task)
+            except Exception as e:
+                logger.debug(f"register_tool_task failed: {e}")
+        try:
+            try:
+                result = await _tool_task
+            except asyncio.CancelledError:
+                _cur = asyncio.current_task()
+                outer_being_cancelled = bool(_cur and _cur.cancelling())
+                if outer_being_cancelled:
+                    if not _tool_task.done():
+                        _tool_task.cancel()
+                    raise
+                user_stopped = True
+                result = {"success": False, "error": "Stopped by user", "output": "Stopped by user"}
+        finally:
+            if streaming_cb and hasattr(streaming_cb, "unregister_tool_task"):
+                try:
+                    streaming_cb.unregister_tool_task(tool_name, None, None)
+                except Exception:
+                    pass
+    else:
+        # Standard execution with retry support
+        _max_attempts = 1 + _MAX_RETRIES
+        while _attempt < _max_attempts:
+            _attempt += 1
+            if _attempt > 1:
+                _delay = _RETRY_BASE_DELAY_S * (2 ** (_attempt - 2))
+                logger.info(f"[{user_id}/{project_id}/{session_id}] Retry {_attempt-1}/{_MAX_RETRIES} for {tool_name} after {_delay:.1f}s")
+                await asyncio.sleep(_delay)
+
+            _tool_coro = tool_executor.execute(tool_name, tool_args, phase)
+            _tool_task = asyncio.ensure_future(_tool_coro)
+            if streaming_cb and hasattr(streaming_cb, "register_tool_task"):
+                try:
+                    streaming_cb.register_tool_task(tool_name, None, None, _tool_task)
+                except Exception as e:
+                    logger.debug(f"register_tool_task failed: {e}")
+            try:
+                try:
+                    result = await _tool_task
+                except asyncio.CancelledError:
+                    _cur = asyncio.current_task()
+                    outer_being_cancelled = bool(_cur and _cur.cancelling())
+                    if outer_being_cancelled:
+                        if not _tool_task.done():
+                            _tool_task.cancel()
+                        raise
+                    user_stopped = True
+                    result = {"success": False, "error": "Stopped by user", "output": "Stopped by user"}
+                    break  # don't retry user-stopped
+            finally:
+                if streaming_cb and hasattr(streaming_cb, "unregister_tool_task"):
+                    try:
+                        streaming_cb.unregister_tool_task(tool_name, None, None)
+                    except Exception:
+                        pass
+
+            # Check if we should retry
+            if result and not result.get("success", False):
+                error_class = classify_error_class(
+                    success=False,
+                    tool_output=result.get("output", ""),
+                    error_message=result.get("error", ""),
+                    duration_ms=int((_time.monotonic() - _tool_t0) * 1000) if _attempt == 1 else 0,
+                    tool_name=tool_name,
+                )
+                if _attempt < _max_attempts and _is_retryable(tool_name, result.get("error", ""), error_class):
+                    logger.info(f"Retryable failure ({error_class}) — will retry")
+                    continue
+            break  # success or non-retryable failure
+        # Record retry count on step_data
+        if _attempt > 1:
+            step_data["retry_count"] = _attempt - 1
     # Record wall-clock duration on the step so the UI can show "17.3s" on
     # the tool card. Without this, emit_streaming_events had nothing to
     # pass into on_tool_complete(duration_ms=...) and the frontend reducer
@@ -235,7 +345,6 @@ async def execute_tool_node(
     # Diagnostic classification: distinguishes a shell-quoting glitch from a
     # real 4xx from a 5xx-in-3ms parse-time crash. Surfaced in chain context
     # so the LLM can see WHICH kind of failure happened, not just THAT one did.
-    from orchestrator_helpers.error_class import classify_error_class
     step_data["error_class"] = classify_error_class(
         success=step_data.get("success", False),
         tool_output=step_data.get("tool_output"),
@@ -291,9 +400,30 @@ async def execute_tool_node(
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------
+    # Structured output parsing: extract ports, technologies, vulns, etc.
+    # from raw tool output so they can be merged into target_info without
+    # relying on the LLM to manually extract facts.
+    # ------------------------------------------------------------------
+    parsed = None
+    if tool_output and success:
+        from output_parsers import parse_tool_output
+        parsed = parse_tool_output(tool_name, tool_output)
+        if parsed:
+            logger.info(
+                f"PARSED [{tool_name}]: "
+                f"{len(parsed.get('ports', []))} ports, "
+                f"{len(parsed.get('technologies', []))} techs, "
+                f"{len(parsed.get('vulnerabilities', []))} vulns, "
+                f"{len(parsed.get('credentials', []))} creds, "
+                f"{len(parsed.get('findings', []))} findings"
+            )
+
     updates = {
         "_current_step": step_data,
         "_tool_result": result or {"success": False, "error": "No result"},
     }
+    if parsed:
+        updates["_parsed_findings"] = parsed
     updates.update(extra_updates)
     return updates

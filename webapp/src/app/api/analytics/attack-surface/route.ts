@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/app/api/graph/neo4j'
 
 function toNum(val: unknown): number {
-  if (val && typeof val === 'object' && 'low' in val) return (val as { low: number }).low
+  if (val && typeof val === 'object') {
+    if ('low' in val) return (val as { low: number }).low
+    const maybeInt = val as { toNumber?: () => number }
+    if (typeof maybeInt.toNumber === 'function') return maybeInt.toNumber()
+  }
   return typeof val === 'number' ? val : 0
 }
 
@@ -41,8 +45,14 @@ export async function GET(request: NextRequest) {
     }))
 
     // Q3: Technology breakdown with CVE counts
+    // Technologies may be linked directly to BaseURL or via Endpoint nodes.
     const techResult = await session.run(
-      `MATCH (:BaseURL {project_id: $pid})-[:USES_TECHNOLOGY]->(t:Technology)
+      `MATCH (b:BaseURL {project_id: $pid})
+       OPTIONAL MATCH (b)-[:USES_TECHNOLOGY]->(t1:Technology)
+       OPTIONAL MATCH (b)-[:HAS_ENDPOINT]->(:Endpoint)-[:USES_TECHNOLOGY]->(t2:Technology)
+       WITH collect(DISTINCT t1) + collect(DISTINCT t2) AS techs
+       UNWIND techs AS t
+       WITH t WHERE t IS NOT NULL
        OPTIONAL MATCH (t)-[:HAS_KNOWN_CVE]->(c:CVE)
        RETURN t.name AS name, t.version AS version, count(DISTINCT c) AS cveCount
        ORDER BY cveCount DESC, name ASC`,
@@ -66,8 +76,14 @@ export async function GET(request: NextRequest) {
     }))
 
     // Q5: Security headers — actual headers from graph grouped by is_security_header
+    // Headers may be attached directly to BaseURL or via Endpoint nodes.
     const secHdrResult = await session.run(
-      `MATCH (:BaseURL {project_id: $pid})-[:HAS_HEADER]->(h:Header)
+      `MATCH (b:BaseURL {project_id: $pid})
+       OPTIONAL MATCH (b)-[:HAS_HEADER]->(h1:Header)
+       OPTIONAL MATCH (b)-[:HAS_ENDPOINT]->(:Endpoint)-[:HAS_HEADER]->(h2:Header)
+       WITH collect(DISTINCT h1) + collect(DISTINCT h2) AS headers
+       UNWIND headers AS h
+       WITH h WHERE h IS NOT NULL
        RETURN h.name AS name,
          COALESCE(h.is_security_header, false) AS isSecurity,
          count(h) AS count
@@ -82,7 +98,12 @@ export async function GET(request: NextRequest) {
 
     // Q6: Header categories
     const hdrCatResult = await session.run(
-      `MATCH (:BaseURL {project_id: $pid})-[:HAS_HEADER]->(h:Header)
+      `MATCH (b:BaseURL {project_id: $pid})
+       OPTIONAL MATCH (b)-[:HAS_HEADER]->(h1:Header)
+       OPTIONAL MATCH (b)-[:HAS_ENDPOINT]->(:Endpoint)-[:HAS_HEADER]->(h2:Header)
+       WITH collect(DISTINCT h1) + collect(DISTINCT h2) AS headers
+       UNWIND headers AS h
+       WITH h WHERE h IS NOT NULL
        RETURN CASE
          WHEN h.is_security_header = true THEN 'Security'
          WHEN h.reveals_technology = true THEN 'Tech-Revealing'

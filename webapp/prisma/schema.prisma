@@ -552,7 +552,7 @@ model Project {
 
   // ========== GRAPHQL COP (external misconfig scanner) ==========
   graphqlCopEnabled                   Boolean @default(false) @map("graphql_cop_enabled")
-  graphqlCopDockerImage               String  @default("dolevf/graphql-cop:1.14") @map("graphql_cop_docker_image")
+  graphqlCopDockerImage               String  @default("redamon-graphql-cop:1.16") @map("graphql_cop_docker_image")
   graphqlCopTimeout                   Int     @default(120)   @map("graphql_cop_timeout")
   graphqlCopForceScan                 Boolean @default(false) @map("graphql_cop_force_scan")
   graphqlCopDebug                     Boolean @default(false) @map("graphql_cop_debug")

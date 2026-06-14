@@ -194,6 +194,7 @@ async def lifespan(app: FastAPI):
 
     yield
     logger.info("Shutting down Recon Orchestrator...")
+    await container_manager.shutdown()
     await container_manager.cleanup()
 
 

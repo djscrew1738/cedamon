@@ -16,6 +16,25 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { FileSystemDrawer } from './FileSystemDrawer'
 
+const alertSpies = vi.hoisted(() => ({
+  alert: vi.fn(async () => {}),
+  alertError: vi.fn(async () => {}),
+  alertWarning: vi.fn(async () => {}),
+  confirm: vi.fn(async () => true),
+  dangerConfirm: vi.fn(async () => true),
+}))
+vi.mock('@/components/ui', async (orig) => {
+  const real = (await orig()) as Record<string, unknown>
+  return {
+    ...real,
+    useAlertModal: () => alertSpies,
+  }
+})
+
+function renderDrawer(ui: React.ReactElement) {
+  return render(ui)
+}
+
 vi.mock('@/components/ui/Drawer', () => ({
   Drawer: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="drawer">{children}</div>
@@ -60,7 +79,7 @@ const mixedSample = [
 
 describe('FileSystemDrawer Stage D: selectAll wiring', () => {
   test('there is no UI affordance for select-all (yet)', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     // Each entry has one checkbox -> 3 total. No additional "select all" box.
     expect(screen.getAllByRole('checkbox')).toHaveLength(3)
@@ -77,7 +96,7 @@ describe('FileSystemDrawer Stage D: selectAll wiring', () => {
 
 describe('FileSystemDrawer Stage D: selection persistence', () => {
   test('selection survives a filter change (hidden entries stay selected)', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])  // alpha.txt
     fireEvent.click(screen.getAllByRole('checkbox')[1])  // beta.txt
@@ -93,7 +112,7 @@ describe('FileSystemDrawer Stage D: selection persistence', () => {
   })
 
   test('selection survives a sort change', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])  // alpha.txt
     expect(screen.getByText('1 selected')).toBeInTheDocument()
@@ -102,7 +121,7 @@ describe('FileSystemDrawer Stage D: selection persistence', () => {
   })
 
   test('bulk delete includes filtered-out selected entries', async () => {
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])  // alpha.txt
     fireEvent.click(screen.getAllByRole('checkbox')[1])  // beta.txt
@@ -136,7 +155,7 @@ describe('FileSystemDrawer Stage D: selection persistence', () => {
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
 
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])  // alpha.txt
     fireEvent.click(screen.getAllByRole('checkbox')[1])  // beta.txt
@@ -183,7 +202,7 @@ describe('FileSystemDrawer Stage D: bulk archive name', () => {
       return el
     })
 
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('report.md')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])
     fireEvent.click(screen.getByTitle(/Download selected/))
@@ -215,7 +234,7 @@ describe('FileSystemDrawer Stage D: bulk archive name', () => {
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
 
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])
     fireEvent.click(screen.getAllByRole('checkbox')[1])
@@ -237,7 +256,7 @@ describe('FileSystemDrawer Stage D: filter + sort compose', () => {
   test('sort applies AFTER filter (filtered subset is sorted)', async () => {
     // Three .txt files (different sizes). Filter to .txt only (drops .bin),
     // then sort by Size asc -> alpha(50), beta(200).
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.change(screen.getByPlaceholderText('Filter files…'), {
       target: { value: '.txt' },
@@ -268,7 +287,7 @@ describe('FileSystemDrawer Stage D: bulk loading guard', () => {
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }
-    render(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
+    renderDrawer(<FileSystemDrawer isOpen={true} onClose={() => {}} projectId="p1" />)
     await waitFor(() => expect(screen.getByText('alpha.txt')).toBeInTheDocument())
     fireEvent.click(screen.getAllByRole('checkbox')[0])
     fireEvent.click(screen.getByTitle(/Delete selected/))

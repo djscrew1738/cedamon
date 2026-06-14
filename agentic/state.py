@@ -125,6 +125,16 @@ class TargetInfo(BaseModel):
     sessions: List[int] = Field(default_factory=list)  # Metasploit session IDs
     # Session details for richer tracking: {session_id: {'type': str, 'connection': str, 'info': str}}
     session_details: Dict[int, dict] = Field(default_factory=dict)
+    # Extended recon fields populated by output parsers and graph queries.
+    subdomains: List[str] = Field(default_factory=list)
+    endpoints: List[str] = Field(default_factory=list)
+    parameters: List[str] = Field(default_factory=list)
+    js_files: List[str] = Field(default_factory=list)
+    live_hosts: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
+    subnets: List[str] = Field(default_factory=list)
+    cloud_provider: Optional[str] = None
+    container_foothold: bool = False
 
     def merge_from(self, other: "TargetInfo") -> "TargetInfo":
         """Merge new target info into existing, avoiding duplicates."""
@@ -140,6 +150,15 @@ class TargetInfo(BaseModel):
             credentials=self.credentials + [c for c in other.credentials if c not in self.credentials],
             sessions=list(set(self.sessions + other.sessions)),
             session_details=merged_session_details,
+            subdomains=list(dict.fromkeys(self.subdomains + other.subdomains)),
+            endpoints=list(dict.fromkeys(self.endpoints + other.endpoints)),
+            parameters=list(dict.fromkeys(self.parameters + other.parameters)),
+            js_files=list(dict.fromkeys(self.js_files + other.js_files)),
+            live_hosts=list(dict.fromkeys(self.live_hosts + other.live_hosts)),
+            users=list(dict.fromkeys(self.users + other.users)),
+            subnets=list(dict.fromkeys(self.subnets + other.subnets)),
+            cloud_provider=other.cloud_provider or self.cloud_provider,
+            container_foothold=self.container_foothold or other.container_foothold,
         )
 
 
@@ -270,6 +289,16 @@ class ExtractedTargetInfo(BaseModel):
     vulnerabilities: List[str] = Field(default_factory=list)
     credentials: List[dict] = Field(default_factory=list)
     sessions: List[int] = Field(default_factory=list)
+    # Extended recon fields available to output parsers.
+    subdomains: List[str] = Field(default_factory=list)
+    endpoints: List[str] = Field(default_factory=list)
+    parameters: List[str] = Field(default_factory=list)
+    js_files: List[str] = Field(default_factory=list)
+    live_hosts: List[str] = Field(default_factory=list)
+    users: List[str] = Field(default_factory=list)
+    subnets: List[str] = Field(default_factory=list)
+    cloud_provider: Optional[str] = None
+    container_foothold: bool = False
 
 
 class ChainFindingExtract(BaseModel):
@@ -1167,8 +1196,20 @@ def _format_single_step(step: dict, compact: bool = False) -> List[str]:
     tool_args = step.get("tool_args", {})
     success = "OK" if step.get("success", True) else "FAILED"
     error_msg = step.get("error_message")
+    error_class = step.get("error_class")
+    duration_ms = step.get("duration_ms")
+    scan_profile = step.get("scan_profile")
+    retry_count = step.get("retry_count")
 
     lines.append(f"--- Step {iteration} [{phase}] - {success} ---")
+    if scan_profile and scan_profile != "normal":
+        lines.append(f"Profile: {scan_profile}")
+    if retry_count:
+        lines.append(f"Retries: {retry_count}")
+    if duration_ms is not None and duration_ms >= 100:
+        lines.append(f"Duration: {duration_ms}ms")
+    if error_class:
+        lines.append(f"Error class: {error_class}")
     lines.append(f"Thought: {thought[:10000]}..." if len(thought) > 10000 else f"Thought: {thought}")
 
     if tool and tool != "none":

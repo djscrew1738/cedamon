@@ -87,6 +87,10 @@ describe('PARTIAL_RECON_SUPPORTED_TOOLS', () => {
     expect(PARTIAL_RECON_SUPPORTED_TOOLS.has('SubdomainTakeover')).toBe(true)
   })
 
+  test('contains BadDns', () => {
+    expect(PARTIAL_RECON_SUPPORTED_TOOLS.has('BadDns')).toBe(true)
+  })
+
   test('contains VhostSni', () => {
     expect(PARTIAL_RECON_SUPPORTED_TOOLS.has('VhostSni')).toBe(true)
   })
@@ -194,6 +198,11 @@ describe('PARTIAL_RECON_PHASE_MAP', () => {
   test('has SubdomainTakeover phases', () => {
     expect(PARTIAL_RECON_PHASE_MAP['SubdomainTakeover']).toHaveLength(1)
     expect(PARTIAL_RECON_PHASE_MAP['SubdomainTakeover'][0]).toBe('Subdomain Takeover Detection')
+  })
+
+  test('has BadDns phases', () => {
+    expect(PARTIAL_RECON_PHASE_MAP['BadDns']).toHaveLength(1)
+    expect(PARTIAL_RECON_PHASE_MAP['BadDns'][0]).toBe('BadDNS Takeover Detection')
   })
 
   test('has VhostSni phases', () => {

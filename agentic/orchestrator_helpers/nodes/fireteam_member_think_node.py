@@ -30,6 +30,7 @@ from orchestrator_helpers.productivity import (
     downgrade_verdict_to_no_progress,
 )
 from project_settings import get_setting, get_allowed_tools_for_phase, DANGEROUS_TOOLS
+from tool_recommender import recommend_tools, extract_already_run, format_recommendations
 from tools import set_tenant_context, set_phase_context, set_graph_view_context
 
 logger = logging.getLogger(__name__)
@@ -321,6 +322,15 @@ are all surfaced — read this first before planning your own actions.
 
 ## Your local progress in this run
 {local_chain_context}
+
+### Recommended Next Tools
+{tool_recommendations}
+
+**How to use the recommendations above:**
+- These are structured expert-heuristic playbooks derived from the current target context (technologies, open ports, CVEs, attack phase, and classified attack path).
+- Treat them as your default next action unless your local progress or the previous tool output gives a compelling reason to deviate.
+- Only choose tools that are allowed in the current phase. If a recommendation is outside your declared primary tools, you MAY still use it, but you MUST include a `tool_expansion_reason` field explaining why your primary tools cannot accomplish this step.
+- Use `plan_tools` to run independent recommendations in parallel when they do not depend on each other's output.
 
 ## Available tools (filtered by your declared tools and current phase)
 {tool_list}
@@ -730,6 +740,30 @@ def _build_member_prompt(state: FireteamMemberState) -> str:
 
     pending_output_section = _build_pending_output_section(state)
 
+    # Heuristic tool recommendations: same structured expert playbooks the root
+    # agent receives, but scoped to the member's task. Already-run detection
+    # combines the member's own trace with the parent snapshot so we don't
+    # suggest tools the engagement has already exhausted.
+    _profile = str(get_setting("SCAN_PROFILE", "normal"))
+    try:
+        _target_info_for_recs = target_info
+        _member_trace = state.get("execution_trace") or []
+        _parent_trace = state.get("_parent_execution_trace") or []
+        _already_run = extract_already_run(list(_member_trace) + list(_parent_trace))
+        _recs = recommend_tools(
+            technologies=_target_info_for_recs.get("technologies", []),
+            already_run=_already_run,
+            phase=phase,
+            ports=_target_info_for_recs.get("open_ports") or _target_info_for_recs.get("ports", []),
+            target_info=_target_info_for_recs,
+            profile=_profile,
+            attack_path_type=state.get("attack_path_type", ""),
+        )
+        _recommendations_formatted = format_recommendations(_recs)
+    except Exception as exc:
+        logger.warning("fireteam_member heuristic recommendation failed: %s", exc)
+        _recommendations_formatted = ""
+
     # Productivity audit: show the member its own recent same-pattern fingerprints
     # so claiming "confirmation" 10x in a row becomes visibly dishonest. Also
     # surface the prior-iteration downgrade reason if any. Empty strings until
@@ -789,6 +823,7 @@ def _build_member_prompt(state: FireteamMemberState) -> str:
         tool_list=tool_list,
         tool_args_section=tool_args_section,
         pending_output_section=pending_output_section,
+        tool_recommendations=_recommendations_formatted or "  (no recommendations yet)",
     )
     # Prepend the budget prefix (if any). Sits ABOVE the mission header so the
     # LLM reads it before anything else.

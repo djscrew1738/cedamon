@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { orchestratorFetch } from '@/lib/orchestratorFetch'
 import prisma from '@/lib/prisma'
 import { existsSync } from 'fs'
 import path from 'path'
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Call recon orchestrator to start the GVM scan
-    const response = await fetch(`${RECON_ORCHESTRATOR_URL}/gvm/${projectId}/start`, {
+    const response = await orchestratorFetch(`${RECON_ORCHESTRATOR_URL}/gvm/${projectId}/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

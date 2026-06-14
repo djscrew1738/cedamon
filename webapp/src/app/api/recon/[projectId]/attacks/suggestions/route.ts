@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/app/api/graph/neo4j'
+import prisma from '@/lib/prisma'
+
+function toNum(val: unknown): number {
+  if (val && typeof val === 'object') {
+    if ('low' in val) return (val as { low: number }).low
+    const maybeInt = val as { toNumber?: () => number }
+    if (typeof maybeInt.toNumber === 'function') return maybeInt.toNumber()
+  }
+  return typeof val === 'number' ? val : 0
+}
 
 // ---------------------------------------------------------------------------
 // Attack Category & Type constants
@@ -11,12 +21,12 @@ export interface AttackSuggestion {
   description: string
   toolId: string
   category: 'recon' | 'scan' | 'exploit' | 'enrich'
-  rationale: string          // why this attack is suggested (shown to user)
-  priority: number           // 0=critical, 1=high, 2=medium, 3=low
+  rationale: string
+  priority: number
   graphInputs: Record<string, string>
-  prerequisites: string[]    // human-readable list of what's needed
-  alreadyRun: boolean        // true if a completed run for this tool exists
-  matchedNodeCount: number   // how many graph nodes triggered this suggestion
+  prerequisites: string[]
+  alreadyRun: boolean
+  matchedNodeCount: number
 }
 
 // ---------------------------------------------------------------------------
@@ -32,13 +42,11 @@ interface SuggestionDef {
   priority: number
   /** Cypher that returns `{ count }` — number of matching nodes that justify this attack. */
   cypher: string
-  /** Optional: Cypher that returns `{ count }` — number of completed runs for this tool (to avoid re-suggesting). */
+  /** Optional: Cypher that returns `{ count }` — number of output nodes that indicate this tool has already run. */
   alreadyRunCypher?: string
-  makeGraphInputs: (projectId: string) => Record<string, string>
+  makeGraphInputs: (projectId: string, domain: string) => Record<string, string>
   rationale: string
   prerequisites: string[]
-  /** Category key used in alreadyRunCypher for looking up completed runs */
-  runToolId?: string
 }
 
 const SUGGESTIONS: SuggestionDef[] = [
@@ -50,39 +58,50 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'scan',
     priority: 0,
     cypher: `
-      MATCH (n:DomainNode) WHERE n.projectId = $projectId
-      WITH n
-      MATCH (n)-[:HAS_SUBDOMAIN]->(s:SubdomainNode) WHERE s.projectId = $projectId
+      MATCH (s:Subdomain {project_id: $projectId})
       RETURN count(DISTINCT s) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'SubdomainTakeover', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (v:Vulnerability {project_id: $projectId, source: 'takeover_scan'})
+      RETURN count(v) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Subdomains were discovered but not yet checked for cloud takeover risks.',
     prerequisites: ['Discovered subdomains', 'DNS resolution data'],
-    runToolId: 'SubdomainTakeover',
   },
   {
     id: 'nuclei-scan',
     title: 'Nuclei Vulnerability Scan',
-    description: 'Run Nuclei vulnerability scanner against all discovered HTTP endpoints using built-in and custom templates',
+    description: 'Run Nuclei vulnerability scanner against discovered HTTP endpoints using built-in and custom templates',
     toolId: 'Nuclei',
     category: 'scan',
     priority: 0,
     cypher: `
-      MATCH (n:HttpNode) WHERE n.projectId = $projectId AND n.status = 'live'
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      RETURN count(DISTINCT b) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Nuclei', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (v:Vulnerability {project_id: $projectId, source: 'nuclei'})
+      RETURN count(v) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
-    rationale: 'Live HTTP endpoints were discovered — Nuclei can find CVEs and misconfigurations.',
-    prerequisites: ['Live HTTP endpoints', 'Nuclei templates'],
-    runToolId: 'Nuclei',
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
+    rationale: 'Live HTTP services were discovered — Nuclei can find CVEs and misconfigurations.',
+    prerequisites: ['Live HTTP endpoints'],
+  },
+  {
+    id: 'masscan-wide',
+    title: 'Masscan Wide Port Scan',
+    description: 'Run a high-speed Masscan across discovered IPs to find open ports on common services',
+    toolId: 'Masscan',
+    category: 'scan',
+    priority: 1,
+    cypher: `
+      MATCH (i:IP {project_id: $projectId})
+      RETURN count(DISTINCT i) AS count
+    `,
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
+    rationale: 'Target IPs are known — Masscan can rapidly discover open ports across the network attack surface.',
+    prerequisites: ['Target IP addresses'],
   },
   {
     id: 'nmap-service',
@@ -92,17 +111,16 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'scan',
     priority: 1,
     cypher: `
-      MATCH (n:PortNode) WHERE n.projectId = $projectId AND n.state = 'open'
-      RETURN count(DISTINCT n) AS count
+      MATCH (p:Port {project_id: $projectId, state: 'open'})
+      RETURN count(DISTINCT p) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Nmap', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (p:Port {project_id: $projectId, nmap_scanned: true})
+      RETURN count(p) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Open ports were discovered — Nmap can identify service versions and OS.',
     prerequisites: ['Open ports discovered'],
-    runToolId: 'Nmap',
   },
   {
     id: 'js-recon',
@@ -112,17 +130,16 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'enrich',
     priority: 1,
     cypher: `
-      MATCH (n:JsFileNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      RETURN count(DISTINCT b) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'JsRecon', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (jf:JsReconFinding {project_id: $projectId, finding_type: 'js_file'})
+      RETURN count(jf) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
-    rationale: 'JavaScript files were found — JS Recon can extract hidden endpoints and secrets.',
-    prerequisites: ['JavaScript files discovered'],
-    runToolId: 'JsRecon',
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
+    rationale: 'Live HTTP services were found — JS Recon can extract hidden endpoints and secrets.',
+    prerequisites: ['Live HTTP endpoints'],
   },
   {
     id: 'jsluice-analysis',
@@ -132,17 +149,16 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'enrich',
     priority: 1,
     cypher: `
-      MATCH (n:JsFileNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      RETURN count(DISTINCT b) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Jsluice', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (s:Secret {project_id: $projectId, source: 'jsluice'})
+      RETURN count(s) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
-    rationale: 'JavaScript files are present — Jsluice extracts secrets and API endpoints.',
-    prerequisites: ['JavaScript files discovered'],
-    runToolId: 'Jsluice',
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
+    rationale: 'Live HTTP services are present — Jsluice extracts secrets and API endpoints.',
+    prerequisites: ['Live HTTP endpoints'],
   },
   {
     id: 'katana-crawl',
@@ -152,17 +168,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'recon',
     priority: 1,
     cypher: `
-      MATCH (n:HttpNode) WHERE n.projectId = $projectId AND n.status = 'live'
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      RETURN count(DISTINCT b) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Katana', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Live endpoints exist — crawling discovers hidden API routes and pages.',
     prerequisites: ['Live HTTP endpoints'],
-    runToolId: 'Katana',
   },
   {
     id: 'arjun-params',
@@ -172,17 +183,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'recon',
     priority: 2,
     cypher: `
-      MATCH (n:HttpNode) WHERE n.projectId = $projectId AND n.status = 'live'
-      RETURN count(DISTINCT n) AS count
+      MATCH (e:Endpoint {project_id: $projectId, is_live: true})
+      RETURN count(DISTINCT e) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Arjun', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Live endpoints may have undocumented parameters — Arjun finds them via bruteforce.',
     prerequisites: ['Live HTTP endpoints'],
-    runToolId: 'Arjun',
   },
   {
     id: 'vhost-discovery',
@@ -192,17 +198,16 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'recon',
     priority: 2,
     cypher: `
-      MATCH (n:IpNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (i:IP {project_id: $projectId})
+      RETURN count(DISTINCT i) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'VhostSni', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (v:Vulnerability {project_id: $projectId, source: 'vhost_sni_enum'})
+      RETURN count(v) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Target IPs are known — VHost discovery can reveal hidden apps and admin panels.',
     prerequisites: ['Target IP addresses'],
-    runToolId: 'VhostSni',
   },
   {
     id: 'graphql-scan',
@@ -212,18 +217,13 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'scan',
     priority: 1,
     cypher: `
-      MATCH (n:HttpNode) WHERE n.projectId = $projectId
-      AND (toLower(n.url) CONTAINS 'graphql' OR toLower(n.url) CONTAINS 'gql')
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      WHERE toLower(b.url) CONTAINS 'graphql' OR toLower(b.url) CONTAINS 'gql'
+      RETURN count(DISTINCT b) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'GraphqlScan', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'GraphQL endpoints were detected — they may have introspection enabled or be vulnerable.',
     prerequisites: ['GraphQL endpoints detected'],
-    runToolId: 'GraphqlScan',
   },
   {
     id: 'shodan-enrich',
@@ -233,17 +233,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'enrich',
     priority: 2,
     cypher: `
-      MATCH (n:IpNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (i:IP {project_id: $projectId})
+      RETURN count(DISTINCT i) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Shodan', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'IPs are known — Shodan can enrich them with service intelligence and CVEs.',
     prerequisites: ['Target IPs', 'Shodan API key'],
-    runToolId: 'Shodan',
   },
   {
     id: 'osint-enrich',
@@ -253,17 +248,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'enrich',
     priority: 3,
     cypher: `
-      MATCH (n:DomainNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (d:Domain {project_id: $projectId})
+      RETURN count(DISTINCT d) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'OsintEnrichment', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'A target domain is known — OSINT enrichment gathers additional intelligence from public sources.',
     prerequisites: ['Target domain', 'API keys (Censys, FOFA, OTX, etc.)'],
-    runToolId: 'OsintEnrichment',
   },
   {
     id: 'urlscan-enrich',
@@ -273,17 +263,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'enrich',
     priority: 3,
     cypher: `
-      MATCH (n:DomainNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (d:Domain {project_id: $projectId})
+      RETURN count(DISTINCT d) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Urlscan', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'URLScan.io can provide historical screenshots and related hosts for the target domain.',
     prerequisites: ['Target domain'],
-    runToolId: 'Urlscan',
   },
   {
     id: 'ffuf-fuzz',
@@ -293,10 +278,10 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'recon',
     priority: 2,
     cypher: `
-      MATCH (n:HttpNode) WHERE n.projectId = $projectId AND n.status = 'live'
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      RETURN count(DISTINCT b) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Live endpoints benefit from directory bruteforcing to find hidden resources.',
     prerequisites: ['Live HTTP endpoints', 'Wordlist'],
   },
@@ -308,17 +293,16 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'scan',
     priority: 2,
     cypher: `
-      MATCH (n:HttpNode) WHERE n.projectId = $projectId AND n.status = 'live'
-      RETURN count(DISTINCT n) AS count
+      MATCH (b:BaseURL {project_id: $projectId})
+      RETURN count(DISTINCT b) AS count
     `,
     alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'SecurityChecks', status: 'completed'})
-      RETURN count(n) AS count
+      MATCH (v:Vulnerability {project_id: $projectId, source: 'security_check'})
+      RETURN count(v) AS count
     `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Security headers protect users — checking them is quick and finds low-hanging fruit.',
     prerequisites: ['Live HTTP endpoints'],
-    runToolId: 'SecurityChecks',
   },
   {
     id: 'ai-surface-recon',
@@ -328,17 +312,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'recon',
     priority: 2,
     cypher: `
-      MATCH (n:ResourceNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (e:Endpoint {project_id: $projectId, is_ai_framework_detected: true})
+      RETURN count(DISTINCT e) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'AiSurfaceRecon', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
-    rationale: 'Resources were found — AI surface recon can identify LLM endpoints and AI SDK exposure.',
-    prerequisites: ['Discovered web resources'],
-    runToolId: 'AiSurfaceRecon',
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
+    rationale: 'AI signals were detected — AI surface recon can identify LLM endpoints and AI SDK exposure.',
+    prerequisites: ['Discovered web resources with AI signals'],
   },
   {
     id: 'gau-urls',
@@ -348,17 +327,12 @@ const SUGGESTIONS: SuggestionDef[] = [
     category: 'recon',
     priority: 2,
     cypher: `
-      MATCH (n:DomainNode) WHERE n.projectId = $projectId
-      RETURN count(DISTINCT n) AS count
+      MATCH (d:Domain {project_id: $projectId})
+      RETURN count(DISTINCT d) AS count
     `,
-    alreadyRunCypher: `
-      MATCH (n:PartialReconRun {projectId: $projectId, toolId: 'Gau', status: 'completed'})
-      RETURN count(n) AS count
-    `,
-    makeGraphInputs: (projectId) => ({ projectId }),
+    makeGraphInputs: (projectId, domain) => ({ projectId, domain }),
     rationale: 'Historical URLs may reveal deprecated endpoints, hidden parameters, and leaked information.',
     prerequisites: ['Target domain'],
-    runToolId: 'Gau',
   },
 ]
 
@@ -376,6 +350,17 @@ export async function GET(
     return NextResponse.json({ error: 'projectId is required' }, { status: 400 })
   }
 
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { targetDomain: true },
+  })
+
+  if (!project) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  }
+
+  const domain = project.targetDomain || ''
+
   try {
     const session = getSession()
 
@@ -385,15 +370,15 @@ export async function GET(
       try {
         // Check how many matching nodes exist
         const countResult = await session.run(def.cypher, { projectId })
-        const count: number = countResult.records[0]?.get('count')?.toNumber() ?? 0
+        const count: number = toNum(countResult.records[0]?.get('count'))
 
         if (count === 0) continue
 
-        // Check if this tool has already been run successfully
+        // Check if this tool has already produced output nodes in the graph
         let alreadyRun = false
         if (def.alreadyRunCypher) {
           const runResult = await session.run(def.alreadyRunCypher, { projectId })
-          alreadyRun = (runResult.records[0]?.get('count')?.toNumber() ?? 0) > 0
+          alreadyRun = toNum(runResult.records[0]?.get('count')) > 0
         }
 
         suggestions.push({
@@ -404,7 +389,7 @@ export async function GET(
           category: def.category,
           priority: def.priority,
           rationale: def.rationale,
-          graphInputs: def.makeGraphInputs(projectId),
+          graphInputs: def.makeGraphInputs(projectId, domain),
           prerequisites: def.prerequisites,
           alreadyRun,
           matchedNodeCount: count,

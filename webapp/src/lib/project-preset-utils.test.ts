@@ -39,8 +39,8 @@ describe('PRESET_EXCLUDED_FIELDS', () => {
     expect(PRESET_EXCLUDED_FIELDS.has('jsReconUploadedFiles')).toBe(true)
   })
 
-  test('has exactly 10 excluded fields', () => {
-    expect(PRESET_EXCLUDED_FIELDS.size).toBe(10)
+  test('has exactly 11 excluded fields', () => {
+    expect(PRESET_EXCLUDED_FIELDS.size).toBe(11)
   })
 
   test('does NOT exclude recon settings fields', () => {
@@ -412,6 +412,7 @@ describe('preset roundtrip', () => {
       roeDocumentName: '',
       roeDocumentMimeType: '',
       jsReconUploadedFiles: [],
+      vhostSniCustomWordlist: [],
       reconPresetId: 'full-active-scan',
       scanModules: ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan'],
       naabuEnabled: true,

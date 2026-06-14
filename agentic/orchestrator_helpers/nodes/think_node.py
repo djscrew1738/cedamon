@@ -46,6 +46,19 @@ from orchestrator_helpers.productivity import (
     is_unproductive,
 )
 from project_settings import get_setting, get_allowed_tools_for_phase, DANGEROUS_TOOLS
+from tool_recommender import recommend_tools, extract_already_run, format_recommendations
+from heuristics import format_recommendation_trace
+from heuristics.graph_adapter import Neo4jGraphAdapter
+
+# graph_db is imported defensively; the heuristic engine works fine without it.
+try:
+    from graph_db import Neo4jClient
+    _GRAPH_CLIENT_CLASS = Neo4jClient
+except Exception:
+    _GRAPH_CLIENT_CLASS = None
+
+# Module-level cache for the heuristic graph adapter to avoid reopening the driver.
+_cached_graph_adapter = None
 
 from prompts import (
     REACT_SYSTEM_PROMPT,
@@ -119,7 +132,42 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         chain_waves=state.get("chain_waves_memory", []),
     )
     todo_list_formatted = format_todo_list(state.get("todo_list", []))
-    target_info_formatted = json_dumps_safe(state.get("target_info", {}), indent=2)
+    tk_target_info = state.get("target_info", {})
+    target_info_formatted = json_dumps_safe(tk_target_info, indent=2)
+
+    # ─── Tool Recommendations (expert heuristics) ─────────────────────
+    techs = tk_target_info.get("technologies", [])
+    already_run = extract_already_run(state.get("execution_trace", []))
+    _profile = str(get_setting("SCAN_PROFILE", "normal"))
+    global _cached_graph_adapter
+    graph_client = None
+    if _GRAPH_CLIENT_CLASS is not None:
+        try:
+            if _cached_graph_adapter is None:
+                _client = _GRAPH_CLIENT_CLASS()
+                _cached_graph_adapter = Neo4jGraphAdapter(
+                    _client,
+                    user_id=state.get("user_id", ""),
+                    project_id=state.get("project_id", ""),
+                )
+            graph_client = _cached_graph_adapter
+        except Exception as exc:
+            logger.warning("Failed to create heuristic graph adapter: %s", exc)
+
+    recs, rec_trace = recommend_tools(
+        techs, already_run, phase=phase,
+        ports=tk_target_info.get("open_ports", []),
+        target_info=tk_target_info,
+        profile=_profile,
+        attack_path_type=state.get("attack_path_type", ""),
+        trace=True,
+        graph_client=graph_client,
+    )
+    recommendations_formatted = format_recommendations(recs)
+    trace_formatted = format_recommendation_trace(rec_trace)
+    if trace_formatted:
+        recommendations_formatted += "\n\n" + trace_formatted
+    # ──────────────────────────────────────────────────────────────────
     qa_history_formatted = format_qa_history(state.get("qa_history", []))
     objective_history_formatted = format_objective_history(state.get("objective_history", []))
 
@@ -264,6 +312,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 objective_history=objective_history_formatted,
                 session_config=_session_config,
                 roe_section=_roe_section,
+                tool_recommendations=recommendations_formatted,
             )
 
             dt_response = await llm.ainvoke([
@@ -406,6 +455,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
         fireteam_action_enum=ft_action_enum,
         fireteam_plan_field=ft_plan_field,
         fireteam_example_section=ft_example,
+        tool_recommendations=recommendations_formatted,
     )
 
     # Inject Deep Think section if available (from state or just computed)
@@ -1018,7 +1068,7 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 logger.info(f"EXPLOIT SUCCEEDED: {analysis.exploit_details}")
             logger.info(f"{'='*60}\n")
 
-            # Merge target info
+            # Merge target info (from LLM analysis)
             current_target = TargetInfo(**state.get("target_info", {}))
             extracted = analysis.extracted_info
             new_target = TargetInfo(
@@ -1029,8 +1079,41 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 vulnerabilities=extracted.vulnerabilities,
                 credentials=extracted.credentials,
                 sessions=extracted.sessions,
+                subdomains=extracted.subdomains,
+                endpoints=extracted.endpoints,
+                parameters=extracted.parameters,
+                js_files=extracted.js_files,
+                live_hosts=extracted.live_hosts,
+                users=extracted.users,
+                subnets=extracted.subnets,
+                cloud_provider=extracted.cloud_provider,
+                container_foothold=extracted.container_foothold,
             )
             merged_target = current_target.merge_from(new_target)
+
+            # Also merge structured parsed findings (from output_parsers) into
+            # target_info.  This catches ports/techs/vulns/creds that the LLM
+            # analysis might have missed or truncated in its 40k-char context
+            # window.  Deduplication is handled by TargetInfo.merge_from().
+            parsed = state.get("_parsed_findings")
+            if parsed:
+                parsed_target = TargetInfo(
+                    ports=parsed.get("ports", []),
+                    services=parsed.get("services", []),
+                    technologies=parsed.get("technologies", []),
+                    vulnerabilities=parsed.get("vulnerabilities", []),
+                    credentials=parsed.get("credentials", []),
+                    subdomains=parsed.get("subdomains", []),
+                    endpoints=parsed.get("endpoints", []),
+                    parameters=parsed.get("parameters", []),
+                    js_files=parsed.get("js_files", []),
+                    live_hosts=parsed.get("live_hosts", []),
+                    users=parsed.get("users", []),
+                    subnets=parsed.get("subnets", []),
+                    cloud_provider=parsed.get("cloud_provider"),
+                    container_foothold=parsed.get("container_foothold", False),
+                )
+                merged_target = merged_target.merge_from(parsed_target)
 
             # --- Chain Memory Population ---
             step_id = pending_step.get("step_id")
@@ -1065,6 +1148,19 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                     "related_cves": details.get("cve_ids", []),
                     "related_ips": [details.get("target_ip", "")] if details.get("target_ip") else [],
                 })
+            # Append structured parsed findings from output_parsers to chain
+            # memory so they appear as Findings in the context.
+            parsed = state.get("_parsed_findings")
+            if parsed:
+                for pf in parsed.get("findings", []):
+                    chain_findings_mem.append({
+                        "finding_type": pf.get("type", "parsed"),
+                        "severity": pf.get("severity", "info"),
+                        "title": pf.get("detail", "")[:200],
+                        "evidence": "",
+                        "step_iteration": step_iteration,
+                        "confidence": 85,
+                    })
             updates["chain_findings_memory"] = chain_findings_mem
 
             # 2. Populate chain_failures_memory if step failed
@@ -1300,6 +1396,11 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
                 technologies=extracted.technologies,
                 vulnerabilities=extracted.vulnerabilities,
                 credentials=extracted.credentials, sessions=extracted.sessions,
+                subdomains=extracted.subdomains, endpoints=extracted.endpoints,
+                parameters=extracted.parameters, js_files=extracted.js_files,
+                live_hosts=extracted.live_hosts, users=extracted.users,
+                subnets=extracted.subnets, cloud_provider=extracted.cloud_provider,
+                container_foothold=extracted.container_foothold,
             )
             merged_target = merged_target.merge_from(new_target)
 

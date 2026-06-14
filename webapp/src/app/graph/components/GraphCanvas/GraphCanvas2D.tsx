@@ -18,7 +18,7 @@ import {
 } from '../../config'
 import { getPerformanceTier, TIER_CONFIG, getAdaptiveForceConfig } from '../../config/graph'
 import { hasHighSeverityNodes, isGoalFinding } from '../../utils/nodeHelpers'
-import { useAnimationFrame } from '../../hooks'
+import { useAnimationFrame, useCoarsePointer } from '../../hooks'
 
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
   ssr: false,
@@ -48,6 +48,7 @@ export function GraphCanvas2D({
   activeChainId,
   externalGraphRef,
 }: GraphCanvas2DProps) {
+  const isCoarsePointer = useCoarsePointer()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null)
 
@@ -108,9 +109,10 @@ export function GraphCanvas2D({
       }, ANIMATION_CONFIG.initDelay)
       return () => clearTimeout(timer)
     }
-  }, [data])
+  }, [data, isCoarsePointer])
 
-  // Slow down zoom speed for smoother navigation
+  // Slow down zoom speed for smoother navigation and disable native touch
+  // handling so the custom GraphTouchLayer can drive pan/pinch gestures.
   useEffect(() => {
     const applyZoom = () => {
       const fg = graphRef.current
@@ -121,6 +123,18 @@ export function GraphCanvas2D({
         zoom.wheelDelta((event: WheelEvent) => {
           return -event.deltaY * (event.deltaMode === 1 ? 0.03 : event.deltaMode ? 1 : 0.0006)
         })
+        // On coarse pointer devices, let the custom GraphTouchLayer handle
+        // single-finger pan and two-finger pinch. On desktop, leave wheel/mouse
+        // zoom untouched so node dragging still works with the mouse.
+        if (isCoarsePointer) {
+          zoom.filter((event: Event) => {
+            const type = event.type
+            if (type.startsWith('touch')) return false
+            const pointerType = (event as PointerEvent).pointerType
+            if (pointerType === 'touch' || pointerType === 'pen') return false
+            return true
+          })
+        }
         return true
       }
       return false
@@ -189,6 +203,7 @@ export function GraphCanvas2D({
       cooldownTicks={forceConfig.cooldownTicks}
       warmupTicks={forceConfig.warmupTicks}
       onNodeClick={(node) => onNodeClick(node as GraphNode)}
+      enableNodeDrag={!isCoarsePointer}
       nodeCanvasObject={(node, ctx, globalScale) => {
         const graphNode = node as GraphNode & { x: number; y: number }
         if (!isFinite(graphNode.x) || !isFinite(graphNode.y)) return

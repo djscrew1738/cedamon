@@ -436,7 +436,20 @@ def build_fireteam_prompt_fragments(enabled: bool, phase: str, allowed_phases, m
 def build_tool_name_enum(allowed_tools):
     """Build the tool_name enum string for JSON examples."""
     visible = _get_visible_tools(allowed_tools)
-    return ", ".join(name for name, _ in visible)
+    names = [name for name, _ in visible]
+    enum_line = ", ".join(names)
+
+    # Append cost column as comment block
+    try:
+        from tool_cost_model import cost_column
+        cost_block = cost_column(names)
+    except ImportError:
+        cost_block = ""
+
+    if cost_block:
+        enum_line += f"\n{cost_block}"
+
+    return enum_line
 
 
 def build_phase_definitions():
@@ -909,6 +922,16 @@ Create minimal TODOs — follow the attack skill workflow for step-by-step guida
 
 ### Known Target Information
 {target_info}
+
+### Recommended Next Tools
+{tool_recommendations}
+
+**How to use the recommendations above:**
+- These are structured expert-heuristic playbooks derived from the current target context (technologies, open ports, CVEs, attack phase, and classified attack path).
+- The optional activation trace below the list explains which rule categories fired.
+- **Prefer them as your default next action** unless the output analysis, todo list, or user guidance gives a compelling reason to deviate.
+- When multiple recommendations are shown, choose the highest-ranked option that is allowed in the current phase and not already completed.
+- Use `plan_tools` to run independent recommendations in parallel when they do not depend on each other's output.
 
 ### Previous Questions & Answers
 {qa_history}
@@ -2580,6 +2603,11 @@ DEEP_THINK_PROMPT = """You are a senior penetration testing strategist performin
 
 ## Known Target Information
 {target_info}
+
+## Recommended Next Tools
+{tool_recommendations}
+
+**Use these structured expert-heuristic recommendations as your starting point.** They reflect the most efficient next steps given the current target context and classified attack path. The activation trace explains why each category fired. Only deviate if the evidence strongly suggests a different pivot.
 
 ## Attack Chain Progress
 {chain_context}

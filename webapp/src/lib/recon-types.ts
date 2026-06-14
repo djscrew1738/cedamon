@@ -178,7 +178,7 @@ export interface PartialReconParams {
   settings_overrides?: Record<string, unknown>
 }
 
-export const PARTIAL_RECON_SUPPORTED_TOOLS = new Set(['SubdomainDiscovery', 'Naabu', 'Masscan', 'Nmap', 'Httpx', 'Katana', 'ZapAjaxSpider', 'Hakrawler', 'Jsluice', 'Gau', 'Kiterunner', 'ParamSpider', 'Arjun', 'Ffuf', 'EndpointAiClassifier', 'AiSurfaceRecon', 'JsRecon', 'GraphqlScan', 'Nuclei', 'SubdomainTakeover', 'VhostSni', 'SecurityChecks', 'Shodan', 'Urlscan', 'Uncover', 'OsintEnrichment'])
+export const PARTIAL_RECON_SUPPORTED_TOOLS = new Set(['SubdomainDiscovery', 'Naabu', 'Masscan', 'Nmap', 'Httpx', 'Katana', 'ZapAjaxSpider', 'Hakrawler', 'Jsluice', 'Gau', 'Kiterunner', 'ParamSpider', 'Arjun', 'Ffuf', 'EndpointAiClassifier', 'AiSurfaceRecon', 'JsRecon', 'GraphqlScan', 'Nuclei', 'SubdomainTakeover', 'BadDns', 'VhostSni', 'SecurityChecks', 'Shodan', 'Urlscan', 'Uncover', 'OsintEnrichment'])
 
 export const PARTIAL_RECON_PHASE_MAP: Record<string, readonly string[]> = {
   SubdomainDiscovery: ['Subdomain Discovery'],
@@ -201,6 +201,7 @@ export const PARTIAL_RECON_PHASE_MAP: Record<string, readonly string[]> = {
   GraphqlScan: ['Endpoint Discovery', 'Introspection Testing', 'Schema Analysis', 'Vulnerability Detection'],
   Nuclei: ['Vulnerability Scanning'],
   SubdomainTakeover: ['Subdomain Takeover Detection'],
+  BadDns: ['BadDNS Takeover Detection'],
   VhostSni: ['VHost & SNI Enumeration'],
   SecurityChecks: ['Security Checks'],
   Shodan: ['Shodan Enrichment'],

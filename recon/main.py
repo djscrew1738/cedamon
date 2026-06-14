@@ -315,6 +315,48 @@ def should_skip_active_scans(recon_data: dict) -> tuple:
     return False, ""
 
 
+def _auto_enable_contextual_modules(settings: dict, combined_result: dict) -> bool:
+    """
+    Automatically enable contextual scanning modules when live attack surface
+    is discovered. This prevents scans that find endpoints from returning no
+    vulnerability / JS / GraphQL data just because those toggles were off.
+
+    Gated by AUTO_ENABLE_CONTEXTUAL_MODULES (default True). Respects explicit
+    user disables — if a user turns that master switch off, no auto-enabling
+    happens.
+    """
+    if not settings.get('AUTO_ENABLE_CONTEXTUAL_MODULES', True):
+        return False
+
+    http_summary = combined_result.get('http_probe', {}).get('summary', {})
+    resource_summary = combined_result.get('resource_enum', {}).get('summary', {})
+    live_urls = http_summary.get('live_urls', 0)
+    endpoints = resource_summary.get('total_endpoints', 0)
+
+    if live_urls == 0 and endpoints == 0:
+        return False
+
+    changed = False
+    if not settings.get('JS_RECON_ENABLED', False):
+        settings['JS_RECON_ENABLED'] = True
+        print(f"[auto-enable] Live attack surface found ({live_urls} URLs, {endpoints} endpoints) — enabling JS Recon")
+        changed = True
+
+    if not settings.get('GRAPHQL_SECURITY_ENABLED', False):
+        settings['GRAPHQL_SECURITY_ENABLED'] = True
+        print(f"[auto-enable] Live attack surface found ({live_urls} URLs, {endpoints} endpoints) — enabling GraphQL Security Scan")
+        changed = True
+
+    global SCAN_MODULES
+    if 'vuln_scan' not in SCAN_MODULES:
+        SCAN_MODULES = list(SCAN_MODULES) + ['vuln_scan']
+        settings['SCAN_MODULES'] = SCAN_MODULES
+        print(f"[auto-enable] Live attack surface found ({live_urls} URLs, {endpoints} endpoints) — adding vuln_scan to SCAN_MODULES")
+        changed = True
+
+    return changed
+
+
 def parse_target(target: str, subdomain_list: list = None) -> dict:
     """
     Parse target domain and determine scan mode based on SUBDOMAIN_LIST.
@@ -976,6 +1018,9 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
     # Check if active scans should be skipped
     skip_active_scans, skip_reason = should_skip_active_scans(combined_result)
 
+    # Auto-enable JS Recon / GraphQL Scan / vuln_scan when live targets exist
+    _auto_enable_contextual_modules(settings, combined_result)
+
     if skip_active_scans:
         print(f"\n[!][Pipeline] SKIPPING ACTIVE SCANS: {skip_reason}")
         combined_result["metadata"]["active_scans_skipped"] = True
@@ -1484,6 +1529,9 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # Check if we should skip active scanning modules (resource_enum, vuln_scan)
     # These require live targets from http_probe to work
     skip_active_scans, skip_reason = should_skip_active_scans(combined_result)
+
+    # Auto-enable JS Recon / GraphQL Scan / vuln_scan when live targets exist
+    _auto_enable_contextual_modules(_settings, combined_result)
 
     if skip_active_scans:
         print(f"\n{'=' * 70}")

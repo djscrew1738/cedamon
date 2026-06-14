@@ -24,6 +24,7 @@ from models import (
     TrufflehogState, TrufflehogStatus, TrufflehogLogEvent,
     PartialReconState, PartialReconStatus,
 )
+from state_store import OrchestratorStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ TRUFFLEHOG_PHASE_PATTERNS = [
 class ContainerManager:
     """Manages Docker containers for recon, GVM scan, GitHub hunt, and TruffleHog processes"""
 
-    def __init__(self, recon_image: str = "redamon-recon:latest", gvm_image: str = "redamon-vuln-scanner:latest", github_hunt_image: str = "redamon-github-hunter:latest", trufflehog_image: str = "redamon-trufflehog:latest"):
+    def __init__(self, recon_image: str = "redamon-recon:latest", gvm_image: str = "redamon-vuln-scanner:latest", github_hunt_image: str = "redamon-github-hunter:latest", trufflehog_image: str = "redamon-trufflehog:latest", state_store: OrchestratorStateStore | None = None):
         self.client = docker.from_env()
         self.recon_image = recon_image
         self.gvm_image = gvm_image
@@ -107,11 +108,159 @@ class ContainerManager:
         # Cache for feed-sync readiness probes so health checks don't hammer GVM
         self._gvm_ready_cache: Tuple[Optional[bool], datetime] = (None, datetime.min.replace(tzinfo=timezone.utc))
         self._gvm_ready_cache_ttl = timedelta(seconds=60)
+        self._state_store = state_store or OrchestratorStateStore()
+        self._load_state()
+        self._recover_containers()
+
+        # Background task that periodically flushes state to disk so that a
+        # crash or ungraceful container restart loses at most a few seconds of
+        # state (e.g., the last_log_timestamp watermark used for SSE resume).
+        self._persist_interval = float(
+            os.environ.get("ORCHESTRATOR_PERSIST_INTERVAL_SEC", "5")
+        )
+        self._persist_task: asyncio.Task | None = None
+        try:
+            self._persist_task = asyncio.create_task(self._periodic_persist())
+        except RuntimeError:
+            # No running event loop (e.g., constructed outside async context).
+            pass
 
     async def _exec(self, fn, *args, **kwargs):
         """Run a synchronous Docker call in the default thread pool."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
+
+    def _save_state(self) -> None:
+        """Persist the current orchestrator state to disk."""
+        self._state_store.save(
+            self.running_states,
+            self.gvm_states,
+            self.github_hunt_states,
+            self.trufflehog_states,
+            self.partial_recon_states,
+        )
+
+    async def _periodic_persist(self) -> None:
+        """Flush the in-memory state snapshot to disk on a fixed cadence."""
+        while True:
+            try:
+                await asyncio.sleep(self._persist_interval)
+                self._save_state()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"Periodic state persistence failed: {e}")
+
+    async def shutdown(self) -> None:
+        """Stop the background persistence task and perform a final flush."""
+        if self._persist_task is not None:
+            self._persist_task.cancel()
+            try:
+                await self._persist_task
+            except asyncio.CancelledError:
+                pass
+            self._persist_task = None
+        try:
+            self._save_state()
+        except Exception as e:
+            logger.warning(f"Final state flush during shutdown failed: {e}")
+
+    def _load_state(self) -> None:
+        """Load a previously persisted orchestrator state snapshot."""
+        (
+            self.running_states,
+            self.gvm_states,
+            self.github_hunt_states,
+            self.trufflehog_states,
+            self.partial_recon_states,
+        ) = self._state_store.load()
+
+    def _recover_containers(self) -> None:
+        """Validate restored states against actual Docker containers.
+
+        Containers that are still running/paused are kept; everything else is
+        transitioned to error/idle and removed from the active state map.
+        """
+        now = datetime.now(timezone.utc)
+        terminal_ttl = timedelta(seconds=60)
+
+        def _recover_single(states: dict, status_enum):
+            to_remove = []
+            for key, state in states.items():
+                if state.status in (status_enum.COMPLETED, status_enum.ERROR, status_enum.IDLE):
+                    if state.completed_at and (now - state.completed_at) > terminal_ttl:
+                        to_remove.append(key)
+                    continue
+                container_id = state.container_id
+                if not container_id:
+                    state.status = status_enum.ERROR
+                    state.error = "Container ID missing after restart"
+                    state.completed_at = now
+                    continue
+                try:
+                    container = self.client.containers.get(container_id)
+                    if container.status == "paused":
+                        state.status = status_enum.PAUSED
+                    elif container.status == "running":
+                        state.status = status_enum.RUNNING
+                    else:
+                        exit_code = container.attrs.get("State", {}).get("ExitCode", -1)
+                        if exit_code == 0:
+                            state.status = status_enum.COMPLETED
+                            state.completed_at = now
+                        else:
+                            state.status = status_enum.ERROR
+                            state.error = f"Container exited with code {exit_code}"
+                            state.completed_at = now
+                        try:
+                            container.remove()
+                        except Exception:
+                            pass
+                except NotFound:
+                    if state.status not in (status_enum.COMPLETED, status_enum.ERROR):
+                        state.status = status_enum.ERROR
+                        state.error = "Container not found after restart"
+                        state.completed_at = now
+                except Exception as e:
+                    logger.warning(f"Recovery check failed for {key}: {e}")
+            for key in to_remove:
+                del states[key]
+
+        _recover_single(self.running_states, ReconStatus)
+        _recover_single(self.gvm_states, GvmStatus)
+        _recover_single(self.github_hunt_states, GithubHuntStatus)
+        _recover_single(self.trufflehog_states, TrufflehogStatus)
+
+        for project_id, runs in list(self.partial_recon_states.items()):
+            _recover_single(runs, PartialReconStatus)
+            if not runs:
+                del self.partial_recon_states[project_id]
+
+        self._save_state()
+
+    @staticmethod
+    async def _bounded_queue_put(queue: asyncio.Queue, item, timeout: float = 5.0) -> None:
+        """Put an item into a bounded queue, dropping oldest entries when full.
+
+        This prevents unbounded memory growth if the consumer is slow.
+        """
+        async def _put():
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            await queue.put(item)
+
+        await asyncio.wait_for(_put(), timeout=timeout)
+
+    def _update_last_log_timestamp(self, state, docker_ts: datetime | None) -> None:
+        """Update the high-water timestamp on a state for SSE replay."""
+        if docker_ts is None or state is None:
+            return
+        cur = state.last_log_timestamp
+        if cur is None or docker_ts > cur:
+            state.last_log_timestamp = docker_ts
 
     def _get_container_name(self, project_id: str) -> str:
         """Generate container name for a project"""
@@ -159,6 +308,7 @@ class ContainerManager:
                         state.status = ReconStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
+            self._save_state()
             return state
 
         # Check if there's an orphan container
@@ -222,6 +372,7 @@ class ContainerManager:
                 started_at=datetime.now(timezone.utc),
             )
             self.running_states[project_id] = state
+            self._save_state()
 
             try:
                 # Ensure recon image exists
@@ -310,6 +461,7 @@ class ContainerManager:
                 state.error = str(e)
                 logger.error(f"Failed to start recon for {project_id}: {e}")
 
+            self._save_state()
             return state
 
     def _cleanup_sub_containers(self) -> int:
@@ -377,6 +529,7 @@ class ContainerManager:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
+        self._save_state()
         return state
 
     async def resume_recon(self, project_id: str) -> ReconState:
@@ -400,6 +553,7 @@ class ContainerManager:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
+        self._save_state()
         return state
 
     async def stop_recon(self, project_id: str, timeout: int = 10) -> ReconState:
@@ -437,6 +591,7 @@ class ContainerManager:
         if project_id in self.running_states:
             del self.running_states[project_id]
 
+        self._save_state()
         return state
 
     def _parse_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> ReconLogEvent:
@@ -504,18 +659,30 @@ class ContainerManager:
         try:
             container = self.client.containers.get(state.container_id)
 
-            # Use asyncio queue to bridge sync Docker logs to async generator
-            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+            # Use a bounded asyncio queue to bridge sync Docker logs to the
+            # async generator. Bound prevents unbounded memory if consumer lags.
+            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=1000)
 
             # Capture the event loop before starting the thread (needed for closure)
             loop = asyncio.get_running_loop()
 
+            # On reconnect, resume from the last timestamp we already emitted so
+            # the SSE client doesn't receive duplicate history. Docker's `since`
+            # is second-granular, so advance by 1us to avoid re-emitting the
+            # boundary line (timestamps we tracked are sub-second precise).
+            since_ts = None
+            if state.last_log_timestamp is not None:
+                since_ts = state.last_log_timestamp + timedelta(microseconds=1)
+
             def read_logs():
                 """Synchronous function to read logs and put them in the queue"""
                 try:
-                    for line in container.logs(stream=True, follow=True, timestamps=True):
+                    log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
+                    if since_ts is not None:
+                        log_stream_kwargs["since"] = since_ts
+                    for line in container.logs(**log_stream_kwargs):
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(line),
+                            ContainerManager._bounded_queue_put(log_queue, line),
                             loop
                         ).result(timeout=5)
                         # Check if container is still running
@@ -531,7 +698,7 @@ class ContainerManager:
                     # Signal end of logs
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(None),
+                            ContainerManager._bounded_queue_put(log_queue, None),
                             loop
                         ).result(timeout=5)
                     except Exception:
@@ -583,6 +750,13 @@ class ContainerManager:
                             if project_id in self.running_states:
                                 self.running_states[project_id].current_phase = current_phase
                                 self.running_states[project_id].phase_number = current_phase_num
+
+                        # Track the high-water mark so a reconnecting SSE client
+                        # resumes after this line instead of replaying history.
+                        if docker_ts is not None:
+                            self._update_last_log_timestamp(
+                                self.running_states.get(project_id), docker_ts
+                            )
 
                         yield event
 
@@ -763,6 +937,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.partial_recon_states.setdefault(project_id, {})[run_id] = state
+        self._save_state()
         logger.info(
             f"start_partial_recon project_id={project_id} tool_id={tool_id} run_id={run_id} "
             f"container_name={container_name}"
@@ -850,6 +1025,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start partial recon for {project_id}/{run_id}: {e}")
 
+        self._save_state()
         return state
 
     async def stop_partial_recon(self, project_id: str, run_id: str, timeout: int = 10) -> PartialReconState:
@@ -894,6 +1070,7 @@ class ContainerManager:
         except Exception:
             pass
 
+        self._save_state()
         return state
 
     async def stream_partial_logs(self, project_id: str, run_id: str) -> AsyncGenerator[ReconLogEvent, None]:
@@ -923,7 +1100,7 @@ class ContainerManager:
         try:
             container = self.client.containers.get(state.container_id)
 
-            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=1000)
             loop = asyncio.get_running_loop()
 
             # On reconnect, resume from the last timestamp we already emitted so
@@ -941,7 +1118,7 @@ class ContainerManager:
                         log_stream_kwargs["since"] = since_ts
                     for line in container.logs(**log_stream_kwargs):
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(line), loop
+                            ContainerManager._bounded_queue_put(log_queue, line), loop
                         ).result(timeout=5)
                         try:
                             container.reload()
@@ -954,7 +1131,7 @@ class ContainerManager:
                 finally:
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(None), loop
+                            ContainerManager._bounded_queue_put(log_queue, None), loop
                         ).result(timeout=5)
                     except Exception:
                         pass
@@ -1070,6 +1247,7 @@ class ContainerManager:
                         state.status = GvmStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
+            self._save_state()
             return state
 
         # Check if there's an orphan container
@@ -1121,8 +1299,17 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.gvm_states[project_id] = state
+        self._save_state()
 
         try:
+            # Wait for GVM feed sync before spawning the scanner. This avoids
+            # scanner crashes when gvmd is not yet ready to accept connections.
+            if not self.is_gvm_ready(timeout=60):
+                raise RuntimeError(
+                    "GVM feed sync is not complete. The scanner cannot start until "
+                    "the GVM vulnerability database has finished syncing."
+                )
+
             # Ensure GVM scanner image exists (pre-build on startup if missing)
             if not self.ensure_gvm_scanner_image():
                 raise RuntimeError(
@@ -1174,6 +1361,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start GVM scan for {project_id}: {e}")
 
+        self._save_state()
         return state
 
     async def pause_gvm_scan(self, project_id: str) -> GvmState:
@@ -1197,6 +1385,7 @@ class ContainerManager:
                 state.status = GvmStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
+        self._save_state()
         return state
 
     async def resume_gvm_scan(self, project_id: str) -> GvmState:
@@ -1220,6 +1409,7 @@ class ContainerManager:
                 state.status = GvmStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
+        self._save_state()
         return state
 
     async def stop_gvm_scan(self, project_id: str, timeout: int = 10) -> GvmState:
@@ -1250,6 +1440,7 @@ class ContainerManager:
         if project_id in self.gvm_states:
             del self.gvm_states[project_id]
 
+        self._save_state()
         return state
 
     def _parse_gvm_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> GvmLogEvent:
@@ -1314,14 +1505,21 @@ class ContainerManager:
         try:
             container = self.client.containers.get(state.container_id)
 
-            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=1000)
             loop = asyncio.get_running_loop()
+
+            since_ts = None
+            if state.last_log_timestamp is not None:
+                since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
             def read_logs():
                 try:
-                    for line in container.logs(stream=True, follow=True, timestamps=True):
+                    log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
+                    if since_ts is not None:
+                        log_stream_kwargs["since"] = since_ts
+                    for line in container.logs(**log_stream_kwargs):
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(line),
+                            ContainerManager._bounded_queue_put(log_queue, line),
                             loop
                         ).result(timeout=5)
                         try:
@@ -1335,7 +1533,7 @@ class ContainerManager:
                 finally:
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(None),
+                            ContainerManager._bounded_queue_put(log_queue, None),
                             loop
                         ).result(timeout=5)
                     except Exception:
@@ -1379,6 +1577,11 @@ class ContainerManager:
                             if project_id in self.gvm_states:
                                 self.gvm_states[project_id].current_phase = current_phase
                                 self.gvm_states[project_id].phase_number = current_phase_num
+
+                        if docker_ts is not None:
+                            self._update_last_log_timestamp(
+                                self.gvm_states.get(project_id), docker_ts
+                            )
 
                         yield event
 
@@ -1566,6 +1769,7 @@ class ContainerManager:
                         state.status = GithubHuntStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
+            self._save_state()
             return state
 
         # Check if there's an orphan container
@@ -1616,6 +1820,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.github_hunt_states[project_id] = state
+        self._save_state()
 
         try:
             # Ensure GitHub hunt image exists
@@ -1669,6 +1874,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start GitHub hunt for {project_id}: {e}")
 
+        self._save_state()
         return state
 
     async def pause_github_hunt(self, project_id: str) -> GithubHuntState:
@@ -1692,6 +1898,7 @@ class ContainerManager:
                 state.status = GithubHuntStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
+        self._save_state()
         return state
 
     async def resume_github_hunt(self, project_id: str) -> GithubHuntState:
@@ -1715,6 +1922,7 @@ class ContainerManager:
                 state.status = GithubHuntStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
+        self._save_state()
         return state
 
     async def stop_github_hunt(self, project_id: str, timeout: int = 10) -> GithubHuntState:
@@ -1745,6 +1953,7 @@ class ContainerManager:
         if project_id in self.github_hunt_states:
             del self.github_hunt_states[project_id]
 
+        self._save_state()
         return state
 
     def _parse_github_hunt_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> GithubHuntLogEvent:
@@ -1811,14 +2020,21 @@ class ContainerManager:
         try:
             container = self.client.containers.get(state.container_id)
 
-            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=1000)
             loop = asyncio.get_running_loop()
+
+            since_ts = None
+            if state.last_log_timestamp is not None:
+                since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
             def read_logs():
                 try:
-                    for line in container.logs(stream=True, follow=True, timestamps=True):
+                    log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
+                    if since_ts is not None:
+                        log_stream_kwargs["since"] = since_ts
+                    for line in container.logs(**log_stream_kwargs):
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(line),
+                            ContainerManager._bounded_queue_put(log_queue, line),
                             loop
                         ).result(timeout=5)
                         try:
@@ -1832,7 +2048,7 @@ class ContainerManager:
                 finally:
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(None),
+                            ContainerManager._bounded_queue_put(log_queue, None),
                             loop
                         ).result(timeout=5)
                     except Exception:
@@ -1876,6 +2092,11 @@ class ContainerManager:
                             if project_id in self.github_hunt_states:
                                 self.github_hunt_states[project_id].current_phase = current_phase
                                 self.github_hunt_states[project_id].phase_number = current_phase_num
+
+                        if docker_ts is not None:
+                            self._update_last_log_timestamp(
+                                self.github_hunt_states.get(project_id), docker_ts
+                            )
 
                         yield event
 
@@ -1948,6 +2169,7 @@ class ContainerManager:
                         state.status = TrufflehogStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
+            self._save_state()
             return state
 
         # Check if there's an orphan container
@@ -1998,6 +2220,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.trufflehog_states[project_id] = state
+        self._save_state()
 
         try:
             # Ensure TruffleHog image exists
@@ -2051,6 +2274,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start TruffleHog scan for {project_id}: {e}")
 
+        self._save_state()
         return state
 
     async def pause_trufflehog(self, project_id: str) -> TrufflehogState:
@@ -2074,6 +2298,7 @@ class ContainerManager:
                 state.status = TrufflehogStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
+        self._save_state()
         return state
 
     async def resume_trufflehog(self, project_id: str) -> TrufflehogState:
@@ -2097,6 +2322,7 @@ class ContainerManager:
                 state.status = TrufflehogStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
+        self._save_state()
         return state
 
     async def stop_trufflehog(self, project_id: str, timeout: int = 10) -> TrufflehogState:
@@ -2127,6 +2353,7 @@ class ContainerManager:
         if project_id in self.trufflehog_states:
             del self.trufflehog_states[project_id]
 
+        self._save_state()
         return state
 
     def _parse_trufflehog_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> TrufflehogLogEvent:
@@ -2193,14 +2420,21 @@ class ContainerManager:
         try:
             container = self.client.containers.get(state.container_id)
 
-            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+            log_queue: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=1000)
             loop = asyncio.get_running_loop()
+
+            since_ts = None
+            if state.last_log_timestamp is not None:
+                since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
             def read_logs():
                 try:
-                    for line in container.logs(stream=True, follow=True, timestamps=True):
+                    log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
+                    if since_ts is not None:
+                        log_stream_kwargs["since"] = since_ts
+                    for line in container.logs(**log_stream_kwargs):
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(line),
+                            ContainerManager._bounded_queue_put(log_queue, line),
                             loop
                         ).result(timeout=5)
                         try:
@@ -2214,7 +2448,7 @@ class ContainerManager:
                 finally:
                     try:
                         asyncio.run_coroutine_threadsafe(
-                            log_queue.put(None),
+                            ContainerManager._bounded_queue_put(log_queue, None),
                             loop
                         ).result(timeout=5)
                     except Exception:
@@ -2258,6 +2492,11 @@ class ContainerManager:
                             if project_id in self.trufflehog_states:
                                 self.trufflehog_states[project_id].current_phase = current_phase
                                 self.trufflehog_states[project_id].phase_number = current_phase_num
+
+                        if docker_ts is not None:
+                            self._update_last_log_timestamp(
+                                self.trufflehog_states.get(project_id), docker_ts
+                            )
 
                         yield event
 

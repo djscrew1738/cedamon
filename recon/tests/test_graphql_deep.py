@@ -605,19 +605,25 @@ class TestSettingsFlow(unittest.TestCase):
         for k in [k for k in DEFAULT_SETTINGS if k.startswith('GRAPHQL_COP_')]:
             self.assertEqual(out[k], DEFAULT_SETTINGS[k], f"{k} did not fall back to default")
 
-    def test_stealth_overrides_disable_all_4_dos_probes(self):
+    def test_stealth_overrides_exclude_dos_probes(self):
         from project_settings import DEFAULT_SETTINGS, apply_stealth_overrides
         settings = dict(DEFAULT_SETTINGS)
         settings['STEALTH_MODE'] = True
+        settings['GRAPHQL_COP_ENABLED'] = True
         out = apply_stealth_overrides(settings)
-        # All 4 DoS probes forced off
+        # Stealth keeps graphql-cop enabled but passes -e to skip the DoS tests,
+        # because the default RedAmon image is built from 1.16 source.
+        self.assertTrue(out['GRAPHQL_COP_ENABLED'])
+        # All 4 DoS probes forced off.
         self.assertFalse(out['GRAPHQL_COP_TEST_ALIAS_OVERLOADING'])
         self.assertFalse(out['GRAPHQL_COP_TEST_BATCH_QUERY'])
         self.assertFalse(out['GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING'])
         self.assertFalse(out['GRAPHQL_COP_TEST_CIRCULAR_INTROSPECTION'])
-        # Info-leak + CSRF checks still allowed
+        # Low-traffic info-leak + CSRF checks still allowed.
         self.assertTrue(out.get('GRAPHQL_COP_TEST_FIELD_SUGGESTIONS', True))
         self.assertTrue(out.get('GRAPHQL_COP_TEST_GRAPHIQL', True))
+        self.assertTrue(out.get('GRAPHQL_COP_TEST_GET_METHOD', True))
+        self.assertTrue(out.get('GRAPHQL_COP_TEST_POST_CSRF', True))
 
 
 # ============================================================================

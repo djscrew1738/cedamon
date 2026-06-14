@@ -21,6 +21,7 @@ Currently supported tool_ids:
   - Shodan: runs run_shodan_enrichment() from shodan_enrich.py
   - Urlscan: runs run_urlscan_discovery_only() from urlscan_enrich.py
   - OsintEnrichment: runs OSINT sub-tools (Censys, FOFA, OTX, etc.) in parallel
+  - BadDns: runs the isolated BadDNS sidecar for takeover detection
 """
 
 import os
@@ -76,6 +77,7 @@ from recon.partial_recon_modules.ai_surface_recon import run_ai_surface_recon as
 from recon.partial_recon_modules.js_analysis import run_jsrecon
 from recon.partial_recon_modules.graphql_scanning import run_graphqlscan
 from recon.partial_recon_modules.vulnerability_scanning import (
+    run_baddns_partial,
     run_nuclei,
     run_security_checks_partial,
     run_subdomain_takeover_partial,
@@ -151,6 +153,8 @@ def main():
         run_nuclei(config)
     elif tool_id == "SubdomainTakeover":
         run_subdomain_takeover_partial(config)
+    elif tool_id == "BadDns":
+        run_baddns_partial(config)
     elif tool_id == "VhostSni":
         run_vhost_sni_partial(config)
     elif tool_id == "SecurityChecks":

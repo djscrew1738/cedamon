@@ -41,6 +41,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
     # Scan Modules
     'SCAN_MODULES': ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan'],
+    # When live targets/endpoints are discovered, automatically enable JS Recon,
+    # GraphQL Security Scan, and ensure vuln_scan is scheduled.
+    'AUTO_ENABLE_CONTEXTUAL_MODULES': True,
     'UPDATE_GRAPH_DB': True,
     'USE_TOR_FOR_RECON': True,
     'USE_BRUTEFORCE_FOR_SUBDOMAINS': False,
@@ -517,7 +520,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     ],
 
     # ========== JS RECON SCANNER ==========
-    'JS_RECON_ENABLED': False,
+    'JS_RECON_ENABLED': True,
     'JS_RECON_MAX_FILES': 10000,
     'JS_RECON_TIMEOUT': 900,
     'JS_RECON_CONCURRENCY': 10,
@@ -767,7 +770,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'ROE_GLOBAL_MAX_RPS': 0,
 
     # GraphQL Security Testing
-    'GRAPHQL_SECURITY_ENABLED': False,
+    'GRAPHQL_SECURITY_ENABLED': True,
     'GRAPHQL_INTROSPECTION_TEST': True,
     'GRAPHQL_TIMEOUT': 30,
     'GRAPHQL_RATE_LIMIT': 10,
@@ -783,7 +786,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
     # GraphQL Cop (external Docker-based misconfig scanner -- Phase 2 §17)
     'GRAPHQL_COP_ENABLED': False,                   # Master toggle (opt-in)
-    'GRAPHQL_COP_DOCKER_IMAGE': 'dolevf/graphql-cop:1.14',
+    'GRAPHQL_COP_DOCKER_IMAGE': 'redamon-graphql-cop:1.16',  # Custom build from upstream 1.16; DockerHub stuck at 1.14
     'GRAPHQL_COP_TIMEOUT': 120,                     # Seconds per endpoint
     'GRAPHQL_COP_FORCE_SCAN': False,                # -f flag: scan even if endpoint isn't GraphQL-like
     'GRAPHQL_COP_DEBUG': False,                     # -d flag: X-GraphQL-Cop-Test header per request
@@ -882,6 +885,7 @@ def fetch_project_settings(project_id: str, webapp_url: str) -> dict[str, Any]:
 
     # Scan Modules
     settings['SCAN_MODULES'] = project.get('scanModules', DEFAULT_SETTINGS['SCAN_MODULES'])
+    settings['AUTO_ENABLE_CONTEXTUAL_MODULES'] = project.get('autoEnableContextualModules', DEFAULT_SETTINGS['AUTO_ENABLE_CONTEXTUAL_MODULES'])
     settings['UPDATE_GRAPH_DB'] = project.get('updateGraphDb', DEFAULT_SETTINGS['UPDATE_GRAPH_DB'])
     settings['USE_TOR_FOR_RECON'] = project.get('useTorForRecon', DEFAULT_SETTINGS['USE_TOR_FOR_RECON'])
     settings['USE_BRUTEFORCE_FOR_SUBDOMAINS'] = project.get('useBruteforceForSubdomains', DEFAULT_SETTINGS['USE_BRUTEFORCE_FOR_SUBDOMAINS'])
@@ -1781,8 +1785,11 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     settings['GRAPHQL_CONCURRENCY'] = 1           # Sequential only
     settings['GRAPHQL_TIMEOUT'] = 60              # Longer timeout for slow responses
 
-    # --- GraphQL Cop: disable DoS probes in stealth mode ---
-    # (Info-leak + CSRF checks still run -- they're low-traffic.)
+    # --- GraphQL Cop: keep enabled but skip DoS probes at the traffic level ---
+    # The default RedAmon image (redamon-graphql-cop:1.16) is built from upstream
+    # source and honors the `-e` exclusion flag, so disabling the four DoS tests
+    # here actually prevents their packets from hitting the target. Info-leak and
+    # CSRF checks continue to run at the reduced rate limits above.
     settings['GRAPHQL_COP_TEST_ALIAS_OVERLOADING'] = False
     settings['GRAPHQL_COP_TEST_BATCH_QUERY'] = False
     settings['GRAPHQL_COP_TEST_DIRECTIVE_OVERLOADING'] = False
@@ -1797,7 +1804,7 @@ def apply_stealth_overrides(settings: dict[str, Any]) -> dict[str, Any]:
     logger.info("Stealth overrides applied: Naabu=passive, Masscan=OFF, httpx=low-rate, Katana=minimal, "
                 "Nuclei=no-DAST, Kiterunner=OFF, BannerGrab=OFF, BruteForce=OFF, "
                 "ActiveSecurityChecks=OFF, JsRecon=reduced, GraphQL=introspection-only, "
-                "GraphQLCop=no-DoS, AISurfaceRecon=throttled")
+                "GraphQLCop=DoS-off, AISurfaceRecon=throttled")
 
     return settings
 

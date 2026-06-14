@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Suspense } from 'react'
 import '@/styles/index.css'
 import { QueryProvider } from '@/providers/QueryProvider'
@@ -15,6 +15,14 @@ export const metadata: Metadata = {
     icon: '/favicon.ico',
     apple: '/favicon.png',
   },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({

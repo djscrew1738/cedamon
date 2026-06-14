@@ -66,8 +66,10 @@ export function useReconStatus({
       setState(data)
       setError(null)
 
-      // Check for status changes
-      if (previousStatusRef.current !== data.status) {
+      // Check for status transitions (skip firing callbacks for the initial load
+      // so a completed scan doesn't re-toast every time the component mounts).
+      const prev = previousStatusRef.current
+      if (prev !== null && prev !== data.status) {
         onStatusChangeRef.current?.(data.status)
 
         if (data.status === 'completed') {
@@ -75,9 +77,9 @@ export function useReconStatus({
         } else if (data.status === 'error' && data.error) {
           onErrorRef.current?.(data.error)
         }
-
-        previousStatusRef.current = data.status
       }
+
+      previousStatusRef.current = data.status
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'

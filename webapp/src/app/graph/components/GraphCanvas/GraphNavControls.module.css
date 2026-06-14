@@ -50,6 +50,11 @@
   opacity: 1;
 }
 
+.btn svg {
+  width: 12px;
+  height: 12px;
+}
+
 .btnActive {
   background: rgba(34, 197, 94, 0.15);
   border-color: rgba(34, 197, 94, 0.4);
@@ -69,4 +74,34 @@
 .spacer {
   width: 28px;
   height: 28px;
+}
+
+@media (max-width: 640px) {
+  .controls {
+    bottom: 12px;
+    left: 12px;
+    gap: 6px;
+  }
+
+  .row {
+    gap: 6px;
+  }
+
+  .btn,
+  .centerBtn,
+  .spacer {
+    width: 40px;
+    height: 40px;
+  }
+
+  .btn,
+  .centerBtn {
+    opacity: 0.9;
+  }
+
+  .btn svg,
+  .centerBtn svg {
+    width: 18px;
+    height: 18px;
+  }
 }

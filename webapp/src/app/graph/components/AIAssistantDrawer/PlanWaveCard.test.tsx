@@ -124,7 +124,7 @@ describe('Wave status computation', () => {
 // ---------------------------------------------------------------------------
 
 function derivePlanStatus(failed: number, total: number): PlanWaveItem['status'] {
-  if (failed === total) return 'error'
+  if (failed === total && total > 0) return 'error'
   if (failed > 0) return 'partial'
   return 'success'
 }

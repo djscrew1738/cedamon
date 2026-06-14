@@ -38,7 +38,7 @@ from recon.graphql_scan.misconfig import (
 class TestStaticMaps(unittest.TestCase):
     def test_title_to_key_has_12_entries(self):
         self.assertEqual(len(TITLE_TO_KEY), 12,
-                         "graphql-cop 1.14 registers 12 tests (field_duplication commented out)")
+                         "graphql-cop 1.16 registers 12 tests (field_duplication commented out)")
 
     def test_every_title_maps_to_a_registered_test(self):
         for title, key in TITLE_TO_KEY.items():
@@ -374,9 +374,9 @@ class TestRunGraphqlCop(unittest.TestCase):
         self.assertIn('--net=host', cmd)
         self.assertIn('-T', cmd)
 
-    def test_no_e_flag_in_cmd_v1_14_does_not_support_it(self):
-        """graphql-cop 1.14 Docker image doesn't support -e. Our wrapper
-        must not pass it and must post-filter Python-side instead."""
+    def test_e_flag_passed_for_excluded_tests(self):
+        """The default RedAmon image (1.16 source) honors -e; excluded tests
+        are passed to the container so their probes are skipped."""
         mock_result = MagicMock(returncode=0, stdout='[]', stderr='')
         with patch('subprocess.run', return_value=mock_result) as mock_run:
             run_graphql_cop(
@@ -388,7 +388,11 @@ class TestRunGraphqlCop(unittest.TestCase):
                 },
             )
         cmd = mock_run.call_args[0][0]
-        self.assertNotIn('-e', cmd, "graphql-cop 1.14 doesn't accept -e; filter Python-side")
+        self.assertIn('-e', cmd)
+        e_idx = cmd.index('-e')
+        excluded = cmd[e_idx + 1].split(',')
+        self.assertIn('alias_overloading', excluded)
+        self.assertIn('batch_query', excluded)
 
     def test_python_side_filter_strips_excluded_findings(self):
         """Excluded tests must be removed from both `findings` and `raw` by post-filter."""

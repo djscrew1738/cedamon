@@ -11,6 +11,7 @@ export default defineConfig({
     environment: 'jsdom',
     css: { modules: { classNameStrategy: 'non-scoped' } },
     setupFiles: ['./vitest.setup.ts'],
+    exclude: ['node_modules', '.next', 'dist'],
     // React 19 strips `act` from the production build. The webapp container
     // bakes in NODE_ENV=production, so without this override every
     // render()-based test would fail with "React.act is not a function".

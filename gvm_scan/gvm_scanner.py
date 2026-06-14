@@ -51,15 +51,28 @@ GVM_PASSWORD = os.environ.get("GVM_PASSWORD", "admin")
 try:
     from gvm.connections import UnixSocketConnection
     from gvm.protocols.gmp import Gmp, GMPv227
-    from gvm.protocols.gmp.requests.v224._targets import AliveTest
     from gvm.transforms import EtreeTransform
     from gvm.errors import GvmError
     GVM_AVAILABLE = True
 except ImportError:
     GVM_AVAILABLE = False
     GvmError = Exception  # Fallback
-    AliveTest = None
     print("[!] python-gvm not installed. Run: pip install python-gvm")
+
+# AliveTest has moved between python-gvm releases. Try the common public
+# locations first so a path change does not break the whole scanner.
+try:
+    from gvm.protocols.gmp.types import AliveTest
+except ImportError:
+    try:
+        from gvm.protocols.gmp.requests.v227._targets import AliveTest
+    except ImportError:
+        try:
+            from gvm.protocols.gmp.requests.v224._targets import AliveTest
+        except ImportError:
+            AliveTest = None
+            if GVM_AVAILABLE:
+                print("[!] Could not import AliveTest enum; target creation may fail")
 
 
 class GVMScanner:
@@ -276,29 +289,35 @@ class GVMScanner:
 
     def _cache_all_ids(self):
         """
-        Cache all commonly needed GVM IDs in parallel.
+        Cache all commonly needed GVM IDs.
 
-        The four GMP queries (scanners, scan configs, report formats,
-        port lists) are independent round-trips to gvmd.  Running them
-        sequentially adds 4× latency; parallelising them cuts the wall-clock
-        time to roughly that of the slowest single query.
+        These four GMP queries (scanner, scan config, report format, port
+        list) are independent round-trips to gvmd, but they all share the
+        same GMP connection object, which is not thread-safe.  Running them
+        sequentially avoids the ``BrokenThreadPool`` / concurrent-futures
+        issues seen when parallelising socket access, and it surfaces the
+        first real error to the caller so the outer connect() retry loop
+        can handle transient feed-sync states.
         """
-        import concurrent.futures as cf
+        cache_methods = (
+            self._cache_scanner_id,
+            self._cache_config_id,
+            self._cache_report_format_id,
+            self._cache_port_list_id,
+        )
 
-        with cf.ThreadPoolExecutor(max_workers=4) as pool:
-            f_scanner = pool.submit(self._cache_scanner_id)
-            f_config = pool.submit(self._cache_config_id)
-            f_format = pool.submit(self._cache_report_format_id)
-            f_portlist = pool.submit(self._cache_port_list_id)
-            # Re-raise the first exception (if any) so the caller sees failures
-            for f in (f_scanner, f_config, f_format, f_portlist):
-                try:
-                    f.result()
-                except cf.BrokenThreadPool:
-                    raise
-                except Exception:
-                    # Log but don't abort — a single cache miss may be tolerable
-                    pass
+        first_error: Optional[Exception] = None
+        for method in cache_methods:
+            try:
+                method()
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+                # Continue caching the rest so we report as many missing
+                # resources as possible, but remember the first failure.
+
+        if first_error is not None:
+            raise first_error
 
     def _cache_scanner_id(self):
         """Get and cache OpenVAS scanner ID."""
@@ -380,14 +399,19 @@ class GVMScanner:
         Returns:
             Target ID
         """
-        # Use CONSIDER_ALIVE to skip ICMP ping check (cloud providers block ICMP)
-        response = self.gmp.create_target(
-            name=name,
-            hosts=hosts,
-            port_list_id=self.port_list_id,
-            alive_test=AliveTest.CONSIDER_ALIVE,
-            comment=comment or f"RedAmon auto-generated - {datetime.now().isoformat()}"
-        )
+        # Use CONSIDER_ALIVE to skip ICMP ping check (cloud providers block ICMP).
+        # If the enum cannot be imported for this python-gvm version, omit the
+        # argument and let GVM use its default alive test.
+        create_kwargs = {
+            "name": name,
+            "hosts": hosts,
+            "port_list_id": self.port_list_id,
+            "comment": comment or f"RedAmon auto-generated - {datetime.now().isoformat()}",
+        }
+        if AliveTest is not None:
+            create_kwargs["alive_test"] = AliveTest.CONSIDER_ALIVE
+
+        response = self.gmp.create_target(**create_kwargs)
         # Extract ID from XML response (attribute on root element)
         target_id = response.get('id') if hasattr(response, 'get') else None
         if target_id is None and hasattr(response, 'attrib'):
@@ -952,9 +976,7 @@ def extract_targets_from_recon(recon_data: Dict) -> Tuple[Set[str], Set[str]]:
     hostnames = set()
     
     dns_data = recon_data.get("dns", {})
-    if not dns_data:
-        return ips, hostnames
-    
+
     # Root domain - only include if it has DNS records (respects SUBDOMAIN_LIST filtering)
     domain = recon_data.get("metadata", {}).get("root_domain", "") or recon_data.get("domain", "")
     domain_dns = dns_data.get("domain", {})
@@ -974,10 +996,32 @@ def extract_targets_from_recon(recon_data: Dict) -> Tuple[Set[str], Set[str]]:
             ips.update(subdomain_ips.get("ipv4", []))
             ips.update(subdomain_ips.get("ipv6", []))
     
+    # Fallback: if DNS data is sparse, pull targets directly from port_scan.
+    # This keeps GVM useful in IP-mode engagements where DNS resolution was
+    # skipped but naabu/masscan still discovered live hosts.
+    port_scan = recon_data.get("port_scan", {})
+    if port_scan:
+        for ip in port_scan.get("by_ip", {}).keys():
+            if ip:
+                ips.add(ip)
+        for host in port_scan.get("by_host", {}).keys():
+            if host:
+                # Host-shaped keys go to hostnames, IP-shaped keys to IPs.
+                if any(c.isalpha() for c in str(host)):
+                    hostnames.add(host)
+                else:
+                    ips.add(host)
+        for ip, mapped_hostnames in port_scan.get("ip_to_hostnames", {}).items():
+            if ip:
+                ips.add(ip)
+            for mapped in (mapped_hostnames if isinstance(mapped_hostnames, list) else [mapped_hostnames]):
+                if mapped and isinstance(mapped, str):
+                    hostnames.add(mapped)
+
     # Filter empty values
     ips = {ip for ip in ips if ip}
     hostnames = {h for h in hostnames if h}
-    
+
     return ips, hostnames
 
 

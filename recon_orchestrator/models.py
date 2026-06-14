@@ -36,6 +36,9 @@ class ReconState(BaseModel):
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     container_id: Optional[str] = None
+    # Last Docker-timestamp emitted to any SSE consumer; used as `since=` on
+    # reconnect so re-subscribing to the log stream doesn't replay history.
+    last_log_timestamp: Optional[datetime] = None
 
 
 class ReconLogEvent(BaseModel):
@@ -95,6 +98,9 @@ class GvmState(BaseModel):
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     container_id: Optional[str] = None
+    # Last Docker-timestamp emitted to any SSE consumer; used as `since=` on
+    # reconnect so re-subscribing to the log stream doesn't replay history.
+    last_log_timestamp: Optional[datetime] = None
 
 
 class GvmLogEvent(BaseModel):
@@ -142,6 +148,9 @@ class GithubHuntState(BaseModel):
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     container_id: Optional[str] = None
+    # Last Docker-timestamp emitted to any SSE consumer; used as `since=` on
+    # reconnect so re-subscribing to the log stream doesn't replay history.
+    last_log_timestamp: Optional[datetime] = None
 
 
 class GithubHuntLogEvent(BaseModel):
@@ -189,6 +198,9 @@ class TrufflehogState(BaseModel):
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
     container_id: Optional[str] = None
+    # Last Docker-timestamp emitted to any SSE consumer; used as `since=` on
+    # reconnect so re-subscribing to the log stream doesn't replay history.
+    last_log_timestamp: Optional[datetime] = None
 
 
 class TrufflehogLogEvent(BaseModel):

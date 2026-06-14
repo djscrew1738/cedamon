@@ -455,6 +455,7 @@ services:
       - ./trufflehog_scan/output:/app/trufflehog_scan/output:rw
       - ./mcp/nuclei-templates:/app/nuclei-templates:ro
       - /tmp/redamon:/tmp/redamon:rw
+      - orchestrator_state:/app/state
     environment:
       # Host paths — auto-detected from container mounts when possible.
       # These explicit fallback paths are used when auto-detection fails
@@ -483,6 +484,7 @@ services:
       GVM_SOCKET_PATH: /run/gvmd/gvmd.sock
       GVM_USERNAME: admin
       GVM_PASSWORD: ${GVM_PASSWORD:-admin}
+      ORCHESTRATOR_PERSIST_INTERVAL_SEC: "5"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
@@ -900,4 +902,6 @@ volumes:
     name: redamon_gvmd_socket
   ospd_socket:
     name: redamon_ospd_socket
+  orchestrator_state:
+    name: redamon_orchestrator_state
   cypherfix-repos:  # Temp storage for cloned GitHub repos (CodeFix agent)

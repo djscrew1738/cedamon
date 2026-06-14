@@ -1,9 +1,18 @@
 'use client'
 
-import { Play, Pause, Square, Terminal, Download, Loader2, Github, Search, AlertTriangle } from 'lucide-react'
+import {
+  Github,
+  Search,
+  Shield,
+  AlertTriangle,
+  Zap,
+  Target,
+  FileCode,
+} from 'lucide-react'
 import Link from 'next/link'
 import { Modal } from '@/components/ui'
-import type { GithubHuntStatus, TrufflehogStatus } from '@/lib/recon-types'
+import type { GithubHuntStatus, TrufflehogStatus, GvmStatus, PartialReconState } from '@/lib/recon-types'
+import { ScanCard } from './ScanCard'
 import styles from './OtherScansModal.module.css'
 
 interface OtherScansModalProps {
@@ -11,6 +20,17 @@ interface OtherScansModalProps {
   onClose: () => void
   hasReconData: boolean
   hasGithubToken: boolean
+  // GVM
+  onStartGvm?: () => void
+  onPauseGvm?: () => void
+  onResumeGvm?: () => void
+  onStopGvm?: () => void
+  onDownloadGvmJSON?: () => void
+  onToggleGvmLogs?: () => void
+  gvmStatus?: GvmStatus
+  gvmAvailable?: boolean
+  hasGvmData?: boolean
+  isGvmLogsOpen?: boolean
   // GitHub Hunt
   onStartGithubHunt?: () => void
   onPauseGithubHunt?: () => void
@@ -31,23 +51,43 @@ interface OtherScansModalProps {
   trufflehogStatus?: TrufflehogStatus
   hasTrufflehogData?: boolean
   isTrufflehogLogsOpen?: boolean
+  // Partial recon scans (BadDns, Nuclei, SubdomainTakeover, JsRecon)
+  partialReconRuns?: PartialReconState[]
+  activePartialReconRunId?: string | null
+  onStartPartialScan?: (toolId: string) => void
+  onStopPartialScan?: (toolId: string) => void
+  onTogglePartialScanLogs?: (toolId: string) => void
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const styleMap: Record<string, string> = {
-    idle: styles.statusIdle,
-    starting: styles.statusRunning,
-    running: styles.statusRunning,
-    paused: styles.statusPaused,
-    stopping: styles.statusRunning,
-    completed: styles.statusCompleted,
-    error: styles.statusError,
-  }
+function TokenBanner() {
   return (
-    <span className={`${styles.statusBadge} ${styleMap[status] || styles.statusIdle}`}>
-      {status}
-    </span>
+    <>
+      <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+      <span>
+        GitHub Access Token required.{' '}
+        <Link href="/settings" style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>
+          Global Settings
+        </Link>
+      </span>
+    </>
   )
+}
+
+function GvmUnavailableBanner() {
+  return (
+    <>
+      <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+      <span>
+        GVM is not installed. Run <code>./redamon.sh install --gvm</code> to enable vulnerability scanning.
+      </span>
+    </>
+  )
+}
+
+function getRunForTool(runs: PartialReconState[], toolId: string): PartialReconState | undefined {
+  return runs
+    .filter(r => r.tool_id === toolId)
+    .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())[0]
 }
 
 export function OtherScansModal({
@@ -55,6 +95,17 @@ export function OtherScansModal({
   onClose,
   hasReconData,
   hasGithubToken,
+  // GVM
+  onStartGvm,
+  onPauseGvm,
+  onResumeGvm,
+  onStopGvm,
+  onDownloadGvmJSON,
+  onToggleGvmLogs,
+  gvmStatus = 'idle',
+  gvmAvailable = true,
+  hasGvmData = false,
+  isGvmLogsOpen = false,
   // GitHub Hunt
   onStartGithubHunt,
   onPauseGithubHunt,
@@ -75,233 +126,139 @@ export function OtherScansModal({
   trufflehogStatus = 'idle',
   hasTrufflehogData = false,
   isTrufflehogLogsOpen = false,
+  // Partial recon
+  partialReconRuns = [],
+  activePartialReconRunId = null,
+  onStartPartialScan,
+  onStopPartialScan,
+  onTogglePartialScanLogs,
 }: OtherScansModalProps) {
-  // GitHub Hunt derived state
-  const isGHBusy = githubHuntStatus === 'running' || githubHuntStatus === 'starting'
-  const isGHStopping = githubHuntStatus === 'stopping'
-  const isGHRunning = isGHBusy || isGHStopping
-  const isGHPaused = githubHuntStatus === 'paused'
-  const isGHActive = isGHRunning || isGHPaused
-
-  // TruffleHog derived state
-  const isTHBusy = trufflehogStatus === 'running' || trufflehogStatus === 'starting'
-  const isTHStopping = trufflehogStatus === 'stopping'
-  const isTHRunning = isTHBusy || isTHStopping
-  const isTHPaused = trufflehogStatus === 'paused'
-  const isTHActive = isTHRunning || isTHPaused
+  const partialStatus = (toolId: string) => getRunForTool(partialReconRuns, toolId)?.status || 'idle'
+  const partialRunId = (toolId: string) => getRunForTool(partialReconRuns, toolId)?.run_id
+  const isPartialLogsOpen = (toolId: string) => partialRunId(toolId) === activePartialReconRunId
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Other Scans"
-      size="large"
-    >
+    <Modal isOpen={isOpen} onClose={onClose} title="Other Scans" size="large">
       <div className={styles.content}>
-        {/* GitHub Secret Hunt Card */}
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <Github size={18} className={styles.cardIcon} />
-            <h3 className={styles.cardTitle}>GitHub Secret Hunt</h3>
-            <StatusBadge status={githubHuntStatus} />
-          </div>
-          <p className={styles.cardDescription}>
-            Search GitHub repositories for exposed secrets, API keys, and credentials related to your target domain.
-          </p>
-          {!hasGithubToken && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 12px',
-              background: 'rgba(245, 158, 11, 0.1)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              borderRadius: '6px',
-            }}>
-              <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                GitHub Access Token required.{' '}
-                <Link href="/settings" style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>
-                  Global Settings
-                </Link>
-              </span>
-            </div>
-          )}
-          <div className={styles.cardActions}>
-            {isGHPaused ? (
-              <button
-                className={styles.resumeButton}
-                onClick={onResumeGithubHunt}
-                disabled={!hasGithubToken}
-                title={!hasGithubToken ? 'GitHub token required' : 'Resume GitHub Hunt'}
-              >
-                <Play size={12} />
-                <span>Resume</span>
-              </button>
-            ) : (
-              <button
-                className={styles.startButton}
-                onClick={onStartGithubHunt}
-                disabled={!hasGithubToken || isGHRunning || (!hasReconData && !isGHPaused)}
-                title={!hasGithubToken ? 'GitHub token required' : !hasReconData ? 'Run recon first' : isGHRunning ? 'In progress...' : 'Start GitHub Hunt'}
-              >
-                {isGHRunning ? (
-                  <Loader2 size={12} className={styles.spinner} />
-                ) : (
-                  <Play size={12} />
-                )}
-                <span>{isGHBusy ? 'Running...' : isGHStopping ? 'Stopping...' : 'Start'}</span>
-              </button>
-            )}
+        <ScanCard
+          icon={<Shield size={18} className={styles.cardIcon} />}
+          title="GVM Vulnerability Scan"
+          description="Full vulnerability scan against discovered IPs and hostnames using the Greenbone Vulnerability Manager (GVM) stack."
+          status={gvmStatus}
+          isAvailable={gvmAvailable}
+          unavailableMessage={<GvmUnavailableBanner />}
+          requiresReconData
+          hasReconData={hasReconData}
+          onStart={onStartGvm ?? (() => {})}
+          onPause={onPauseGvm}
+          onResume={onResumeGvm}
+          onStop={onStopGvm ?? (() => {})}
+          onToggleLogs={onToggleGvmLogs}
+          onDownload={onDownloadGvmJSON}
+          isLogsOpen={isGvmLogsOpen}
+          hasData={hasGvmData}
+          startLabel="Start"
+          busyLabel="Scanning..."
+        />
 
-            {isGHBusy && (
-              <button
-                className={styles.pauseButton}
-                onClick={onPauseGithubHunt}
-                title="Pause"
-              >
-                <Pause size={12} />
-                <span>Pause</span>
-              </button>
-            )}
+        <ScanCard
+          icon={<Github size={18} className={styles.cardIcon} />}
+          title="GitHub Secret Hunt"
+          description="Search GitHub repositories for exposed secrets, API keys, and credentials related to your target domain."
+          status={githubHuntStatus}
+          isAvailable={hasGithubToken}
+          requiresGithubToken
+          hasGithubToken={hasGithubToken}
+          unavailableMessage={<TokenBanner />}
+          onStart={onStartGithubHunt ?? (() => {})}
+          onPause={onPauseGithubHunt}
+          onResume={onResumeGithubHunt}
+          onStop={onStopGithubHunt ?? (() => {})}
+          onToggleLogs={onToggleGithubHuntLogs}
+          onDownload={onDownloadGithubHuntJSON}
+          isLogsOpen={isGithubHuntLogsOpen}
+          hasData={hasGithubHuntData}
+        />
 
-            {isGHActive && (
-              <button
-                className={styles.stopButton}
-                onClick={onStopGithubHunt}
-                disabled={isGHStopping}
-                title="Stop"
-              >
-                <Square size={12} />
-                <span>Stop</span>
-              </button>
-            )}
+        <ScanCard
+          icon={<Search size={18} className={styles.cardIcon} />}
+          title="TruffleHog Scanner"
+          description="Deep secret scanning with 700+ detectors and optional verification against live APIs."
+          status={trufflehogStatus}
+          isAvailable={hasGithubToken}
+          requiresGithubToken
+          hasGithubToken={hasGithubToken}
+          unavailableMessage={<TokenBanner />}
+          onStart={onStartTrufflehog ?? (() => {})}
+          onPause={onPauseTrufflehog}
+          onResume={onResumeTrufflehog}
+          onStop={onStopTrufflehog ?? (() => {})}
+          onToggleLogs={onToggleTrufflehogLogs}
+          onDownload={onDownloadTrufflehogJSON}
+          isLogsOpen={isTrufflehogLogsOpen}
+          hasData={hasTrufflehogData}
+        />
 
-            <button
-              className={`${styles.logsButton} ${isGithubHuntLogsOpen ? styles.logsButtonActive : ''}`}
-              onClick={onToggleGithubHuntLogs}
-              disabled={!isGHActive}
-              title="View Logs"
-            >
-              <Terminal size={12} />
-              <span>Logs</span>
-            </button>
+        <ScanCard
+          icon={<AlertTriangle size={18} className={styles.cardIcon} />}
+          title="BadDNS Takeover Scan"
+          description="Run the isolated BadDNS sidecar to detect dangling DNS records and subdomain takeover candidates."
+          status={partialStatus('BadDns')}
+          requiresReconData
+          hasReconData={hasReconData}
+          onStart={() => onStartPartialScan?.('BadDns')}
+          onStop={() => onStopPartialScan?.('BadDns')}
+          onToggleLogs={() => onTogglePartialScanLogs?.('BadDns')}
+          isLogsOpen={isPartialLogsOpen('BadDns')}
+          startLabel="Start"
+          busyLabel="Running..."
+        />
 
-            <button
-              className={styles.downloadButton}
-              onClick={onDownloadGithubHuntJSON}
-              disabled={!hasGithubHuntData || isGHActive}
-              title={hasGithubHuntData ? 'Download JSON' : 'No data available'}
-            >
-              <Download size={12} />
-              <span>Download</span>
-            </button>
-          </div>
-        </div>
+        <ScanCard
+          icon={<Zap size={18} className={styles.cardIcon} />}
+          title="Nuclei Targeted Scan"
+          description="Run Nuclei vulnerability templates against live BaseURLs and endpoints discovered in the graph."
+          status={partialStatus('Nuclei')}
+          requiresReconData
+          hasReconData={hasReconData}
+          onStart={() => onStartPartialScan?.('Nuclei')}
+          onStop={() => onStopPartialScan?.('Nuclei')}
+          onToggleLogs={() => onTogglePartialScanLogs?.('Nuclei')}
+          isLogsOpen={isPartialLogsOpen('Nuclei')}
+          startLabel="Start"
+          busyLabel="Running..."
+        />
 
-        {/* TruffleHog Scanner Card */}
-        <div className={styles.card}>
-          <div className={styles.cardHeader}>
-            <Search size={18} className={styles.cardIcon} />
-            <h3 className={styles.cardTitle}>TruffleHog Scanner</h3>
-            <StatusBadge status={trufflehogStatus} />
-          </div>
-          <p className={styles.cardDescription}>
-            Deep secret scanning with 700+ detectors and optional verification against live APIs.
-          </p>
-          {!hasGithubToken && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 12px',
-              background: 'rgba(245, 158, 11, 0.1)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              borderRadius: '6px',
-            }}>
-              <AlertTriangle size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
-              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                GitHub Access Token required.{' '}
-                <Link href="/settings" style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>
-                  Global Settings
-                </Link>
-              </span>
-            </div>
-          )}
-          <div className={styles.cardActions}>
-            {isTHPaused ? (
-              <button
-                className={styles.resumeButton}
-                onClick={onResumeTrufflehog}
-                disabled={!hasGithubToken}
-                title={!hasGithubToken ? 'GitHub token required' : 'Resume TruffleHog'}
-              >
-                <Play size={12} />
-                <span>Resume</span>
-              </button>
-            ) : (
-              <button
-                className={styles.startButton}
-                onClick={onStartTrufflehog}
-                disabled={!hasGithubToken || isTHRunning || (!hasReconData && !isTHPaused)}
-                title={!hasGithubToken ? 'GitHub token required' : !hasReconData ? 'Run recon first' : isTHRunning ? 'In progress...' : 'Start TruffleHog'}
-              >
-                {isTHRunning ? (
-                  <Loader2 size={12} className={styles.spinner} />
-                ) : (
-                  <Play size={12} />
-                )}
-                <span>{isTHBusy ? 'Running...' : isTHStopping ? 'Stopping...' : 'Start'}</span>
-              </button>
-            )}
+        <ScanCard
+          icon={<Target size={18} className={styles.cardIcon} />}
+          title="Subdomain Takeover Scan"
+          description="Detect subdomain takeover opportunities using Subjack and Nuclei takeover templates against graph subdomains."
+          status={partialStatus('SubdomainTakeover')}
+          requiresReconData
+          hasReconData={hasReconData}
+          onStart={() => onStartPartialScan?.('SubdomainTakeover')}
+          onStop={() => onStopPartialScan?.('SubdomainTakeover')}
+          onToggleLogs={() => onTogglePartialScanLogs?.('SubdomainTakeover')}
+          isLogsOpen={isPartialLogsOpen('SubdomainTakeover')}
+          startLabel="Start"
+          busyLabel="Running..."
+        />
 
-            {isTHBusy && (
-              <button
-                className={styles.pauseButton}
-                onClick={onPauseTrufflehog}
-                title="Pause"
-              >
-                <Pause size={12} />
-                <span>Pause</span>
-              </button>
-            )}
-
-            {isTHActive && (
-              <button
-                className={styles.stopButton}
-                onClick={onStopTrufflehog}
-                disabled={isTHStopping}
-                title="Stop"
-              >
-                <Square size={12} />
-                <span>Stop</span>
-              </button>
-            )}
-
-            <button
-              className={`${styles.logsButton} ${isTrufflehogLogsOpen ? styles.logsButtonActive : ''}`}
-              onClick={onToggleTrufflehogLogs}
-              disabled={!isTHActive}
-              title="View Logs"
-            >
-              <Terminal size={12} />
-              <span>Logs</span>
-            </button>
-
-            <button
-              className={styles.downloadButton}
-              onClick={onDownloadTrufflehogJSON}
-              disabled={!hasTrufflehogData || isTHActive}
-              title={hasTrufflehogData ? 'Download JSON' : 'No data available'}
-            >
-              <Download size={12} />
-              <span>Download</span>
-            </button>
-          </div>
-        </div>
+        <ScanCard
+          icon={<FileCode size={18} className={styles.cardIcon} />}
+          title="JS Recon / Secrets Scan"
+          description="Analyze JavaScript files for endpoints, secrets, GraphQL references, and interesting hardcoded values."
+          status={partialStatus('JsRecon')}
+          requiresReconData
+          hasReconData={hasReconData}
+          onStart={() => onStartPartialScan?.('JsRecon')}
+          onStop={() => onStopPartialScan?.('JsRecon')}
+          onToggleLogs={() => onTogglePartialScanLogs?.('JsRecon')}
+          isLogsOpen={isPartialLogsOpen('JsRecon')}
+          startLabel="Start"
+          busyLabel="Running..."
+        />
       </div>
     </Modal>
   )
 }
-
-export default OtherScansModal

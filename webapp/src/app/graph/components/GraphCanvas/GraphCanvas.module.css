@@ -5,6 +5,14 @@
   right: 0;
   bottom: 0;
   overflow: hidden;
+  touch-action: none;
+}
+
+.touchLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  touch-action: none;
 }
 
 .loading,

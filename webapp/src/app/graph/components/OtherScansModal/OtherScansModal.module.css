@@ -1,13 +1,15 @@
 .content {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--space-4);
   min-width: 640px;
+  max-width: 1200px;
 }
 
 @media (max-width: 768px) {
   .content {
-    flex-direction: column;
     min-width: auto;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -86,6 +88,18 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
   line-height: 1.5;
+}
+
+.unavailableBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .cardActions {

@@ -68,9 +68,7 @@ describe('Workflow graph edges stay consistent', () => {
   test('every tool in WORKFLOW_TOOLS has an output-map entry (SECTION_NODE_MAP)', () => {
     for (const tool of WORKFLOW_TOOLS) {
       const outputs = SECTION_NODE_MAP[tool.id]
-      if (outputs !== undefined) {
-        expect(outputs.length).toBeGreaterThan(0)
-      }
+      expect(outputs).toBeDefined()
     }
   })
 

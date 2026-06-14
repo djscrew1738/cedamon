@@ -5,6 +5,7 @@ import { GraphData, GraphNode } from '../../types'
 import { GraphCanvas2D } from './GraphCanvas2D'
 import { GraphCanvas3D } from './GraphCanvas3D'
 import { GraphNavControls } from './GraphNavControls'
+import { GraphTouchLayer } from './GraphTouchLayer'
 import styles from './GraphCanvas.module.css'
 
 export const AUTO_2D_THRESHOLD = 1500
@@ -80,7 +81,7 @@ export const GraphCanvas = memo(function GraphCanvas({
 
   if (effective3D) {
     return (
-      <div className={styles.wrapper}>
+      <GraphTouchLayer graphRef={sharedGraphRef} is3D>
         <GraphCanvas3D
           data={data}
           width={width}
@@ -94,12 +95,12 @@ export const GraphCanvas = memo(function GraphCanvas({
           externalGraphRef={sharedGraphRef}
         />
         <GraphNavControls graphRef={sharedGraphRef} is3D />
-      </div>
+      </GraphTouchLayer>
     )
   }
 
   return (
-    <div className={styles.wrapper}>
+    <GraphTouchLayer graphRef={sharedGraphRef} is3D={false}>
       <GraphCanvas2D
         data={data}
         width={width}
@@ -112,6 +113,6 @@ export const GraphCanvas = memo(function GraphCanvas({
         externalGraphRef={sharedGraphRef}
       />
       <GraphNavControls graphRef={sharedGraphRef} is3D={false} />
-    </div>
+    </GraphTouchLayer>
   )
 })
