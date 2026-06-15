@@ -825,3 +825,186 @@
     transform: rotate(360deg);
   }
 }
+
+/* ===== Responsive: Tablet / Mobile (≤768px) ===== */
+
+@media (max-width: 768px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .headerLeft {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .headerActions {
+    flex: 1 1 100%;
+    gap: 6px;
+  }
+
+  .searchBox {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .summaryCard {
+    padding: 8px;
+  }
+
+  .summaryValue {
+    font-size: 16px;
+  }
+
+  .filters {
+    gap: 4px;
+    padding: 8px 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .filterPill {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  .cardBody {
+    padding: 10px 12px;
+  }
+
+  .cardTitle {
+    font-size: 13px;
+  }
+
+  .cardDesc {
+    font-size: 11px;
+  }
+
+  .cardMeta {
+    gap: 4px;
+  }
+
+  .cardActions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .content {
+    padding: 10px 12px;
+  }
+
+  .resultsSection {
+    padding: 10px 12px;
+  }
+
+  .resultCard {
+    flex-wrap: wrap;
+  }
+
+  .resultActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .summarySection {
+    padding: 10px 12px;
+  }
+
+  .toolbar {
+    padding: 8px 12px;
+  }
+
+  .emptyState {
+    min-height: 200px;
+  }
+
+  .emptyState h3 {
+    font-size: 14px;
+  }
+
+  .emptyText {
+    max-width: 280px;
+    font-size: 12px;
+  }
+}
+
+/* ===== Responsive: Small phone (≤480px) ===== */
+
+@media (max-width: 480px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryCard {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .summaryIcon {
+    flex-shrink: 0;
+  }
+
+  .summaryValueRow {
+    flex-shrink: 0;
+  }
+
+  .summaryLabel {
+    margin-left: auto;
+    text-align: right;
+  }
+
+  .title {
+    font-size: 13px;
+  }
+
+  .badge {
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+
+  .runAllBtn {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  .filterPill {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .cardTitleRow {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .cardActions .runBtn,
+  .cardActions .doneLabel,
+  .cardActions .stopBtn {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  .toolId {
+    font-size: 10px;
+  }
+
+  .resultStats {
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .shellBtn {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  .refreshBtn {
+    width: 30px;
+    height: 30px;
+  }
+}
