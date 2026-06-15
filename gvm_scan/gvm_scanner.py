@@ -12,6 +12,7 @@ This module uses the Greenbone Management Protocol (GMP) to:
 """
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -20,13 +21,15 @@ from typing import Dict, List, Optional, Set, Tuple, Any, Union
 from xml.etree import ElementTree as ET
 import sys
 
+logger = logging.getLogger(__name__)
+
 # XML to dict conversion for complete data extraction
 try:
     import xmltodict
     XMLTODICT_AVAILABLE = True
 except ImportError:
     XMLTODICT_AVAILABLE = False
-    print("[!] xmltodict not installed. Run: pip install xmltodict")
+    logger.warning("xmltodict not installed. Run: pip install xmltodict")
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -57,7 +60,7 @@ try:
 except ImportError:
     GVM_AVAILABLE = False
     GvmError = Exception  # Fallback
-    print("[!] python-gvm not installed. Run: pip install python-gvm")
+    logger.warning("python-gvm not installed. Run: pip install python-gvm")
 
 # AliveTest has moved between python-gvm releases. Try the common public
 # locations first so a path change does not break the whole scanner.
@@ -72,7 +75,15 @@ except ImportError:
         except ImportError:
             AliveTest = None
             if GVM_AVAILABLE:
-                print("[!] Could not import AliveTest enum; target creation may fail")
+                logger.warning("Could not import AliveTest enum; target creation may fail")
+
+
+def _extract_xml_attr(response: Any, attr: str, default: Any = None) -> Any:
+    """Extract an attribute from either a dict or an ElementTree element."""
+    value = response.get(attr) if hasattr(response, 'get') else None
+    if value is None and hasattr(response, 'attrib'):
+        value = response.attrib.get(attr)
+    return value if value is not None else default
 
 
 class GVMScanner:
@@ -132,7 +143,8 @@ class GVMScanner:
     def __enter__(self):
         """Context manager entry: auto-connect with default retries."""
         if not self.connected:
-            self.connect()
+            if not self.connect():
+                raise ConnectionError(f"Failed to connect to GVM at {self.socket_path}")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -181,11 +193,11 @@ class GVMScanner:
                 # clearer feedback than repeated config-not-found retries.
                 self._wait_for_feed_sync(max_wait=120)
 
-                # Cache commonly needed IDs (parallelised to reduce startup time)
+                # Cache commonly needed IDs (sequential — GMP connection is not thread-safe)
                 self._cache_all_ids()
 
                 self.connected = True
-                print(f"[+] Connected to GVM at {self.socket_path}")
+                logger.info("Connected to GVM at %s", self.socket_path)
                 return True
 
             except Exception as e:
@@ -206,17 +218,21 @@ class GVMScanner:
 
                     # Exponential backoff: double each attempt, capped
                     wait = min(retry_interval * (2 ** (attempt - 1)), backoff_cap)
-                    print(
-                        f"[*] Waiting for GVM to be ready... "
-                        f"(attempt {attempt}/{max_retries}, {reason})"
+                    logger.info(
+                        "Waiting for GVM to be ready... "
+                        "(attempt %d/%d, %s)",
+                        attempt, max_retries, reason,
                     )
-                    print(
-                        f"    Retrying in {wait}s... "
-                        f"(first boot takes ~10-15 min for feed sync)"
+                    logger.info(
+                        "Retrying in %ds... (first boot takes ~10-15 min for feed sync)",
+                        wait,
                     )
                     time.sleep(wait)
                 else:
-                    print(f"[!] Failed to connect to GVM after {max_retries} attempts: {error_msg}")
+                    logger.error(
+                        "Failed to connect to GVM after %d attempts: %s",
+                        max_retries, error_msg,
+                    )
                     self.connected = False
                     return False
 
@@ -237,7 +253,8 @@ class GVMScanner:
         """
         Wait until GVM feeds are no longer syncing and scan configs are loaded.
 
-        Uses adaptive polling: fast (2s) at first, slowing to 15s over time.
+        Uses adaptive polling: starts at 15s and speeds up to 2s
+        as the sync progresses.
 
         Args:
             max_wait: Maximum seconds to wait before raising RuntimeError.
@@ -259,9 +276,9 @@ class GVMScanner:
                     config_count = 0
 
                 if not syncing and config_count > 0:
-                    print(
-                        f"    [+] GVM feed sync complete "
-                        f"({config_count} scan config(s) available)"
+                    logger.info(
+                        "GVM feed sync complete "
+                        "(%d scan config(s) available)", config_count,
                     )
                     return
 
@@ -272,12 +289,12 @@ class GVMScanner:
                         f"(syncing={len(syncing)}, configs={config_count})"
                     )
 
-                # Adaptive poll interval: fast at first, slow down over time
+                # Adaptive poll interval: starts at 15s, speeds up to 2s
                 interval = min(max(2, 15 - elapsed // 10), 15)
-                print(
-                    f"    [*] Waiting for GVM feed sync... "
-                    f"syncing={len(syncing)}, configs={config_count}, "
-                    f"elapsed={elapsed}s"
+                logger.info(
+                    "Waiting for GVM feed sync... "
+                    "syncing=%d, configs=%d, elapsed=%ds",
+                    len(syncing), config_count, elapsed,
                 )
                 time.sleep(interval)
             except RuntimeError:
@@ -373,7 +390,7 @@ class GVMScanner:
                 name = pl.find('name')
                 if name is not None and name.text == preferred:
                     self.port_list_id = pl.get('id')
-                    print(f"    [+] Using port list: {preferred}")
+                    logger.info("Using port list: %s", preferred)
                     return
         
         # Fallback: use first available port list
@@ -381,7 +398,7 @@ class GVMScanner:
         if first_pl is not None:
             self.port_list_id = first_pl.get('id')
             name = first_pl.find('name')
-            print(f"    [+] Using port list: {name.text if name is not None else 'default'}")
+            logger.info("Using port list: %s", name.text if name is not None else 'default')
             return
             
         # Default UUID for "All IANA assigned TCP and UDP"
@@ -412,21 +429,18 @@ class GVMScanner:
             create_kwargs["alive_test"] = AliveTest.CONSIDER_ALIVE
 
         response = self.gmp.create_target(**create_kwargs)
-        # Extract ID from XML response (attribute on root element)
-        target_id = response.get('id') if hasattr(response, 'get') else None
-        if target_id is None and hasattr(response, 'attrib'):
-            target_id = response.attrib.get('id')
+        target_id = _extract_xml_attr(response, 'id')
         
         # Check response status
-        status = response.get('status') if hasattr(response, 'get') else None
+        status = _extract_xml_attr(response, 'status')
         if status and status != '201':
-            status_text = response.get('status_text', 'Unknown error')
+            status_text = response.get('status_text', 'Unknown error') if hasattr(response, 'get') else 'Unknown error'
             raise RuntimeError(f"Failed to create target: {status_text}")
         
         if not target_id:
             raise RuntimeError(f"Failed to create target '{name}': No ID returned")
             
-        print(f"    [+] Created target '{name}': {target_id}")
+        logger.info("Created target '%s': %s", name, target_id)
         return target_id
     
     def create_task(self, name: str, target_id: str, comment: str = "") -> str:
@@ -458,21 +472,18 @@ class GVMScanner:
             comment=comment or f"RedAmon scan - {datetime.now().isoformat()}",
             preferences=preferences if preferences else None,
         )
-        # Extract ID from XML response
-        task_id = response.get('id') if hasattr(response, 'get') else None
-        if task_id is None and hasattr(response, 'attrib'):
-            task_id = response.attrib.get('id')
+        task_id = _extract_xml_attr(response, 'id')
             
         # Check response status
-        status = response.get('status') if hasattr(response, 'get') else None
+        status = _extract_xml_attr(response, 'status')
         if status and status != '201':
-            status_text = response.get('status_text', 'Unknown error')
+            status_text = response.get('status_text', 'Unknown error') if hasattr(response, 'get') else 'Unknown error'
             raise RuntimeError(f"Failed to create task: {status_text}")
             
         if not task_id:
             raise RuntimeError(f"Failed to create task '{name}': No ID returned")
             
-        print(f"    [+] Created task '{name}': {task_id}")
+        logger.info("Created task '%s': %s", name, task_id)
         return task_id
     
     def start_task(self, task_id: str) -> Optional[str]:
@@ -490,12 +501,12 @@ class GVMScanner:
             report_id = response.find('.//report_id')
             report_id_str = report_id.text if report_id is not None else None
             if report_id_str is None:
-                print(f"    [!] Started task {task_id} but no report_id in response")
+                logger.warning("Started task %s but no report_id in response", task_id)
             else:
-                print(f"    [+] Started task {task_id}")
+                logger.info("Started task %s", task_id)
             return report_id_str
         except Exception as e:
-            print(f"    [!] Failed to start task {task_id}: {e}")
+            logger.error("Failed to start task %s: %s", task_id, e)
             return None
     
     def wait_for_task(self, task_id: str) -> Tuple[str, str]:
@@ -515,7 +526,7 @@ class GVMScanner:
             TimeoutError: If task exceeds timeout
             RuntimeError: If task fails
         """
-        print(f"    [⏳] Waiting for task {task_id}...")
+        logger.info("Waiting for task %s...", task_id)
         start_time = time.time()
         progress_note_shown = False
 
@@ -539,15 +550,15 @@ class GVMScanner:
             report_id = report.get('id') if report is not None else None
 
             if progress_text in ("0", "-1"):
-                print(f"        Status: {status_text} | Scanning... | "
-                      f"Elapsed: {int(elapsed)}s")
+                logger.info("Status: %s | Scanning... | Elapsed: %ds",
+                           status_text, int(elapsed))
             else:
-                print(f"        Status: {status_text} | Progress: {progress_text}% | "
-                      f"Elapsed: {int(elapsed)}s")
+                logger.info("Status: %s | Progress: %s%% | Elapsed: %ds",
+                           status_text, progress_text, int(elapsed))
 
             if not progress_note_shown and status_text == "Running" and progress_text in ("0", "-1") and elapsed > 60:
-                print("        [i] GVM is running thousands of vulnerability checks. "
-                      "This may take 15-45 minutes per target.")
+                logger.info("GVM is running thousands of vulnerability checks. "
+                           "This may take 15-45 minutes per target.")
                 progress_note_shown = True
 
             if status_text == "Done":
@@ -865,17 +876,17 @@ class GVMScanner:
         """Delete a target from GVM."""
         try:
             self.gmp.delete_target(target_id, ultimate=True)
-            print(f"    [+] Deleted target {target_id}")
+            logger.info("Deleted target %s", target_id)
         except Exception as e:
-            print(f"    [!] Failed to delete target {target_id}: {e}")
+            logger.error("Failed to delete target %s: %s", target_id, e)
     
     def delete_task(self, task_id: str):
         """Delete a task from GVM."""
         try:
             self.gmp.delete_task(task_id, ultimate=True)
-            print(f"    [+] Deleted task {task_id}")
+            logger.info("Deleted task %s", task_id)
         except Exception as e:
-            print(f"    [!] Failed to delete task {task_id}: {e}")
+            logger.error("Failed to delete task %s: %s", task_id, e)
     
     def scan_targets(
         self,
@@ -900,8 +911,8 @@ class GVMScanner:
         if not targets:
             return {"error": "No targets provided", "vulnerabilities": []}
 
-        print(f"\n[*] Scanning {len(targets)} targets: {target_name}")
-        print(f"    Targets: {', '.join(targets[:5])}{'...' if len(targets) > 5 else ''}")
+        logger.info("Scanning %d targets: %s", len(targets), target_name)
+        logger.info("Targets: %s%s", ', '.join(targets[:5]), '...' if len(targets) > 5 else '')
         
         target_id = None
         task_id = None
@@ -918,7 +929,9 @@ class GVMScanner:
                 name=f"RedAmon_Scan_{target_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 target_id=target_id
             )
-            self.start_task(task_id)
+            report_id = self.start_task(task_id)
+            if report_id is None:
+                raise RuntimeError(f"Failed to start scan task {task_id}")
             
             # Wait for completion
             status, report_id = self.wait_for_task(task_id)
@@ -929,7 +942,7 @@ class GVMScanner:
                 results["scan_name"] = target_name
                 results["targets"] = targets
                 results["status"] = status
-                print(f"    [+] Scan complete: {results['vulnerability_count']} vulnerabilities found")
+                logger.info("Scan complete: %s vulnerabilities found", results['vulnerability_count'])
                 return results
             else:
                 return {
@@ -941,7 +954,7 @@ class GVMScanner:
                 }
                 
         except Exception as e:
-            print(f"    [!] Scan failed: {e}")
+            logger.error("Scan failed: %s", e)
             return {
                 "scan_name": target_name,
                 "targets": targets,
@@ -1106,10 +1119,10 @@ def save_vuln_results(
         # Clean up temp file on failure
         if tmp_file.exists():
             tmp_file.unlink(missing_ok=True)
-        print(f"[!] Failed to save results: {e}")
+        logger.error("Failed to save results: %s", e)
         raise
 
-    print(f"[+] Results saved to: {output_file}")
+    logger.info("Results saved to: %s", output_file)
     return output_file
 
 
@@ -1140,14 +1153,14 @@ def update_graph_from_gvm_results(
     user_id = user_id or USER_ID
     project_id = project_id or PROJECT_ID
 
-    print("\n" + "=" * 50)
-    print("[*] Updating Neo4j graph with GVM results...")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("Updating Neo4j graph with GVM results...")
+    logger.info("=" * 50)
 
     try:
         with Neo4jClient() as client:
             if not client.verify_connection():
-                print("[!] Failed to connect to Neo4j")
+                logger.error("Failed to connect to Neo4j")
                 return {"error": "Neo4j connection failed"}
 
             stats = client.update_graph_from_gvm_scan(
@@ -1158,17 +1171,17 @@ def update_graph_from_gvm_results(
 
             # Log breakdown for observability
             if isinstance(stats, dict) and "error" not in stats:
-                print("[+] Graph update completed successfully")
+                logger.info("Graph update completed successfully")
                 for key in ("vulnerabilities_created", "vulnerabilities_merged",
                             "cves_created", "cves_merged", "host_links_created"):
                     val = stats.get(key, 0)
                     if val:
-                        print(f"    • {key}: {val}")
+                        logger.info("  - %s: %s", key, val)
             elif isinstance(stats, dict) and "error" in stats:
-                print(f"[!] Graph update returned error: {stats['error']}")
+                logger.error("Graph update returned error: %s", stats['error'])
             return stats
 
     except Exception as e:
-        print(f"[!] Graph update failed: {e}")
+        logger.error("Graph update failed: %s", e)
         return {"error": str(e)}
 
