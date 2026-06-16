@@ -274,3 +274,120 @@
   color: var(--text-primary);
   border-color: var(--accent);
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .container {
+    min-height: 0;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .headerRight {
+    width: 100%;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .searchInput {
+    width: 120px;
+    font-size: 11px;
+    padding: 4px 8px 4px 24px;
+  }
+
+  .subTabs {
+    padding: 0 4px;
+    gap: 0;
+  }
+
+  .subTab {
+    padding: 8px 8px;
+    font-size: 10px;
+    min-height: 36px;
+  }
+
+  .tableWrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Horizontal scroll hint gradient */
+  .tableWrapper::after {
+    content: '';
+    position: sticky;
+    right: 0;
+    top: 0;
+    width: 24px;
+    min-height: 100%;
+    background: linear-gradient(to right, transparent, var(--bg-primary));
+    pointer-events: none;
+    display: none;
+  }
+
+  .tableWrapper:not(:has(.table:first-child:last-child))::after {
+    display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 6px;
+    gap: 6px;
+  }
+
+  .meta {
+    font-size: 10px;
+  }
+
+  .searchInput {
+    width: 90px;
+    font-size: 10px;
+    padding: 3px 6px 3px 20px;
+  }
+
+  .subTab {
+    padding: 6px 6px;
+    font-size: 9px;
+    min-height: 34px;
+  }
+
+  .table {
+    min-width: 500px;
+    font-size: 10px;
+  }
+
+  .table th,
+  .table td {
+    padding: 4px 6px;
+  }
+
+  .truncate {
+    max-width: 140px;
+  }
+
+  .exportBtn {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+
+  .pagination {
+    padding: 4px;
+  }
+
+  .loadMoreBtn {
+    padding: 6px 12px;
+    font-size: 10px;
+    min-height: 36px;
+  }
+
+  .sectionTitle {
+    font-size: 10px;
+    padding: 8px 8px 2px;
+  }
+}
