@@ -1,12 +1,15 @@
 """
 Shared utilities for Docker-based recon helpers.
 """
+import logging
 import os
 import platform
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def is_arm64_host() -> bool:
@@ -29,6 +32,7 @@ def cleanup_temp_dir(temp_dir: Path):
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
     except Exception:
+        logger.warning("cleanup_temp_dir: if temp_dir.exists()", exc_info=True)
         pass
 
 

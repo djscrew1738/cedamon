@@ -163,6 +163,7 @@ def _execute_nuclei_pass(cmd: list, output_file: str, label: str,
             try:
                 process.kill()
             except Exception:
+                print(f"[!] _kill_after_timeout: process.kill()")
                 pass
         timer = threading.Timer(scan_timeout, _kill_after_timeout)
         timer.daemon = True
@@ -983,6 +984,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
             try:
                 nuclei_temp_dir.rmdir()  # Only removes if empty
             except Exception:
+                print(f"[!] run_vuln_scan: nuclei_temp_dir.rmdir()  # Only removes if empty")
                 pass
 
     # Run CVE lookup for detected technologies (like Nmap's vulners)

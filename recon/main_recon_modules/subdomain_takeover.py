@@ -151,6 +151,7 @@ def run_subdomain_takeover(
     try:
         work_dir.chmod(0o755)
     except Exception:
+        print(f"[!] run_subdomain_takeover: World-readable so the non-root baddns user inside the sidecar can read.")
         pass
     try:
         normalized: list[dict] = []
@@ -350,6 +351,7 @@ def run_subdomain_takeover(
         try:
             shutil.rmtree(work_dir, ignore_errors=True)
         except Exception:
+            print(f"[!] run_subdomain_takeover: shutil.rmtree(work_dir, ignore_errors=True)")
             pass
 
 
@@ -544,6 +546,7 @@ def _run_nuclei_takeover(urls: list[str], work_dir: Path, settings: dict) -> lis
     try:
         fix_file_ownership(output_file)
     except Exception:
+        print(f"[!] _run_nuclei_takeover: Fix ownership on output so we can read it as the recon user")
         pass
     return _load_nuclei_jsonl(output_file)
 
@@ -592,6 +595,7 @@ def _run_baddns(
     try:
         targets_file.chmod(0o644)
     except Exception:
+        print(f"[!] _run_baddns: targets_file.chmod(0o644)")
         pass
 
     # Mount the WORK DIR (not the file) -- see build_baddns_command docstring.

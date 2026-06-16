@@ -116,6 +116,7 @@ def _extract_domain_from_url(url: str, root_domain: str) -> str | None:
         if hostname and (hostname == root_domain or hostname.endswith("." + root_domain)):
             return hostname
     except Exception:
+        logger.warning("_extract_domain_from_url: parsed = urlparse(url)", exc_info=True)
         pass
     return None
 

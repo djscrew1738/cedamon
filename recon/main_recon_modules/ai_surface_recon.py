@@ -45,6 +45,7 @@ try:
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 except Exception:
+    print(f"[!] <module>: silence the per-request InsecureRequestWarning so logs aren't flooded.")
     pass
 
 from recon.helpers import ai_signal_catalog as cat
@@ -469,6 +470,7 @@ def _extract_model_ids(resp) -> list:
         if ids:
             return ids
     except Exception:
+        print(f"[!] _extract_model_ids: ids += [x for x in jq.compile(expr).input_value(data).all()")
         pass
     # plain-python fallback (also covers Ollama details.family)
     if isinstance(data, dict):
@@ -650,6 +652,7 @@ def run_ai_surface_recon(combined_result: dict, output_file: Path = None,
             _log(f"blocked by RoE time window: {reason}", "!")
             return combined_result
     except Exception:
+        print(f"[!] run_ai_surface_recon: from recon.main import _check_roe_time_window")
         pass
 
     t0 = time.monotonic()
@@ -674,6 +677,7 @@ def run_ai_surface_recon(combined_result: dict, output_file: Path = None,
         kept = set(_filter_roe_excluded(hosts, settings, label="ai-surface url"))
         candidates = {k: v for k, v in candidates.items() if k in kept}
     except Exception:
+        print(f"[!] run_ai_surface_recon: from recon.main import _filter_roe_excluded")
         pass
 
     _log(f"analyzing {len(candidates)} AI-surface host(s)")
@@ -758,5 +762,6 @@ def run_ai_surface_recon(combined_result: dict, output_file: Path = None,
             with open(output_file, "w") as fh:
                 json.dump(combined_result, fh, indent=2, default=str)
         except Exception:
+            print(f"[!] _analyze: with open(output_file, 'w') as fh")
             pass
     return combined_result

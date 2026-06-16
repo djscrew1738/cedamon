@@ -261,6 +261,7 @@ def run_knockpy(domain: str, proxychains_prefix: list, bruteforce: bool = False,
             try:
                 Path(f).unlink()
             except Exception:
+                print(f"[!] run_knockpy: Clean up knockpy's auto-generated files")
                 pass
     
     return subdomains

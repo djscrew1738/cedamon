@@ -706,6 +706,7 @@ def run_direct_ip_checks(
                 ip_findings = future.result()
                 findings.extend(ip_findings)
             except Exception:
+                print(f"[!] check_single_ip: ip_findings = future.result()")
                 pass
 
     # Run WAF bypass checks (requires subdomain-to-IP mapping)
@@ -861,6 +862,7 @@ def run_tls_checks(
                 host_findings = future.result()
                 findings.extend(host_findings)
             except Exception:
+                print(f"[!] check_single_host: host_findings = future.result()")
                 pass
 
     return findings
@@ -1278,6 +1280,7 @@ def run_auth_checks(
                 host_findings = future.result()
                 findings.extend(host_findings)
             except Exception:
+                print(f"[!] check_single_host: host_findings = future.result()")
                 pass
 
     return findings
@@ -1421,6 +1424,7 @@ def check_dnssec_missing(domain: str) -> Optional[Dict]:
     except dns.resolver.NXDOMAIN:
         return None
     except Exception:
+        print(f"[!] check_dnssec_missing: answers = dns.resolver.resolve(domain, 'DNSKEY')")
         pass
 
     return None
@@ -1469,6 +1473,7 @@ def check_zone_transfer(domain: str, timeout: int = 10) -> Optional[Dict]:
                 continue  # This NS doesn't allow transfers, try next
 
     except Exception:
+        print(f"[!] check_zone_transfer: zone = dns.zone.from_xfr(")
         pass
 
     return None
@@ -1644,6 +1649,7 @@ def check_redis_no_auth(ip: str, port: int = 6379, timeout: int = 5) -> Optional
             }
 
     except Exception:
+        print(f"[!] check_redis_no_auth: sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)")
         pass
 
     return None
@@ -1752,6 +1758,7 @@ def check_smtp_open_relay(ip: str, port: int = 25, timeout: int = 10) -> Optiona
         sock.close()
 
     except Exception:
+        print(f"[!] check_smtp_open_relay: sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)")
         pass
 
     return None
@@ -1830,6 +1837,7 @@ def run_port_service_checks(
                 ip_findings = future.result()
                 findings.extend(ip_findings)
             except Exception:
+                print(f"[!] check_single_ip: ip_findings = future.result()")
                 pass
 
     return findings
@@ -1983,6 +1991,7 @@ def run_app_security_checks(
                 host_findings = future.result()
                 findings.extend(host_findings)
             except Exception:
+                print(f"[!] check_single_host: =============================================================================")
                 pass
 
     return findings
@@ -2028,6 +2037,7 @@ def check_no_rate_limiting(urls: List[str], hostname: str, timeout: int = 5) -> 
                     base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
                     auth_urls.add(base_url)
         except Exception:
+            print(f"[!] check_no_rate_limiting: from urllib.parse import urlparse")
             pass
 
     # Fallback: also check common endpoints if no auth URLs found from recon
@@ -2186,6 +2196,7 @@ def run_rate_limit_checks(
                 host_findings = future.result()
                 findings.extend(host_findings)
             except Exception:
+                print(f"[!] run_security_headers_checks: host_findings = future.result()")
                 pass
 
     return findings
@@ -2245,6 +2256,7 @@ def run_security_headers_checks(
                 host_findings = future.result()
                 findings.extend(host_findings)
             except Exception:
+                print(f"[!] check_single_host: =============================================================================")
                 pass
 
     return findings

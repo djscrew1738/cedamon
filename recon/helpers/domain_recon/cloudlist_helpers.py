@@ -40,6 +40,7 @@ def _cleanup_temp_dir(temp_dir: Path):
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
     except Exception:
+        print(f"[!] _cleanup_temp_dir: if temp_dir.exists()")
         pass
 
 

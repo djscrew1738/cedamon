@@ -707,6 +707,7 @@ def _chmod_best_effort(path: Path, mode: int) -> None:
     try:
         os.chmod(path, mode)
     except Exception:
+        print(f"[!] _chmod_best_effort: os.chmod(path, mode)")
         pass
 
 

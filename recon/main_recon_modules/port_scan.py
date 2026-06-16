@@ -494,6 +494,7 @@ def fix_file_ownership(file_path: Path) -> None:
         uid, gid = get_real_user_ids()
         os.chown(str(file_path), uid, gid)
     except Exception:
+        print(f"[!] fix_file_ownership: uid, gid = get_real_user_ids()")
         pass  # Silently ignore if we can't change ownership
 
 
@@ -801,6 +802,7 @@ def run_port_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     f.unlink()
                 scan_temp_dir.rmdir()
         except Exception:
+            print(f"[!] run_port_scan: if scan_temp_dir.exists()")
             pass
 
 

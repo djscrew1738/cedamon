@@ -158,6 +158,7 @@ def run_jsrecon(config: dict) -> None:
                         if record:
                             subdomains = record["subdomains"] or []
         except Exception:
+            print(f"[!] run_jsrecon: from graph_db import Neo4jClient")
             pass
 
     combined_result = {

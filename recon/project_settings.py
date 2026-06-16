@@ -14,6 +14,7 @@ try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent.parent / ".env")
 except Exception:
+    logger.warning("<module>: from dotenv import load_dotenv", exc_info=True)
     pass
 
 logger = logging.getLogger(__name__)

@@ -215,6 +215,7 @@ class ContainerManager:
                         try:
                             container.remove()
                         except Exception:
+                            logger.warning("_recover_single: container.remove()", exc_info=True)
                             pass
                 except NotFound:
                     if state.status not in (status_enum.COMPLETED, status_enum.ERROR):
@@ -715,6 +716,7 @@ class ContainerManager:
                             loop
                         ).result(timeout=5)
                     except Exception:
+                        logger.warning("read_logs: asyncio.run_coroutine_threadsafe(", exc_info=True)
                         pass
 
             # Start log reader in the dedicated streaming executor
@@ -1089,6 +1091,7 @@ class ContainerManager:
             if config_path.exists():
                 config_path.unlink()
         except Exception:
+            logger.warning("_refresh_partial_recon_state: config_path = Path(f'/tmp/redamon/partial_{project_id}_{run_id}.json')", exc_info=True)
             pass
 
         self._save_state()
@@ -1155,6 +1158,7 @@ class ContainerManager:
                             ContainerManager._bounded_queue_put(log_queue, None), loop
                         ).result(timeout=5)
                     except Exception:
+                        logger.warning("read_logs: asyncio.run_coroutine_threadsafe(", exc_info=True)
                         pass
 
             self._log_executor.submit(read_logs)
@@ -1563,6 +1567,7 @@ class ContainerManager:
                             loop
                         ).result(timeout=5)
                     except Exception:
+                        logger.warning("read_logs: asyncio.run_coroutine_threadsafe(", exc_info=True)
                         pass
 
             self._log_executor.submit(read_logs)
@@ -2083,6 +2088,7 @@ class ContainerManager:
                             loop
                         ).result(timeout=5)
                     except Exception:
+                        logger.warning("read_logs: asyncio.run_coroutine_threadsafe(", exc_info=True)
                         pass
 
             self._log_executor.submit(read_logs)
@@ -2488,6 +2494,7 @@ class ContainerManager:
                             loop
                         ).result(timeout=5)
                     except Exception:
+                        logger.warning("read_logs: asyncio.run_coroutine_threadsafe(", exc_info=True)
                         pass
 
             self._log_executor.submit(read_logs)

@@ -133,6 +133,7 @@ def _fetch_sourcemap(url: str, timeout: int = 10) -> Optional[dict]:
                         and isinstance(data.get('sources'), list)):
                     return data
     except Exception:
+        print(f"[!] _fetch_sourcemap: resp = requests.get(url, timeout=timeout, headers=headers)")
         pass
     return None
 

@@ -152,6 +152,7 @@ def download_cwe_metadata(db_path: Path, settings: Optional[Dict] = None) -> boo
                 print("[-][MITRE] CWE metadata: cached (skipping download)")
                 return True
         except Exception:
+            print(f"[!] download_cwe_metadata: mtime = datetime.fromtimestamp(dest_file.stat().st_mtime)")
             pass
 
     print("[*][MITRE] Downloading official CWE data...", end=" ", flush=True)
@@ -339,6 +340,7 @@ def download_capec_metadata(db_path: Path, settings: Optional[Dict] = None) -> b
                 print("[-][MITRE] CAPEC metadata: cached (skipping download)")
                 return True
         except Exception:
+            print(f"[!] download_capec_metadata: mtime = datetime.fromtimestamp(dest_file.stat().st_mtime)")
             pass
 
     print("[*][MITRE] Downloading official CAPEC data...", end=" ", flush=True)

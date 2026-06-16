@@ -246,6 +246,7 @@ def run_monitored_subprocess(
                     if chunk:
                         stdout_chunks.append(chunk)
                 except Exception:
+                    print(f"[!] run_monitored_subprocess: chunk = proc.stdout.readline()")
                     pass
             if proc.stderr:
                 try:
@@ -253,6 +254,7 @@ def run_monitored_subprocess(
                     if chunk:
                         stderr_chunks.append(chunk)
                 except Exception:
+                    print(f"[!] run_monitored_subprocess: chunk = proc.stderr.readline()")
                     pass
 
             now = time.time()
@@ -305,6 +307,7 @@ def run_monitored_subprocess(
             try:
                 proc.wait(timeout=10)
             except Exception:
+                print(f"[!] run_monitored_subprocess: proc.wait(timeout=10)")
                 pass
         raise
 
@@ -326,5 +329,6 @@ def get_project_container_id() -> Optional[str]:
                         if len(candidate) >= 12 and all(c in "0123456789abcdef" for c in candidate[:12]):
                             return candidate[:12]
         except Exception:
+            print(f"[!] get_project_container_id: for line in cgroup.read_text().splitlines()")
             pass
     return os.environ.get("HOSTNAME") if os.environ.get("HOSTNAME") else None

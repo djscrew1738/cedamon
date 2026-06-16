@@ -109,6 +109,7 @@ def run_paramspider(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_paramspider: from recon.helpers import is_tor_running")
         pass
 
     # Run ParamSpider discovery
@@ -298,6 +299,7 @@ def run_kiterunner(config: dict) -> None:
             if host:
                 target_domains.add(host)
         except Exception:
+            print(f"[!] run_kiterunner: host = urlparse(url).hostname")
             pass
 
     existing_subs = set(recon_data.get("subdomains", []))
@@ -339,6 +341,7 @@ def run_kiterunner(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_kiterunner: from recon.helpers import is_tor_running")
         pass
 
     # Ensure Kiterunner binary and run discovery for each wordlist
@@ -677,6 +680,7 @@ def run_arjun(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_arjun: from recon.helpers import is_tor_running")
         pass
 
     # Run Arjun parameter discovery
@@ -745,6 +749,7 @@ def run_arjun(config: dict) -> None:
                         if record:
                             recon_data["subdomains"] = record["subdomains"] or []
         except Exception:
+            print(f"[!] run_arjun: from graph_db import Neo4jClient")
             pass
 
     # Ensure all target hostnames are in subdomains list for graph scope filtering

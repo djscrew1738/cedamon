@@ -359,6 +359,7 @@ def grab_banner(host: str, port: int, timeout: float = 5.0, use_ssl: bool = Fals
                 sock.settimeout(timeout)
                 banner = sock.recv(1024)
             except:
+                print(f"[!] grab_banner: sock.send(probe)")
                 pass
 
         sock.close()
@@ -485,6 +486,7 @@ def run_banner_grab(recon_data: dict, settings: dict = None) -> Dict:
                     service = result.get("version") or result.get("service") or "unknown"
                     print(f"[+][httpx] {result['host']}:{result['port']} - {service}")
             except Exception:
+                print(f"[!] run_banner_grab: future.result()")
                 pass
     
     duration = (datetime.now() - start_time).total_seconds()
@@ -1656,6 +1658,7 @@ def fix_file_ownership(file_path: Path) -> None:
         uid, gid = get_real_user_ids()
         os.chown(str(file_path), uid, gid)
     except Exception:
+        print(f"[!] fix_file_ownership: uid, gid = get_real_user_ids()")
         pass
 
 
@@ -1976,6 +1979,7 @@ def run_http_probe(recon_data: dict, output_file: Path = None, settings: dict = 
                     f.unlink()
                 scan_temp_dir.rmdir()
         except Exception:
+            print(f"[!] run_http_probe: if scan_temp_dir.exists()")
             pass
 
 

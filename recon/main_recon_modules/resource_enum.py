@@ -590,6 +590,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             if host:
                 target_domains.add(host)
         except Exception:
+            print(f"[!] run_resource_enum: host = urlparse(url).hostname")
             pass
 
     if not target_urls:

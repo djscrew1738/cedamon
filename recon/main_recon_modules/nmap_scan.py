@@ -490,6 +490,7 @@ def run_nmap_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                 process.kill()
                 process.wait(timeout=10)
             except Exception:
+                print(f"[!] _scan_single_ip: process.kill()")
                 pass
             return [], [], ""
         except Exception as e:
@@ -624,6 +625,7 @@ def run_nmap_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                     f.unlink()
                 scan_temp_dir.rmdir()
         except Exception:
+            print(f"[!] _scan_single_ip: if scan_temp_dir.exists()")
             pass
 
 

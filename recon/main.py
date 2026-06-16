@@ -485,6 +485,7 @@ def _maybe_run_ai_surface(result: dict, settings: dict, output_file: Path) -> di
         try:
             save_recon_file(result, output_file)
         except Exception:
+            print(f"[!] _maybe_run_ai_surface: save_recon_file(result, output_file)")
             pass
     return result
 

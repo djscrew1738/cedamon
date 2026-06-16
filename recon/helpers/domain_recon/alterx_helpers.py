@@ -38,6 +38,7 @@ def _cleanup_temp_dir(temp_dir: Path):
         if temp_dir.exists():
             shutil.rmtree(temp_dir)
     except Exception:
+        print(f"[!] _cleanup_temp_dir: if temp_dir.exists()")
         pass
 
 
@@ -113,6 +114,7 @@ def resolve_alterx_candidates(
                 if future.result():
                     valid.append(sub)
             except Exception:
+                print(f"[!] resolve_alterx_candidates: if future.result()")
                 pass
 
     print(f"[✓][Alterx] {len(valid)} permutations resolved to valid hosts")

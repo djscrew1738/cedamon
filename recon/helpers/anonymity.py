@@ -165,6 +165,7 @@ def check_tor_connection() -> dict:
                 result["exit_ip"] = data.get("IP")
             session.close()
     except Exception:
+        print(f"[!] check_tor_connection: real_resp = requests.get(FALLBACK_CHECK_URL, timeout=10)")
         pass
 
     return result
@@ -196,6 +197,7 @@ def get_tor_exit_ip(session: 'requests.Session') -> Optional[str]:
         if resp.status_code == 200:
             return resp.json().get("ip")
     except Exception:
+        print(f"[!] get_tor_exit_ip: resp = session.get(CHECK_URL, timeout=15)")
         pass
 
     return None
@@ -352,6 +354,7 @@ def get_real_ip() -> Optional[str]:
         if resp.status_code == 200:
             return resp.json().get("ip")
     except Exception:
+        print(f"[!] get_real_ip: resp = requests.get(FALLBACK_CHECK_URL, timeout=10)")
         pass
     return None
 

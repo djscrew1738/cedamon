@@ -121,6 +121,7 @@ def run_katana(config: dict) -> None:
             if host:
                 target_domains.add(host)
         except Exception:
+            print(f"[!] run_katana: host = urlparse(url).hostname")
             pass
 
     # Ensure all target hostnames are in subdomains list for graph scope filtering
@@ -155,6 +156,7 @@ def run_katana(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_katana: from recon.helpers import is_tor_running")
         pass
 
     # Pull Docker image
@@ -391,6 +393,7 @@ def run_hakrawler(config: dict) -> None:
             if host:
                 target_domains.add(host)
         except Exception:
+            print(f"[!] run_hakrawler: host = urlparse(url).hostname")
             pass
 
     existing_subs = set(recon_data.get("subdomains", []))
@@ -423,6 +426,7 @@ def run_hakrawler(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_hakrawler: from recon.helpers import is_tor_running")
         pass
 
     # Pull Docker image
@@ -686,6 +690,7 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
             if host:
                 target_domains.add(host)
         except Exception:
+            print(f"[!] _url_in_requested_domain_scope: host = urlparse(url).hostname")
             pass
 
     # Ensure all target hostnames are in subdomains list for graph scope filtering
@@ -729,6 +734,7 @@ def run_zap_ajax_spider_partial(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] _url_in_requested_domain_scope: from recon.helpers import is_tor_running")
         pass
 
     print(f"[*][ZAP Ajax] Docker image: {ZAP_AJAX_SPIDER_DOCKER_IMAGE}")
@@ -1010,6 +1016,7 @@ def run_ffuf(config: dict) -> None:
             if host:
                 target_domains.add(host)
         except Exception:
+            print(f"[!] run_ffuf: host = urlparse(url).hostname")
             pass
 
     existing_subs = set(recon_data.get("subdomains", []))
@@ -1058,6 +1065,7 @@ def run_ffuf(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_ffuf: Check ffuf binary")
         pass
 
     # Check ffuf binary
@@ -1371,6 +1379,7 @@ def run_gau(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_gau: Pull Docker image")
         pass
 
     # Pull Docker image
@@ -1678,6 +1687,7 @@ def run_jsluice(config: dict) -> None:
         if TOR_ENABLED and is_tor_running():
             use_proxy = True
     except Exception:
+        print(f"[!] run_jsluice: from recon.helpers import is_tor_running")
         pass
 
     # Run jsluice analysis (filters to .js files internally, downloads and analyzes)
@@ -1773,6 +1783,7 @@ def run_jsluice(config: dict) -> None:
                         if record:
                             recon_data["subdomains"] = record["subdomains"] or []
         except Exception:
+            print(f"[!] run_jsluice: from graph_db import Neo4jClient")
             pass
 
     # Ensure all target hostnames are in subdomains list for graph scope filtering

@@ -78,6 +78,7 @@ def _is_js_url(url: str) -> bool:
         if '/js/' in path or '/javascript/' in path:
             return True
     except Exception:
+        print(f"[!] _is_js_url: Check common JS path patterns without extension")
         pass
     return False
 
@@ -838,6 +839,7 @@ def run_js_recon(combined_result: dict, settings: dict) -> dict:
             try:
                 shutil.rmtree(work_dir)
             except Exception:
+                print(f"[!] run_js_recon: Cleanup temp files")
                 pass
 
     return combined_result

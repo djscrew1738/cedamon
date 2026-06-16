@@ -498,6 +498,7 @@ def run_masscan_scan(recon_data: dict, output_file: Path = None, settings: dict 
             process.kill()
             process.wait(timeout=10)
         except Exception:
+            print(f"[!] run_masscan_scan: process.kill()")
             pass
         return recon_data
     except Exception as e:
@@ -510,6 +511,7 @@ def run_masscan_scan(recon_data: dict, output_file: Path = None, settings: dict 
                     f.unlink()
                 scan_temp_dir.rmdir()
         except Exception:
+            print(f"[!] run_masscan_scan: if scan_temp_dir.exists()")
             pass
 
 

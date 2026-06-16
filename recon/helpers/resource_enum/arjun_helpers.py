@@ -224,6 +224,7 @@ def _run_arjun_single_method(
         try:
             shutil.rmtree(tmp_dir)
         except Exception:
+            print(f"[!] _run_arjun_single_method: shutil.rmtree(tmp_dir)")
             pass
 
     return results, external_domains

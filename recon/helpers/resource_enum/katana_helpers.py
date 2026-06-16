@@ -248,6 +248,7 @@ def run_katana_crawler(
                             for line in stderr_output.strip().splitlines()[:20]:
                                 print(f"[!][Katana]   {line}")
                     except Exception:
+                        print(f"[!] run_katana_crawler: stderr_output = process.stderr.read() if process.stderr else ''")
                         pass
 
         except Exception as e:

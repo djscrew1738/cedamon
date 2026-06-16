@@ -230,6 +230,7 @@ def run_httpx(config: dict) -> None:
                         )
                         _sub_exists = _res.single() is not None
         except Exception:
+            print(f"[!] run_httpx: from graph_db import Neo4jClient")
             pass
         if not _sub_exists:
             print(f"[!][Partial Recon] Subdomain {ip_attach_to} not found in graph, falling back to generic UserInput for IPs")
@@ -482,6 +483,7 @@ def run_httpx(config: dict) -> None:
                     if gc.verify_connection():
                         gc.update_user_input_status(user_input_id, "error", {"error": str(e)})
             except Exception:
+                print(f"[!] run_httpx: from graph_db import Neo4jClient")
                 pass
         raise
 

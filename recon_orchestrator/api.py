@@ -54,6 +54,7 @@ def _fetch_project_sync(url: str, api_key: str) -> dict:
             if resp.status == 200:
                 return json_mod.loads(resp.read().decode())
     except Exception:
+        logger.warning("_fetch_project_sync: with urllib.request.urlopen(req, timeout=5) as resp", exc_info=True)
         pass
     return {}
 

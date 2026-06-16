@@ -214,6 +214,7 @@ def _run_port_scanner(config: dict, tool_id: str, scan_fn, label: str,
                         )
                         _sub_exists = _res.single() is not None
         except Exception:
+            print(f"[!] _run_port_scanner: from graph_db import Neo4jClient")
             pass
         if not _sub_exists:
             print(f"[!][Partial Recon] Subdomain {ip_attach_to} not found in graph, falling back to generic UserInput for IPs")
@@ -503,6 +504,7 @@ def run_nmap(config: dict) -> None:
                         )
                         _sub_exists = _res.single() is not None
         except Exception:
+            print(f"[!] run_nmap: from graph_db import Neo4jClient")
             pass
         if not _sub_exists:
             print(f"[!][Partial Recon] Subdomain {ip_attach_to} not found in graph, falling back to generic UserInput for IPs")

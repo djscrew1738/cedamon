@@ -157,6 +157,7 @@ def run_paramspider_discovery(
             try:
                 shutil.rmtree(tmp_dir)
             except Exception:
+                print(f"[!] run_paramspider_discovery: Clean up temp directory")
                 pass
 
 
