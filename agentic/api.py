@@ -1161,7 +1161,7 @@ class TradecraftVerifyRequest(BaseModel):
     model: Optional[str] = None
 
 
-_CUSTOM_PROVIDER_TYPES = ("openai_compatible", "bedrock_custom", "ollama_local")
+_CUSTOM_PROVIDER_TYPES = ("openai_compatible", "bedrock_custom", "ollama_local", "ollama")
 
 
 def _pick_custom_provider(user_providers: list, model_name: str) -> Optional[dict]:
@@ -1189,9 +1189,9 @@ def _build_llm_for_user(user_id: Optional[str]):
     is missing or the lookup fails.
 
     When the user has only a custom (OpenAI-compatible / bedrock_custom /
-    ollama_local) provider configured, this honors it instead of falling back
-    to the global default model — otherwise the call would crash trying to
-    instantiate an Anthropic client with no key.
+    ollama_local / ollama) provider configured, this honors it instead of
+    falling back to the global default model — otherwise the call would crash
+    trying to instantiate an Anthropic client with no key.
     """
     import os
     import requests
@@ -1851,6 +1851,31 @@ async def test_llm_provider(body: LlmProviderTestRequest):
                 aws_bearer_token=body.awsBearerToken,
                 aws_region=body.awsRegion,
             )
+        elif ptype == "ollama":
+            from orchestrator_helpers.model_providers import fetch_ollama_models
+            base_url = body.baseUrl or "http://localhost:11434"
+            available = await fetch_ollama_models(base_url=base_url)
+            if not available:
+                return JSONResponse(
+                    content={"success": False, "error": "No Ollama models available — check that the Ollama server is running and reachable."},
+                    status_code=400,
+                )
+            pick = available[0]
+            from langchain_openai import ChatOpenAI
+            kwargs = dict(
+                model=pick["id"].removeprefix("ollama/"),
+                api_key="ollama",
+                temperature=body.temperature,
+                max_tokens=body.maxTokens,
+                base_url=f"{base_url.rstrip('/')}/v1",
+            )
+            if body.timeout:
+                kwargs["timeout"] = float(body.timeout)
+            if not body.sslVerify:
+                import httpx
+                kwargs["http_client"] = httpx.Client(verify=False)
+                kwargs["http_async_client"] = httpx.AsyncClient(verify=False)
+            llm = ChatOpenAI(**kwargs)
         elif ptype == "openai_compatible":
             from langchain_openai import ChatOpenAI
             kwargs = dict(

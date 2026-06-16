@@ -449,6 +449,64 @@ async def fetch_bedrock_models(
 
 
 # ---------------------------------------------------------------------------
+# Ollama  (local /api/tags discovery)
+# ---------------------------------------------------------------------------
+async def fetch_ollama_models(base_url: str = "http://localhost:11434") -> list[dict]:
+    """Fetch models from a local Ollama server via its /api/tags endpoint.
+
+    Unlike OpenAI-compatible providers, Ollama exposes a richer /api/tags
+    endpoint that returns model details (parameter size, family, context
+    length, capabilities).  We use that here and fall back to /v1/models if
+    /api/tags is unavailable.
+
+    Only models that support ``completion`` (chat) are included — embedding-
+    only and vision-only entries are filtered out.
+    """
+    base = base_url.rstrip("/")
+
+    # Try /api/tags first (richer metadata)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{base}/api/tags")
+        if resp.is_success:
+            data = resp.json().get("models", [])
+            models = []
+            for m in data:
+                mid = m.get("name", "")
+                caps = m.get("capabilities", []) or []
+                # Skip embedding-only models
+                if "embedding" in caps and "completion" not in caps:
+                    continue
+                details = m.get("details", {}) or {}
+                ctx = details.get("context_length") or None
+                family = details.get("family", "")
+                param_size = details.get("parameter_size", "")
+                desc = f"Ollama — {param_size}" if param_size else "Ollama"
+                if family:
+                    desc += f" ({family})"
+                models.append(_model(
+                    id=f"ollama/{mid}",
+                    name=mid,
+                    context_length=ctx,
+                    description=desc,
+                ))
+            models.sort(key=lambda m: m["name"])
+            return models
+    except Exception as e:
+        logger.debug(f"Ollama /api/tags unreachable ({type(e).__name__}: {e}), trying /v1/models")
+
+    # Fall back to OpenAI-compatible /v1/models
+    discovered = await _fetch_openai_compat_models(
+        base_url=base,
+        api_key="ollama",
+        id_prefix="ollama",
+        description="Ollama",
+    )
+    discovered.sort(key=lambda m: m["name"])
+    return discovered
+
+
+# ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
 async def fetch_all_models(
@@ -505,6 +563,10 @@ async def fetch_all_models(
                 access_key_id=p.get("awsAccessKeyId", ""),
                 secret_access_key=p.get("awsSecretKey", ""),
                 bearer_token=p.get("awsBearerToken", ""),
+            )
+        elif ptype == "ollama":
+            tasks_db[f"Ollama ({pname})"] = fetch_ollama_models(
+                base_url=p.get("baseUrl", "http://localhost:11434"),
             )
         elif ptype == "openai_compatible":
             # Single model entry — no discovery needed

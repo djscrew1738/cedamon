@@ -33,6 +33,9 @@ const XAI_PATH = 'M0 1.5h4.2l5.5 8.5L16.5 1.5H22l-9.8 12L24 22.5h-4.7l-6-9-6.5 9
 /* Mistral AI — stylised M letterform with diagonal cut */
 const MISTRAL_PATH = 'M0 3h5.5l6.5 10.5L18.5 3H24v18h-4.5V9.8l-5.5 8.7H9.5L4 9.8V21H0Z'
 
+/* Ollama — llama silhouette */
+const OLLAMA_PATH = 'M12 2C7.5 2 4 5.5 4 10v2c0 3.5 2 6.5 5 8v2h6v-2c3-1.5 5-4.5 5-8v-2c0-4.5-3.5-8-8-8zm-3 5c.8 0 1.5.7 1.5 1.5S9.8 10 9 10s-1.5-.7-1.5-1.5S8.2 7 9 7zm6 0c.8 0 1.5.7 1.5 1.5S15.8 10 15 10s-1.5-.7-1.5-1.5S14.2 7 15 7zm-6 6c.4 1.2 1.5 2 3 2s2.6-.8 3-2H9z'
+
 export const SiDeepseek = (props: IconProps) => (
   <BrandSvg {...props} title={props.title ?? 'DeepSeek'} path={DEEPSEEK_PATH} />
 )
@@ -51,4 +54,8 @@ export const SiXai = (props: IconProps) => (
 
 export const SiMistral = (props: IconProps) => (
   <BrandSvg {...props} title={props.title ?? 'Mistral AI'} path={MISTRAL_PATH} />
+)
+
+export const SiOllama = (props: IconProps) => (
+  <BrandSvg {...props} title={props.title ?? 'Ollama'} path={OLLAMA_PATH} />
 )

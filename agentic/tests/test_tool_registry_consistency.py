@@ -68,7 +68,6 @@ TOOL_PHASE_MAP: dict[str, list[str]] = DEFAULT_AGENT_SETTINGS["TOOL_PHASE_MAP"]
 # Format: {registry_name: {tool_name: "reason"}}
 _KNOWN_MISSING: dict[str, dict[str, str]] = {
     "TOOL_COST_MODEL": {
-        "execute_searchsploit": "No cost assigned yet.",
         "cve_intel": "No cost assigned yet.",
         "msf_restart": "No cost assigned yet.",
         "execute_code": "No cost assigned yet.",
@@ -79,7 +78,6 @@ _KNOWN_MISSING: dict[str, dict[str, str]] = {
     },
     "TOOL_PHASE_MAP": {
         "execute_masscan": "Not yet mapped to a pipeline phase.",
-        "execute_searchsploit": "Not yet mapped to a pipeline phase.",
         "cve_intel": "Not yet mapped to a pipeline phase.",
         "msf_restart": "Not yet mapped to a pipeline phase.",
         "execute_code": "Not yet mapped to a pipeline phase.",
@@ -90,7 +88,6 @@ _KNOWN_MISSING: dict[str, dict[str, str]] = {
     },
     "TOOL_CLUSTERS": {
         "execute_playwright": "Not yet assigned to a cluster.",
-        "execute_searchsploit": "Not yet assigned to a cluster.",
         "cve_intel": "Not yet assigned to a cluster.",
         "msf_restart": "Not yet assigned to a cluster.",
         "execute_code": "Not yet assigned to a cluster.",

@@ -144,6 +144,25 @@ def setup_llm(
                 bedrock_kwargs["aws_access_key_id"] = custom_llm_config.get("awsAccessKeyId") or None
                 bedrock_kwargs["aws_secret_access_key"] = custom_llm_config.get("awsSecretKey") or None
             llm = ChatBedrockConverse(**bedrock_kwargs)
+        elif ptype == "ollama":
+            from langchain_openai import ChatOpenAI
+            base_url = (custom_llm_config.get("baseUrl") or "http://localhost:11434").rstrip("/") + "/v1"
+            kwargs = dict(
+                model=(custom_llm_config.get("modelIdentifier", api_model) or "default").removeprefix("ollama/"),
+                api_key="ollama",
+                temperature=custom_llm_config.get("temperature", 0),
+                max_tokens=custom_llm_config.get("maxTokens", 16384),
+                base_url=base_url,
+            )
+            timeout = custom_llm_config.get("timeout")
+            if timeout:
+                kwargs["timeout"] = float(timeout)
+            ssl = custom_llm_config.get("sslVerify", True)
+            if not ssl:
+                import httpx
+                kwargs["http_client"] = httpx.Client(verify=False)
+                kwargs["http_async_client"] = httpx.AsyncClient(verify=False)
+            llm = ChatOpenAI(**kwargs)
         else:
             # openai_compatible (default) — also handles openai custom entries
             kwargs = dict(

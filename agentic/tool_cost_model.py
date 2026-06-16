@@ -146,6 +146,12 @@ TOOL_COST_MODEL: dict[str, dict[str, Any]] = {
         "parallel_safe": False,  # browser context
         "category": "exploit",
     },
+    "execute_searchsploit": {
+        "cost": 2,
+        "time_estimate": "2-10s",
+        "parallel_safe": True,
+        "category": "vuln_scan",
+    },
 
     # ---- Intelligence ----
     "query_graph": {

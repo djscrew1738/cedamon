@@ -11,11 +11,6 @@ Usage
     parsed = parse_tool_output("execute_nmap", nmap_output)
     if parsed:
         target_info = merge_parsed(target_info, parsed)
-
-Hook this into the tool-execution pipeline (e.g. execute_tool_node or the
-think node) so that *every* tool invocation automatically enriches the
-shared target-intelligence model without relying on the LLM to manually
-extract facts from raw text.
 """
 
 from __future__ import annotations
@@ -23,24 +18,71 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterator
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _iter_json_lines(raw: str) -> Iterator[dict[str, Any]]:
+    """Yield dicts for each JSON-object line in *raw*.
+
+    Skips non-``{`` lines and lines that fail to parse as JSON so callers
+    can mix text-format and JSON-line output without extra guards.
+    """
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            yield json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+
+def _dedup(items: list) -> list:
+    """Return *items* deduplicated, preserving insertion order."""
+    return list(dict.fromkeys(items))
+
+
+def _info_findings(
+    items: list[str],
+    type_name: str,
+    max_items: int = 0,
+) -> list[dict]:
+    """Build info-severity findings from *items*.
+
+    When *max_items* is > 0 only that many items are included (useful for
+    high-volume findings such as discovered endpoints).
+    """
+    if max_items > 0:
+        items = items[:max_items]
+    return [
+        {"type": type_name, "detail": item, "severity": "info"}
+        for item in items
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Pattern constants
 # ---------------------------------------------------------------------------
 
+# Matches any Nmap port state: open, filtered, open|filtered, closed|filtered, ...
 _NMAP_PORT = re.compile(
-    r"^(\d+)/(tcp|udp)\s+open\s+(\S+)?\s*(.+)?$",
+    r"^(\d+)/(tcp|udp)\s+(?:open(?:\|filtered)?|filtered)\s+(\S+)?\s*(.+)?$",
     re.MULTILINE,
 )
 _NMAP_OS = re.compile(
     r"OS (?:details|guess|CPE):\s*(.+)$",
     re.MULTILINE,
 )
+# CVE pattern with word boundaries to avoid matching date-like numbers
 _NMAP_CVE = re.compile(
-    r"(\d{4}-\d{4,7})",
+    r"\b(\d{4}-\d{4,7})\b",
 )
 
 _HTTPX_TITLE = re.compile(r"\[(\d{3})\].*?title[=:]\s*([^\s,}\]]+)", re.IGNORECASE)
@@ -79,16 +121,13 @@ _AMASS_DOMAIN = re.compile(
     re.MULTILINE,
 )
 
-_KATANA_URL = re.compile(
-    r"(https?://[^\s\"'>]+)",
-)
-
-_GAU_URL = re.compile(r"(https?://[^\s\"'>]+)")
+# Shared URL regex used by both katana and gau parsers
+_URL_PATTERN = re.compile(r"(https?://[^\s\"'>]+)")
 
 _FFUF_STATUS = re.compile(r"^(\S+)\s+\(Status:\s*(\d+)\)", re.MULTILINE)
 
 _ARJUN_PARAM = re.compile(
-    r"\[\+\]\s*(?:Found|Parameter)\s*[:\s]+(.+)",
+    r"\[\+\]\s*(?:Found|Parameter)\s*[:\s]+(\S+)",
     re.IGNORECASE,
 )
 
@@ -97,8 +136,11 @@ _JSLUICE_ENDPOINT = re.compile(
     re.IGNORECASE,
 )
 
+# Hydra output can vary by service module; support both common forms.
+# Format 1: [22][ssh] host: 10.0.0.1 login: root password: p@ss
+# Format 2: [80][http-post-form] host: 10.0.0.1   login: admin   password: secret
 _HYDRA_FOUND = re.compile(
-    r"\[(\d+)\]\[([^\]]+)\]\s*host:\s*(\S+)\s*(?:login|user):\s*(\S+)\s*password:\s*(\S+)",
+    r"\[(\d+)\]\[([^\]]+)\]\s*host:\s*(\S+)\s+(?:login|user|username):\s*(\S+)\s+password:\s*(\S+)",
     re.IGNORECASE,
 )
 
@@ -123,6 +165,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "execute_masscan": "parse_naabu",  # same format as naabu
     "execute_curl": "parse_curl",
     "execute_playwright": "parse_playwright",
+    "execute_searchsploit": "parse_searchsploit",
 }
 
 
@@ -152,6 +195,8 @@ def parse_tool_output(tool_name: str, raw: str | None) -> dict[str, Any] | None:
         return None
     try:
         return handler(raw)
+    except (KeyboardInterrupt, SystemExit):
+        raise
     except Exception:
         logger.debug("output_parsers: %s failed on %s output", handler_name, tool_name, exc_info=True)
         return None
@@ -189,9 +234,9 @@ def parse_nmap(raw: str) -> dict[str, Any]:
 
     return {
         "ports": sorted(set(ports)),
-        "services": list(dict.fromkeys(services)),
-        "technologies": list(dict.fromkeys(technologies)),
-        "vulnerabilities": list(dict.fromkeys(vulns)),
+        "services": _dedup(services),
+        "technologies": _dedup(technologies),
+        "vulnerabilities": _dedup(vulns),
         "findings": findings,
     }
 
@@ -205,16 +250,9 @@ def parse_naabu(raw: str) -> dict[str, Any]:
         except ValueError:
             pass
     # also try JSON-line format
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-            if "port" in obj:
-                ports.append(int(obj["port"]))
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
+    for obj in _iter_json_lines(raw):
+        if "port" in obj:
+            ports.append(int(obj["port"]))
     return {"ports": sorted(set(ports)), "findings": []}
 
 
@@ -236,29 +274,20 @@ def parse_httpx(raw: str) -> dict[str, Any]:
             pass
 
     # also try JSON-line format (httpx -json)
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-            if "tech" in obj and isinstance(obj["tech"], list):
-                technologies.extend(obj["tech"])
-            if "title" in obj and obj["title"]:
-                titles.append(obj["title"])
-            if "webserver" in obj and obj["webserver"]:
-                technologies.append(obj["webserver"])
-            if "status_code" in obj:
-                statuses.append(int(obj["status_code"]))
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
+    for obj in _iter_json_lines(raw):
+        if "tech" in obj and isinstance(obj["tech"], list):
+            technologies.extend(obj["tech"])
+        if "title" in obj and obj["title"]:
+            titles.append(obj["title"])
+        if "webserver" in obj and obj["webserver"]:
+            technologies.append(obj["webserver"])
+        if "status_code" in obj:
+            statuses.append(int(obj["status_code"]))
 
     return {
-        "technologies": list(dict.fromkeys(technologies)),
+        "technologies": _dedup(technologies),
         "services": [],
-        "findings": [
-            {"type": "title", "detail": t, "severity": "info"} for t in dict.fromkeys(titles)
-        ],
+        "findings": [{"type": "title", "detail": t, "severity": "info"} for t in _dedup(titles)],
         "endpoints": [],
     }
 
@@ -268,41 +297,27 @@ def parse_subfinder(raw: str) -> dict[str, Any]:
     for m in _SUBFINDER_DOMAIN.finditer(raw):
         domains.append(m.group(0).strip())
     # also handle JSON-line
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                if "host" in obj:
-                    domains.append(obj["host"])
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
+    for obj in _iter_json_lines(raw):
+        if "host" in obj:
+            domains.append(obj["host"])
     return {
-        "subdomains": list(dict.fromkeys(domains)),
-        "findings": [
-            {"type": "subdomain", "detail": d, "severity": "info"} for d in dict.fromkeys(domains)
-        ],
+        "subdomains": _dedup(domains),
+        "findings": _info_findings(_dedup(domains), "subdomain"),
     }
 
 
 def parse_amass(raw: str) -> dict[str, Any]:
     domains: list[str] = []
+    for obj in _iter_json_lines(raw):
+        if "name" in obj:
+            domains.append(obj["name"])
     for line in raw.splitlines():
         line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                if "name" in obj:
-                    domains.append(obj["name"])
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
-        elif _AMASS_DOMAIN.match(line):
+        if _AMASS_DOMAIN.match(line):
             domains.append(line)
     return {
-        "subdomains": list(dict.fromkeys(domains)),
-        "findings": [
-            {"type": "subdomain", "detail": d, "severity": "info"} for d in dict.fromkeys(domains)
-        ],
+        "subdomains": _dedup(domains),
+        "findings": _info_findings(_dedup(domains), "subdomain"),
     }
 
 
@@ -332,35 +347,29 @@ def parse_nuclei(raw: str) -> dict[str, Any]:
         severities[sev] = severities.get(sev, 0) + 1
 
     # also handle JSON-line format
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                sev = (obj.get("info", {}).get("severity") or obj.get("severity", "info")).lower()
-                template = obj.get("template-id", "") or obj.get("templateID", "")
-                matcher = obj.get("matcher-name", "")
-                host = obj.get("host", "")
-                detail = f"[{sev}] {template}/{matcher} @ {host}" if matcher else f"[{sev}] {template} @ {host}"
-                extract = obj.get("extracted-results", [])
-                cve = None
-                if extract:
-                    for val in extract:
-                        if re.match(r"\d{4}-\d{4,7}", str(val)):
-                            cve = str(val)
-                            vulns.append(cve)
-                            break
-                findings.append({
-                    "type": "nuclei_finding",
-                    "detail": detail,
-                    "severity": sev,
-                    "template": template,
-                })
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
+    for obj in _iter_json_lines(raw):
+        sev = (obj.get("info", {}).get("severity") or obj.get("severity", "info")).lower()
+        template = obj.get("template-id", "") or obj.get("templateID", "")
+        matcher = obj.get("matcher-name", "")
+        host = obj.get("host", "")
+        detail = f"[{sev}] {template}/{matcher} @ {host}" if matcher else f"[{sev}] {template} @ {host}"
+        extract = obj.get("extracted-results", [])
+        cve = None
+        if extract:
+            for val in extract:
+                if re.match(r"\d{4}-\d{4,7}", str(val)):
+                    cve = str(val)
+                    vulns.append(cve)
+                    break
+        findings.append({
+            "type": "nuclei_finding",
+            "detail": detail,
+            "severity": sev,
+            "template": template,
+        })
 
     return {
-        "vulnerabilities": list(dict.fromkeys(vulns)),
+        "vulnerabilities": _dedup(vulns),
         "findings": findings,
     }
 
@@ -389,16 +398,21 @@ def parse_wpscan(raw: str) -> dict[str, Any]:
             vulns.append(cve)
         findings.append({"type": "wp_vuln", "detail": desc, "severity": "medium"})
 
-    # detect users
+    # detect users from the user enumeration table
+    _WPSCAN_USER_EXCLUDE = frozenset({
+        "id", "login", "display_name", "slug", "user_email", "user_login",
+        "user_nicename", "user_registered", "displayname", "user",
+        "password", "email", "url", "role", "status", "name",
+    })
     for m in re.finditer(r"\[\+\]\s*\|?\s*([a-z0-9_\-]+)\s*\|", raw, re.IGNORECASE):
         username = m.group(1).strip()
-        if username and len(username) > 1 and username not in ("Id", "Login", "Display Name", "Slug"):
+        if len(username) > 1 and username.lower() not in _WPSCAN_USER_EXCLUDE:
             credentials.append({"username": username, "type": "wp_user"})
             findings.append({"type": "wp_user", "detail": username, "severity": "medium"})
 
     return {
-        "technologies": list(dict.fromkeys(technologies)),
-        "vulnerabilities": list(dict.fromkeys(vulns)),
+        "technologies": _dedup(technologies),
+        "vulnerabilities": _dedup(vulns),
         "credentials": credentials,
         "findings": findings,
     }
@@ -406,43 +420,31 @@ def parse_wpscan(raw: str) -> dict[str, Any]:
 
 def parse_katana(raw: str) -> dict[str, Any]:
     endpoints: list[str] = []
-    for m in _KATANA_URL.finditer(raw):
+    for m in _URL_PATTERN.finditer(raw):
         endpoints.append(m.group(1))
     # JSON-line format
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                if "url" in obj:
-                    endpoints.append(obj["url"])
-                elif "endpoint" in obj:
-                    endpoints.append(obj["endpoint"])
-                elif "request-response" in obj and isinstance(obj["request-response"], list):
-                    for rr in obj["request-response"]:
-                        if isinstance(rr, dict) and "endpoint" in rr:
-                            endpoints.append(rr["endpoint"])
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
+    for obj in _iter_json_lines(raw):
+        if "url" in obj:
+            endpoints.append(obj["url"])
+        elif "endpoint" in obj:
+            endpoints.append(obj["endpoint"])
+        elif "request-response" in obj and isinstance(obj["request-response"], list):
+            for rr in obj["request-response"]:
+                if isinstance(rr, dict) and "endpoint" in rr:
+                    endpoints.append(rr["endpoint"])
     return {
-        "endpoints": list(dict.fromkeys(endpoints)),
-        "findings": [
-            {"type": "endpoint", "detail": e, "severity": "info"}
-            for e in list(dict.fromkeys(endpoints))[:50]
-        ],
+        "endpoints": _dedup(endpoints),
+        "findings": _info_findings(_dedup(endpoints), "endpoint", max_items=50),
     }
 
 
 def parse_gau(raw: str) -> dict[str, Any]:
     urls: list[str] = []
-    for m in _GAU_URL.finditer(raw):
+    for m in _URL_PATTERN.finditer(raw):
         urls.append(m.group(1))
     return {
-        "endpoints": list(dict.fromkeys(urls)),
-        "findings": [
-            {"type": "url", "detail": u, "severity": "info"}
-            for u in list(dict.fromkeys(urls))[:50]
-        ],
+        "endpoints": _dedup(urls),
+        "findings": _info_findings(_dedup(urls), "url", max_items=50),
     }
 
 
@@ -455,20 +457,14 @@ def parse_ffuf(raw: str) -> dict[str, Any]:
         endpoints.append(url)
         findings.append({"type": "ffuf_finding", "detail": f"{url} (HTTP {status})", "severity": "info"})
     # JSON-line format
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                url = obj.get("url", "")
-                status = obj.get("status", 0)
-                if url:
-                    endpoints.append(url)
-                    findings.append({"type": "ffuf_finding", "detail": f"{url} (HTTP {status})", "severity": "info"})
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
+    for obj in _iter_json_lines(raw):
+        url = obj.get("url", "")
+        status = obj.get("status", 0)
+        if url:
+            endpoints.append(url)
+            findings.append({"type": "ffuf_finding", "detail": f"{url} (HTTP {status})", "severity": "info"})
     return {
-        "endpoints": list(dict.fromkeys(endpoints)),
+        "endpoints": _dedup(endpoints),
         "findings": findings,
     }
 
@@ -478,23 +474,14 @@ def parse_arjun(raw: str) -> dict[str, Any]:
     for m in _ARJUN_PARAM.finditer(raw):
         params.append(m.group(1).strip())
     # JSON output
-    for line in raw.splitlines():
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                if "param" in obj:
-                    params.append(str(obj["param"]))
-                elif "parameter" in obj:
-                    params.append(str(obj["parameter"]))
-            except (json.JSONDecodeError, ValueError, TypeError):
-                pass
+    for obj in _iter_json_lines(raw):
+        if "param" in obj:
+            params.append(str(obj["param"]))
+        elif "parameter" in obj:
+            params.append(str(obj["parameter"]))
     return {
-        "parameters": list(dict.fromkeys(params)),
-        "findings": [
-            {"type": "parameter", "detail": p, "severity": "info"}
-            for p in list(dict.fromkeys(params))
-        ],
+        "parameters": _dedup(params),
+        "findings": _info_findings(_dedup(params), "parameter"),
     }
 
 
@@ -503,11 +490,8 @@ def parse_jsluice(raw: str) -> dict[str, Any]:
     for m in _JSLUICE_ENDPOINT.finditer(raw):
         endpoints.append(m.group(1).strip())
     return {
-        "endpoints": list(dict.fromkeys(endpoints)),
-        "findings": [
-            {"type": "js_endpoint", "detail": e, "severity": "info"}
-            for e in list(dict.fromkeys(endpoints))[:50]
-        ],
+        "endpoints": _dedup(endpoints),
+        "findings": _info_findings(_dedup(endpoints), "js_endpoint", max_items=50),
     }
 
 
@@ -532,8 +516,8 @@ def parse_hydra(raw: str) -> dict[str, Any]:
 
 def parse_curl(raw: str) -> dict[str, Any]:
     technologies: list[str] = []
-    # Detect server header
-    m = re.search(r"(?i)^(?:<|server:\s*)([a-z/0-9.\-_]+)", raw)
+    # Detect server header — works with curl -v, -i, and -sI output
+    m = re.search(r"(?i)^server:\s*([a-z/0-9.\-_]+)", raw, re.MULTILINE)
     if m:
         technologies.append(m.group(1).strip())
     # Detect content-type
@@ -541,7 +525,7 @@ def parse_curl(raw: str) -> dict[str, Any]:
     if m:
         technologies.append(m.group(1).strip())
     return {
-        "technologies": list(dict.fromkeys(technologies)),
+        "technologies": _dedup(technologies),
         "findings": [],
     }
 
@@ -570,6 +554,62 @@ def parse_playwright(raw: str) -> dict[str, Any]:
             technologies.append(tech)
 
     return {
-        "technologies": list(dict.fromkeys(technologies)),
+        "technologies": _dedup(technologies),
         "findings": findings,
+    }
+
+
+def parse_searchsploit(raw: str) -> dict[str, Any]:
+    """Parse searchsploit ``-j`` JSON output.
+
+    Returns exploits, findings with EDB-ID references, and linked CVEs when
+    they appear in the title or description.
+    """
+    exploits: list[dict] = []
+    findings: list[dict] = []
+    vulns: list[str] = []
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"exploits": [], "findings": [], "vulnerabilities": []}
+
+    results = data if isinstance(data, list) else data.get("RESULTS", [])
+    if not isinstance(results, list):
+        return {"exploits": [], "findings": [], "vulnerabilities": []}
+
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        edb_id = str(entry.get("EDB-ID") or entry.get("id", ""))
+        title = str(entry.get("Title") or entry.get("title", ""))
+        exploit_type = str(entry.get("Type") or entry.get("type", ""))
+        platform = str(entry.get("Platform") or entry.get("platform", ""))
+        path = str(entry.get("Path") or entry.get("path", ""))
+
+        exploit = {
+            "edb_id": edb_id,
+            "title": title,
+            "type": exploit_type,
+            "platform": platform,
+            "path": path,
+        }
+        exploits.append(exploit)
+
+        # Extract CVE references from title / description.
+        for cve in _NMAP_CVE.findall(title):
+            vulns.append(cve)
+
+        severity = "high" if exploit_type.lower() in ("remote", "dos") else "medium"
+        findings.append({
+            "type": "exploit",
+            "detail": f"[{edb_id}] {title} ({platform}/{exploit_type})",
+            "severity": severity,
+            "edb_id": edb_id,
+        })
+
+    return {
+        "exploits": exploits,
+        "findings": findings,
+        "vulnerabilities": _dedup(vulns),
     }

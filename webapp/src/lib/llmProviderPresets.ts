@@ -2,7 +2,7 @@ import type { ComponentType, SVGProps } from 'react'
 import { SiOpenai, SiAnthropic, SiGooglegemini } from 'react-icons/si'
 import { FaAws } from 'react-icons/fa6'
 import { LuSettings, LuSparkles } from 'react-icons/lu'
-import { SiDeepseek, SiMoonshot, SiQwen, SiXai, SiMistral } from '@/components/icons/ProviderBrandIcons'
+import { SiDeepseek, SiMoonshot, SiQwen, SiXai, SiMistral, SiOllama } from '@/components/icons/ProviderBrandIcons'
 
 /**
  * Presets for OpenAI-Compatible LLM provider base URLs.
@@ -74,7 +74,8 @@ export const PROVIDER_TYPES = [
   { id: 'xai', name: 'xAI (Grok)', description: 'Grok models by xAI — state-of-the-art reasoning.', Icon: SiXai as ProviderIcon, apiKeyUrl: 'https://console.x.ai/' },
   { id: 'mistral', name: 'Mistral AI', description: 'Mistral models — open-weight and commercial.', Icon: SiMistral as ProviderIcon, apiKeyUrl: 'https://console.mistral.ai/api-keys/' },
   { id: 'bedrock', name: 'AWS Bedrock', description: 'AWS Bedrock foundation models', Icon: FaAws as ProviderIcon, apiKeyUrl: 'https://console.aws.amazon.com/iam/home#/security_credentials' },
-  { id: 'openai_compatible', name: 'OpenAI-Compatible', description: 'Any OpenAI-compatible endpoint (Ollama, vLLM, Groq, etc.)', Icon: LuSettings as ProviderIcon, apiKeyUrl: '' },
+  { id: 'ollama', name: 'Ollama', description: 'Local Ollama server with auto-discovered models', Icon: SiOllama as ProviderIcon, apiKeyUrl: '' },
+  { id: 'openai_compatible', name: 'OpenAI-Compatible', description: 'Any OpenAI-compatible endpoint (vLLM, Groq, Together, etc.)', Icon: LuSettings as ProviderIcon, apiKeyUrl: '' },
 ] as const
 
 export type ProviderType = typeof PROVIDER_TYPES[number]['id']

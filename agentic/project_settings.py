@@ -235,6 +235,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
         'execute_katana': ['informational', 'exploitation'],
         'execute_nmap': ['informational', 'exploitation', 'post_exploitation'],
         'execute_nuclei': ['informational', 'exploitation'],
+        'execute_searchsploit': ['informational', 'exploitation'],
         'kali_shell': ['informational', 'exploitation', 'post_exploitation'],
         'execute_code': ['informational', 'exploitation', 'post_exploitation'],
         'execute_playwright': ['informational', 'exploitation', 'post_exploitation'],

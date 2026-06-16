@@ -200,6 +200,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
   const isKeyBased = ['openai', 'anthropic', 'deepseek', 'gemini', 'glm', 'kimi', 'qwen', 'xai', 'mistral'].includes(ptype)
   const isBedrock = ptype === 'bedrock'
   const isCompat = ptype === 'openai_compatible'
+  const isOllama = ptype === 'ollama'
   const apiKeyUrl = providerDef?.apiKeyUrl
   const apiKeyLinkLabel = isBedrock ? 'Get AWS credentials' : 'Get API key'
   return (
@@ -339,6 +340,34 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
               <span className="formHint">Generate in AWS Bedrock console: API keys -&gt; Long-term API keys.</span>
             </div>
           )}
+        </>
+      )}
+
+      {/* Ollama — local server, no API key needed */}
+      {isOllama && (
+        <>
+          <div className="formGroup">
+            <label className="formLabel formLabelRequired">Ollama Server URL</label>
+            <input
+              className="textInput"
+              value={form.baseUrl}
+              onChange={e => updateForm('baseUrl', e.target.value)}
+              placeholder="http://localhost:11434"
+            />
+            <span className="formHint">The base URL of your Ollama server (default: http://localhost:11434). No API key is needed for local access.</span>
+          </div>
+
+          <div className="formGroup">
+            <label className="formLabel">Model</label>
+            <input
+              className="textInput"
+              value={form.modelIdentifier}
+              onChange={e => updateForm('modelIdentifier', e.target.value)}
+              placeholder="Auto-discovered on save"
+              disabled
+            />
+            <span className="formHint">Models are auto-discovered from the Ollama server. Save this provider to fetch available models.</span>
+          </div>
         </>
       )}
 
@@ -504,7 +533,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
           disabled={
             saving ||
             !form.name ||
-            (!isCompat && !form.apiKey && !isBedrock) ||
+            (!isCompat && !isOllama && !form.apiKey && !isBedrock) ||
             (isBedrock && bedrockAuth === 'iam' && (!form.awsAccessKeyId || !form.awsSecretKey)) ||
             (isBedrock && bedrockAuth === 'bearer' && !form.awsBearerToken) ||
             (isCompat && (!form.baseUrl || !form.modelIdentifier))

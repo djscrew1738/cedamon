@@ -98,7 +98,6 @@ class ContainerManager:
         self.gvm_states: dict[str, GvmState] = {}
         self.github_hunt_states: dict[str, GithubHuntState] = {}
         self.trufflehog_states: dict[str, TrufflehogState] = {}
-        self._log_tasks: dict[str, asyncio.Task] = {}
         self._start_locks: dict[str, asyncio.Lock] = {}
         # Dedicated executor for long-running log streaming threads
         # so they don't starve the default executor used by _exec() and _fetch_project_json
@@ -164,6 +163,7 @@ class ContainerManager:
             self._save_state()
         except Exception as e:
             logger.warning(f"Final state flush during shutdown failed: {e}")
+        self._log_executor.shutdown(wait=False)
 
     def _load_state(self) -> None:
         """Load a previously persisted orchestrator state snapshot."""
@@ -457,6 +457,19 @@ class ContainerManager:
                 )
 
             except Exception as e:
+                # If the container was spawned but a subsequent step failed,
+                # clean it up so we don't leave an orphan running.
+                if "container" in dir() and container:
+                    try:
+                        container.remove(force=True)
+                        logger.info(
+                            f"Cleaned up orphan container {container.id[:12]} "
+                            f"after failure in {project_id}"
+                        )
+                    except Exception:
+                        logger.debug(
+                            f"Could not remove container after failure", exc_info=True
+                        )
                 state.status = ReconStatus.ERROR
                 state.error = str(e)
                 logger.error(f"Failed to start recon for {project_id}: {e}")
@@ -814,6 +827,7 @@ class ContainerManager:
                 await self.stop_trufflehog(project_id, timeout=5)
             except Exception as e:
                 logger.error(f"Error cleaning up TruffleHog {project_id}: {e}")
+        self._log_executor.shutdown(wait=False)
 
     # =========================================================================
     # Partial Recon Container Lifecycle
@@ -1021,6 +1035,13 @@ class ContainerManager:
             )
 
         except Exception as e:
+            # If the container was spawned but a subsequent step failed,
+            # clean it up so we don't leave an orphan running.
+            if "container" in dir() and container:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    logger.debug("Could not remove orphan container", exc_info=True)
             state.status = PartialReconStatus.ERROR
             state.error = str(e)
             logger.error(f"Failed to start partial recon for {project_id}/{run_id}: {e}")
@@ -1357,6 +1378,11 @@ class ContainerManager:
             logger.info(f"Started GVM scanner container {container.id} for project {project_id}")
 
         except Exception as e:
+            if "container" in dir() and container:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    logger.debug("Could not remove orphan container", exc_info=True)
             state.status = GvmStatus.ERROR
             state.error = str(e)
             logger.error(f"Failed to start GVM scan for {project_id}: {e}")
@@ -1870,6 +1896,11 @@ class ContainerManager:
             logger.info(f"Started GitHub hunt container {container.id} for project {project_id}")
 
         except Exception as e:
+            if "container" in dir() and container:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    logger.debug("Could not remove orphan container", exc_info=True)
             state.status = GithubHuntStatus.ERROR
             state.error = str(e)
             logger.error(f"Failed to start GitHub hunt for {project_id}: {e}")
@@ -2270,6 +2301,11 @@ class ContainerManager:
             logger.info(f"Started TruffleHog container {container.id} for project {project_id}")
 
         except Exception as e:
+            if "container" in dir() and container:
+                try:
+                    container.remove(force=True)
+                except Exception:
+                    logger.debug("Could not remove orphan container", exc_info=True)
             state.status = TrufflehogStatus.ERROR
             state.error = str(e)
             logger.error(f"Failed to start TruffleHog scan for {project_id}: {e}")
