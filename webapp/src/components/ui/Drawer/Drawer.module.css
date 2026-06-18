@@ -200,6 +200,9 @@
   .drawerOverlay {
     width: min(var(--drawer-width), 100vw) !important;
     touch-action: pan-y;
+    /* Faster, smoother transitions on mobile */
+    transition-duration: 180ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .drawerPush.drawerOpen {
@@ -217,5 +220,15 @@
   .drawerClose {
     width: 40px;
     height: 40px;
+  }
+}
+
+@media (max-width: 480px) {
+  .drawerOverlay {
+    width: 100vw !important;
+  }
+
+  .drawerPush.drawerOpen {
+    width: 100vw !important;
   }
 }

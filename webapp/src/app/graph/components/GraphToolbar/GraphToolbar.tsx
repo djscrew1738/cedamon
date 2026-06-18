@@ -315,6 +315,7 @@ export function GraphToolbar({
                   className={styles.pauseButton}
                   onClick={onPauseRecon}
                   title="Pause Recon"
+                  aria-label="Pause Recon"
                 >
                   <Pause size={14} />
                 </button>
@@ -326,6 +327,7 @@ export function GraphToolbar({
                   onClick={onStopRecon}
                   disabled={isReconStopping}
                   title="Stop Recon"
+                  aria-label="Stop Recon"
                 >
                   <Square size={14} />
                 </button>
@@ -336,6 +338,7 @@ export function GraphToolbar({
                   className={`${styles.logsButton} ${isLogsOpen ? styles.logsButtonActive : ''}`}
                   onClick={onToggleLogs}
                   title="View Logs"
+                  aria-label="View Recon Logs"
                 >
                   <Terminal size={14} />
                 </button>
@@ -346,6 +349,7 @@ export function GraphToolbar({
                 onClick={onDownloadJSON}
                 disabled={!hasReconData || isReconActive}
                 title={hasReconData ? 'Download Recon JSON' : 'No data available'}
+                aria-label={hasReconData ? 'Download Recon JSON' : 'No data available'}
               >
                 <Download size={14} />
               </button>
@@ -396,6 +400,7 @@ export function GraphToolbar({
                   className={styles.pauseButton}
                   onClick={onPauseGvm}
                   title="Pause GVM Scan"
+                  aria-label="Pause GVM Scan"
                 >
                   <Pause size={14} />
                 </button>
@@ -407,6 +412,7 @@ export function GraphToolbar({
                   onClick={onStopGvm}
                   disabled={isGvmStopping}
                   title="Stop GVM Scan"
+                  aria-label="Stop GVM Scan"
                 >
                   <Square size={14} />
                 </button>
@@ -417,6 +423,7 @@ export function GraphToolbar({
                   className={`${styles.logsButton} ${isGvmLogsOpen ? styles.logsButtonActive : ''}`}
                   onClick={onToggleGvmLogs}
                   title="View GVM Logs"
+                  aria-label="View GVM Logs"
                 >
                   <Terminal size={14} />
                 </button>
@@ -427,6 +434,7 @@ export function GraphToolbar({
                 onClick={onDownloadGvmJSON}
                 disabled={!hasGvmData || isGvmActive}
                 title={hasGvmData ? 'Download GVM JSON' : 'No GVM data available'}
+                aria-label={hasGvmData ? 'Download GVM JSON' : 'No GVM data available'}
               >
                 <Download size={14} />
               </button>
@@ -438,6 +446,7 @@ export function GraphToolbar({
                 className={`${styles.githubHuntButton} ${(isGvmActive || isGithubHuntActive || isTrufflehogActive || hasActivePartialRecons) ? styles.githubHuntButtonActive : ''}`}
                 onClick={onToggleOtherScansModal}
                 title="Other Scans (GVM, BadDNS, Nuclei, Subdomain Takeover, JS Recon, GitHub Hunt, TruffleHog)"
+                aria-label="Other Scans"
               >
                 {(isGvmRunning || isGithubHuntRunning || isTrufflehogRunning || hasActivePartialRecons) ? (
                   <Loader2 size={14} className={styles.spinner} />

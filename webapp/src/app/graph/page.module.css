@@ -48,10 +48,42 @@
   max-width: 400px;
 }
 
+/* ─── Tablet responsive ─── */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .content {
+    min-height: 400px;
+  }
+}
+
 /* ─── Mobile responsive ─── */
 
 @media (max-width: 768px) {
   .body {
     flex-direction: column;
+  }
+
+  .content {
+    min-height: 300px;
+    touch-action: manipulation;
+  }
+
+  .noProject {
+    padding: var(--space-4);
+  }
+
+  .noProject h2 {
+    font-size: var(--text-base);
+  }
+
+  .noProject p {
+    font-size: var(--text-xs);
+    max-width: 280px;
+  }
+}
+
+/* ─── Small phones ─── */
+@media (max-width: 480px) {
+  .content {
+    min-height: 250px;
   }
 }

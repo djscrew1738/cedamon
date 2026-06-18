@@ -259,3 +259,91 @@
 .viewBtn:hover {
   opacity: 0.9;
 }
+
+/* ── Responsive: tablet/small desktop ──────────────────── */
+
+@media (max-width: 767px) {
+  .card {
+    width: 95%;
+  }
+
+  .header {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .progressSection {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .findingsSection {
+    margin: 0 var(--space-3) var(--space-2);
+  }
+
+  .thinkingSection {
+    margin: 0 var(--space-3) var(--space-2);
+  }
+
+  .errorBox {
+    margin: 0 var(--space-3) var(--space-2);
+  }
+
+  .completedSection {
+    padding: var(--space-2) var(--space-3) var(--space-3);
+  }
+
+  .findingTitle {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ── Responsive: small phones ──────────────────────────── */
+
+@media (max-width: 480px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .headerRight {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .progressSection {
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .findingsSection {
+    margin: 0 var(--space-2) var(--space-1-5);
+  }
+
+  .thinkingSection {
+    margin: 0 var(--space-2) var(--space-1-5);
+  }
+
+  .errorBox {
+    margin: 0 var(--space-2) var(--space-1-5);
+  }
+
+  .findingTitle {
+    max-width: 150px;
+  }
+
+  .headerTitle {
+    font-size: var(--text-xs);
+  }
+
+  .viewBtn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .completedSection p {
+    font-size: var(--text-xs);
+  }
+}

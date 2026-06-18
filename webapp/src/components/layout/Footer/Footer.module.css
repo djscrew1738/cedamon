@@ -1,15 +1,8 @@
 .footer {
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-default);
-  padding: var(--space-0-5) var(--space-4);
+  padding: var(--space-1) var(--space-5);
   flex-shrink: 0;
-}
-
-:global([data-theme="light"]) .footer {
-  --bg-secondary: var(--color-gray-900);
-  --text-tertiary: var(--color-gray-500);
-  --text-secondary: var(--color-gray-400);
-  --border-default: var(--color-gray-800);
 }
 
 .content {
@@ -64,7 +57,7 @@
   font-size: 10px;
   font-weight: 600;
   line-height: 1.4;
-  color: #ff6b6b;
+  color: var(--status-error);
   background: rgba(255, 107, 107, 0.12);
   border: 1px solid rgba(255, 107, 107, 0.35);
   border-radius: 10px;
@@ -82,4 +75,31 @@
 @keyframes badgePulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
+}
+
+/* ─── Responsive ─── */
+
+@media (max-width: 768px) {
+  .footer {
+    display: none; /* replaced by MobileBottomNav */
+  }
+}
+
+@media (max-width: 480px) {
+  .content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .left {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .versionWrapper {
+    width: 100%;
+    justify-content: space-between;
+  }
 }

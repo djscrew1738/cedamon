@@ -3,4 +3,104 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.emptyState h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.emptyState p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 400px;
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-on-accent);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: var(--transition-all);
+}
+
+.primaryButton:hover {
+  background: var(--accent-primary-hover);
+  border-color: var(--accent-primary-hover);
+}
+
+.wikiWrapper {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: 5;
+}
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .page {
+    min-height: 0;
+  }
+
+  .emptyState h2 {
+    font-size: var(--text-base);
+  }
+
+  .emptyState p {
+    font-size: var(--text-xs);
+    max-width: 280px;
+  }
+
+  .wikiWrapper {
+    top: var(--space-2);
+    right: var(--space-2);
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    overflow-y: auto;
+  }
+
+  .emptyState {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .primaryButton {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+  }
+
+  .wikiWrapper {
+    position: relative;
+    top: auto;
+    right: auto;
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-2) var(--space-2) 0;
+  }
 }

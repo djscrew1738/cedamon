@@ -87,6 +87,11 @@
   min-width: 0;
 }
 
+/* Mobile back button (hidden on desktop) */
+.mobileBackBtn {
+  display: none;
+}
+
 /* Empty state */
 .emptyState {
   display: flex;
@@ -141,4 +146,91 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ─── Mobile responsive: toggle sidebar/terminal ─── */
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  /* When a session is selected, hide sidebar, show terminal full-width */
+  .sidebarHidden {
+    display: none;
+  }
+
+  .main {
+    padding: 4px;
+    width: 100%;
+  }
+
+  .mainFull {
+    display: flex;
+  }
+
+  .mainHidden {
+    display: none;
+  }
+
+  .sidebarBody {
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .sidebarHeader {
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .sidebarTitle {
+    font-size: 11px;
+  }
+
+  .sectionLabel {
+    font-size: 9px;
+    padding: 6px 4px 3px;
+  }
+
+  /* Back button inside terminal area */
+  .mobileBackBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: var(--font-medium);
+    color: var(--accent-primary);
+    background: transparent;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobileBackBtn:hover {
+    background: var(--bg-hover);
+  }
+
+  .mobileBackBtn:active {
+    transform: scale(0.96);
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sidebarBody {
+    padding: 4px;
+    gap: 4px;
+  }
 }

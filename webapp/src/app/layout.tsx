@@ -23,6 +23,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#1a1a2e' },
+    { media: '(prefers-color-scheme: light)', color: '#f0f2f5' },
+  ],
 }
 
 export default function RootLayout({
@@ -33,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Prevent flash of wrong theme */}
+        {/* Prevent flash of wrong theme & set mobile browser chrome color */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -47,13 +51,24 @@ export default function RootLayout({
                   } else {
                     document.documentElement.setAttribute('data-theme', 'dark');
                   }
-                } catch (e) {
-                  document.documentElement.setAttribute('data-theme', 'dark');
-                }
+                  var bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-secondary').trim();
+                  if (bg) {
+                    var meta = document.querySelector('meta[name="theme-color"]');
+                    if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name', 'theme-color'); document.head.appendChild(meta); }
+                    meta.setAttribute('content', bg);
+                  }
+                } catch (e) {}
               })();
             `,
           }}
         />
+        <meta name="theme-color" content="#1a1a2e" />
+        {/* Apple PWA / standalone app support */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="RedAmon" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
       </head>
       <body>
         <QueryProvider>

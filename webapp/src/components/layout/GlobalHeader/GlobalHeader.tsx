@@ -37,13 +37,13 @@ export function GlobalHeader() {
   }, [mobileMenuOpen])
 
   const coreNav = [
-    { label: 'Red Zone', href: '/graph', icon: <Crosshair size={14} /> },
+    { label: 'Red Zone', href: '/graph', icon: <Crosshair size={16} /> },
     ...(projectId
-      ? [{ label: 'Recon Pipeline', href: `/projects/${projectId}/settings`, icon: <GitBranch size={14} /> }]
+      ? [{ label: 'Recon Pipeline', href: `/projects/${projectId}/settings`, icon: <GitBranch size={16} /> }]
       : []),
-    { label: 'CypherFix', href: '/cypherfix', icon: <Shield size={14} /> },
-    { label: 'Insights', href: '/insights', icon: <TrendingUp size={14} /> },
-    { label: 'Reports', href: '/reports', icon: <FileText size={14} /> },
+    { label: 'CypherFix', href: '/cypherfix', icon: <Shield size={16} /> },
+    { label: 'Insights', href: '/insights', icon: <TrendingUp size={16} /> },
+    { label: 'Reports', href: '/reports', icon: <FileText size={16} /> },
   ]
 
   const utilityLinks = [

@@ -342,6 +342,7 @@
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-2);
     overflow-x: auto;
+    min-height: 36px;
   }
 
   .sectionTitle:not(.stats .sectionTitle) {
@@ -351,11 +352,26 @@
   .legendItems {
     gap: var(--space-2);
   }
+
+  .typeChip {
+    padding: 4px var(--space-2) 4px var(--space-1-5);
+    min-height: 28px;
+  }
+
+  .sessionToggle {
+    min-height: 28px;
+  }
 }
 
 /* ─── Responsive: Small phone (≤480px) ─── */
 
 @media (max-width: 480px) {
+  .bottomBar {
+    gap: var(--space-1-5);
+    padding: var(--space-1) var(--space-1-5);
+    min-height: 32px;
+  }
+
   .stats .sectionTitle {
     display: none;
   }
@@ -364,12 +380,29 @@
     gap: var(--space-2);
   }
 
+  .statItem {
+    gap: var(--space-0-5);
+  }
+
   .sessionToggle {
-    padding: 2px var(--space-1-5);
+    padding: 4px var(--space-1-5);
     font-size: 9px;
+    min-height: 28px;
   }
 
   .chipAction {
     font-size: 9px;
+    padding: var(--space-0-5) var(--space-1);
+    min-height: 24px;
+  }
+
+  .typeChip {
+    padding: 4px var(--space-1-5) 4px var(--space-1);
+    font-size: 9px;
+    min-height: 26px;
+  }
+
+  .divider {
+    height: 16px;
   }
 }

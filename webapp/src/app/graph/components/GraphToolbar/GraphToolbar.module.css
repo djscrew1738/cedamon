@@ -639,13 +639,13 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .toolbar {
     flex-wrap: wrap;
     gap: var(--space-1-5);
     padding: var(--space-1-5) var(--space-2);
     height: auto;
-    min-height: 32px;
+    min-height: 36px;
   }
 
   .actionsRight {
@@ -665,6 +665,13 @@
   .divider {
     display: none;
   }
+
+  .reconButton,
+  .gvmButton,
+  .githubHuntButton,
+  .aiButton {
+    min-height: 28px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -674,6 +681,12 @@
   }
 
   .sectionLabel {
+    display: none;
+  }
+
+  /* Hide target domain and tunnel badges to maximize action space */
+  .targetSection,
+  .tunnelBadges {
     display: none;
   }
 
@@ -690,13 +703,53 @@
   .aiButton {
     padding: var(--space-1);
     gap: 0;
+    min-height: 32px;
+    min-width: 32px;
   }
 
   .logsButton,
   .downloadButton,
   .pauseButton,
   .stopButton {
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .emergencyPauseButton span {
+    display: none;
+  }
+
+  .emergencyPauseButton {
+    padding: var(--space-1);
+    gap: 0;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .agentPhaseBadge span:first-of-type {
+    display: none;
+  }
+
+  .agentStep {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .toolbar {
+    gap: var(--space-0-5);
+    padding: var(--space-0-5) var(--space-1);
+  }
+
+  .actionsRight {
+    gap: var(--space-0-5);
+  }
+
+  .actionGroup {
+    gap: var(--space-0-5);
+  }
+
+  .aiButtonGroup {
+    gap: var(--space-0-5);
   }
 }

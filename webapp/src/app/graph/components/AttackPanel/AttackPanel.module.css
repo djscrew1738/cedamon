@@ -847,14 +847,16 @@
   .searchBox {
     flex: 1;
     min-width: 0;
+    min-height: 36px;
   }
 
   .summaryGrid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
   }
 
   .summaryCard {
-    padding: 8px;
+    padding: 10px 8px;
   }
 
   .summaryValue {
@@ -865,11 +867,15 @@
     gap: 4px;
     padding: 8px 12px;
     -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
   }
 
   .filterPill {
     font-size: 11px;
-    padding: 3px 8px;
+    padding: 5px 10px;
+    min-height: 32px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .cardBody {
@@ -891,6 +897,10 @@
   .cardActions {
     flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .cardActionBtn {
+    min-height: 36px;
   }
 
   .content {
@@ -916,6 +926,11 @@
 
   .toolbar {
     padding: 8px 12px;
+    gap: 6px;
+  }
+
+  .toolbarBtn {
+    min-height: 36px;
   }
 
   .emptyState {

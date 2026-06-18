@@ -636,7 +636,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
         <div className={styles.errorBanner}>
           <AlertCircle size={14} />
           <span>{error}</span>
-          <button onClick={() => setError(null)} className={styles.errorDismiss}>&#x2715;</button>
+          <button onClick={() => setError(null)} className={styles.errorDismiss} aria-label="Dismiss error">&#x2715;</button>
         </div>
       )}
       {reconStatusError && (

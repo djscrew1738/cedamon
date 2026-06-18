@@ -256,3 +256,145 @@
   font-size: 12px;
   margin: 0;
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 768px) {
+  .terminal {
+    border-radius: var(--radius-md);
+  }
+
+  .terminalHeader {
+    padding: 8px 10px;
+    min-height: 40px;
+  }
+
+  .terminalTitle {
+    font-size: 11px;
+  }
+
+  .outputArea {
+    padding: 8px;
+    font-size: 11px;
+  }
+
+  .inputArea {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .input {
+    font-size: 12px;
+    min-height: 32px;
+  }
+
+  .sendBtn {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .nlpArea {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .nlpInput {
+    font-size: 12px;
+    min-height: 32px;
+  }
+
+  .nlpBtn {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .busyBanner {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .emptyTerminal {
+    padding: 32px 16px;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .terminalHeader {
+    padding: 6px 8px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .outputArea {
+    padding: 6px;
+    font-size: 10px;
+  }
+
+  .inputArea {
+    padding: 4px 8px;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .input {
+    font-size: 11px;
+    min-height: 36px;
+  }
+
+  .sendBtn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .nlpArea {
+    padding: 4px 8px;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .nlpInput {
+    font-size: 11px;
+    min-height: 36px;
+  }
+
+  .nlpBtn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .nlpError {
+    font-size: 10px;
+    padding: 6px 10px;
+    bottom: calc(100% + 4px);
+  }
+
+  .prompt {
+    font-size: 11px;
+  }
+
+  .busyBanner {
+    padding: 4px 8px;
+    font-size: 10px;
+    gap: 4px;
+  }
+
+  .emptyTerminal {
+    padding: 24px 12px;
+    gap: 8px;
+  }
+
+  .emptyTerminal svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .emptyTerminal p {
+    font-size: 11px;
+  }
+}

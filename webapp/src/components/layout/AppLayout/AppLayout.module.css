@@ -11,4 +11,13 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+  /* Prevent iOS rubber-band scrolling past boundaries */
+  overscroll-behavior: contain;
+}
+
+/* Mobile: leave space for the fixed bottom nav bar */
+@media (max-width: 768px) {
+  .main {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
 }

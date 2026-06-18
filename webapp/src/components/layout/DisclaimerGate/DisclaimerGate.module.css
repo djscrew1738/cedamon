@@ -182,7 +182,7 @@
 .footerQuote {
   font-size: var(--text-base);
   font-style: italic;
-  color: #e53e3e;
+  color: var(--accent-primary);
   margin: 0;
   white-space: nowrap;
 }
@@ -206,7 +206,7 @@
   padding: var(--space-2) var(--space-5);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
-  color: #ffffff;
+  color: var(--text-on-accent);
   background: var(--accent-primary);
   border: none;
   border-radius: var(--radius-md);
@@ -302,7 +302,7 @@
 .starLink:hover {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
-  color: #ffffff;
+  color: var(--text-on-accent);
 }
 
 .starLink:hover .starIcon {

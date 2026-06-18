@@ -35,6 +35,8 @@
   --header-padding-x: var(--space-8);
   --header-padding-y: var(--space-4);
   --drawer-width: 300px;
+  --drawer-width-narrow: 240px;
+  --drawer-width-wide: 400px;
   --drawer-padding: var(--space-6);
 
   /* ═══════════════════════════════════════════════════════════════════════════

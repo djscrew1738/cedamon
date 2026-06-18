@@ -7,12 +7,28 @@
 html {
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  scroll-behavior: smooth;
+  /* Prevent iOS zoom on input focus */
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   transition: background-color var(--transition-slow), color var(--transition-slow);
+  /* Mobile tap highlight */
+  -webkit-tap-highlight-color: transparent;
+  /* Prevent text size adjust on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Prevent rubber-band scrolling outside content areas */
+  overscroll-behavior: none;
 }
 
 /* Links */

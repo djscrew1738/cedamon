@@ -4,6 +4,7 @@ import { GlobalHeader } from '../GlobalHeader'
 import { Footer } from '../Footer'
 import { DisclaimerGate } from '../DisclaimerGate'
 import { UpdateNotification } from '../UpdateNotification'
+import { MobileBottomNav } from '../MobileBottomNav'
 import styles from './AppLayout.module.css'
 
 interface AppLayoutProps {
@@ -18,6 +19,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <DisclaimerGate>{children}</DisclaimerGate>
       </main>
       <Footer />
+      <MobileBottomNav />
       <UpdateNotification />
     </div>
   )

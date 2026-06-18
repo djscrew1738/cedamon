@@ -43,10 +43,10 @@ export default function CypherFixPage() {
   if (!projectLoading && !projectId) {
     return (
       <div className={styles.page}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '12px' }}>
+        <div className={styles.emptyState}>
           <h2>No Project Selected</h2>
           <p>Select a project from the dropdown in the header or create a new one.</p>
-          <button className="primaryButton" onClick={() => router.push('/projects')}>
+          <button className={styles.primaryButton} onClick={() => router.push('/projects')}>
             Go to Projects
           </button>
         </div>
@@ -55,8 +55,8 @@ export default function CypherFixPage() {
   }
 
   return (
-    <div className={styles.page} style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', top: 12, right: 16, zIndex: 5 }}>
+    <div className={styles.page}>
+      <div className={styles.wikiWrapper}>
         <WikiInfoButton target="cypherfix" title="Open CypherFix wiki page" />
       </div>
       <CypherFixTab

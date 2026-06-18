@@ -46,7 +46,7 @@
   border-radius: 3px;
   font-size: 10px;
   font-weight: var(--font-semibold);
-  color: #fff;
+  color: var(--text-on-accent);
   text-transform: capitalize;
 }
 

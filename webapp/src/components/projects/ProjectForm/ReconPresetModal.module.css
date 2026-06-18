@@ -267,7 +267,7 @@
 
 .toggleButton:hover:not(.toggleButtonActive) {
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
 }
 
 .toggleButton:first-child {
@@ -280,46 +280,42 @@
 }
 
 .toggleButton:last-child.toggleButtonActive {
-  border-left: 1px solid rgba(34, 197, 94, 0.45);
+  border-left: 1px solid var(--status-success);
 }
 
 .toggleButtonActive {
-  background: rgba(34, 197, 94, 0.12);
-  color: rgba(34, 197, 94, 0.95);
-  border-color: rgba(34, 197, 94, 0.45);
+  background: var(--status-success-bg, rgba(34, 197, 94, 0.12));
+  color: var(--status-success-text, var(--status-success));
+  border-color: var(--status-success);
   font-weight: var(--font-semibold);
 }
 
-/* Light mode: inactive needs more contrast against light gray bg */
-:global([data-theme="light"]) .toggleButton {
-  background: white;
-  border-color: #d1d5db;
-  color: #6b7280;
+/* Base theme-agnostic rules (replaces hardcoded light-mode overrides) */
+.toggleButton {
+  background: var(--bg-secondary);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
 }
 
-:global([data-theme="light"]) .toggleButton:hover:not(.toggleButtonActive) {
-  background: #f9fafb;
-  color: #374151;
+.toggleButton:hover:not(.toggleButtonActive) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-:global([data-theme="light"]) .toggleButtonActive {
-  background: rgba(34, 197, 94, 0.1);
-  color: #16a34a;
-  border-color: #16a34a;
+.toggleButtonActive {
+  background: var(--status-success-bg, rgba(34, 197, 94, 0.12));
+  color: var(--status-success-text, var(--status-success));
+  border-color: var(--status-success);
   font-weight: var(--font-semibold);
 }
 
-:global([data-theme="light"]) .toggleButton:last-child.toggleButtonActive {
-  border-left: 1px solid #16a34a;
+.toggleButton:last-child.toggleButtonActive {
+  border-left: 1px solid var(--status-success);
 }
 
 /* Fix the left border on the second button when first is active */
 .toggleButtonActive + .toggleButton {
   border-left: 1px solid var(--border-default);
-}
-
-:global([data-theme="light"]) .toggleButtonActive + .toggleButton {
-  border-left: 1px solid #d1d5db;
 }
 
 /* ===== My Presets View ===== */

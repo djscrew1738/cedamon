@@ -303,3 +303,100 @@
   font-size: var(--text-sm);
   margin: 0;
 }
+
+/* ── Responsive: tablet/small desktop ──────────────────── */
+
+@media (max-width: 767px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .headerLeft {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .headerRight {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .remTitle {
+    max-width: 250px;
+    font-size: var(--text-xs);
+  }
+
+  .content {
+    padding: var(--space-3);
+  }
+
+  .prCard {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .prLink {
+    align-self: stretch;
+    justify-content: center;
+  }
+
+  .phaseBar {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .toolIndicator {
+    margin-left: 0;
+  }
+}
+
+/* ── Responsive: small phones ──────────────────────────── */
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .content {
+    padding: var(--space-2);
+  }
+
+  .remTitle {
+    max-width: 180px;
+  }
+
+  .processingBar {
+    padding: var(--space-1-5) var(--space-2);
+    font-size: 11px;
+  }
+
+  .idleState {
+    padding: var(--space-4);
+  }
+
+  .startBtn,
+  .secondaryBtn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .prCard {
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+  }
+
+  .prLink {
+    font-size: var(--text-xs);
+    padding: var(--space-1-5) var(--space-3);
+  }
+
+  .thinkingBar {
+    padding: var(--space-1-5) var(--space-2);
+    font-size: 10px;
+  }
+}

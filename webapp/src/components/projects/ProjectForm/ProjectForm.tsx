@@ -104,7 +104,7 @@ const TAB_GROUPS = [
     ],
   },
   {
-    label: '',
+    label: 'Integrations',
     style: 'tabGroupOther',
     tabs: [
       { id: 'integrations', label: 'Other Scans', wide: true },

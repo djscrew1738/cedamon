@@ -128,7 +128,7 @@ export function ModelPicker({ userId, value, onChange, placeholder }: ModelPicke
                 type="text"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                placeholder="e.g. claude-opus-4-6, gpt-5.2, meta-llama/llama-4-maverick"
+                placeholder="e.g. deepseek/deepseek-chat, claude-opus-4-6, gpt-5.2"
                 style={{ marginTop: 'var(--space-1)' }}
               />
             </div>

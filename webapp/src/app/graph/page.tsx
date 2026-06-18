@@ -61,7 +61,11 @@ export default function GraphPage() {
   const toast = useToast()
   const { projectId, userId, currentProject, setCurrentProject, isLoading: projectLoading } = useProject()
 
-  const [activeView, setActiveView] = useState<ViewMode>('graph')
+  const [activeView, setActiveView] = useState<ViewMode>(() => {
+    const viewParam = searchParams.get('view') as ViewMode | null
+    const validViews: ViewMode[] = ['graph', 'table', 'attack', 'sessions', 'terminal', 'roe', 'graphViews']
+    return viewParam && validViews.includes(viewParam) ? viewParam : 'graph'
+  })
 
   // Full project data for RoE viewer (only fetched when RoE tab is active)
   const { data: fullProject } = useProjectById(activeView === 'roe' ? projectId : null)

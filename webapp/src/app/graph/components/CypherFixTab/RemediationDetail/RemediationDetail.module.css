@@ -393,3 +393,115 @@
   font-size: var(--text-xs);
   color: var(--text-tertiary);
 }
+
+/* ── Responsive: tablet/small desktop ──────────────────── */
+
+@media (max-width: 767px) {
+  .topBar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .topActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .content {
+    padding: var(--space-3) var(--space-3);
+  }
+
+  .section {
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .metaRow {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .detailTitle {
+    font-size: var(--text-base);
+  }
+
+  .codeFixArea {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .codeFixBtn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Responsive: small phones ──────────────────────────── */
+
+@media (max-width: 480px) {
+  .topBar {
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .backBtn {
+    font-size: 11px;
+    padding: var(--space-1) var(--space-1-5);
+  }
+
+  .dismissBtn,
+  .deleteBtn {
+    font-size: 10px;
+    padding: var(--space-0-5) var(--space-1-5);
+  }
+
+  .content {
+    padding: var(--space-2);
+  }
+
+  .section {
+    padding: var(--space-2);
+    margin-bottom: var(--space-2);
+    border-radius: var(--radius-md);
+  }
+
+  .detailTitle {
+    font-size: var(--text-sm);
+  }
+
+  .description {
+    font-size: var(--text-xs);
+  }
+
+  .solutionText {
+    font-size: var(--text-xs);
+  }
+
+  .evidenceBlock {
+    padding: var(--space-2);
+    max-height: 200px;
+    font-size: 10px;
+  }
+
+  .codeFixArea {
+    padding: var(--space-2);
+  }
+
+  .codeFixBtn {
+    font-size: var(--text-xs);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .prLink {
+    font-size: var(--text-xs);
+    padding: var(--space-1-5) var(--space-2);
+    width: 100%;
+    justify-content: center;
+  }
+
+  .assetItem {
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+}

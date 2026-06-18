@@ -1,0 +1,114 @@
+/* ─── Persistent Bottom Navigation (mobile only) ─── */
+
+.bottomNav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  display: flex;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-default);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.navInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+  max-width: 600px;
+  height: 56px;
+  padding: 0 var(--space-2);
+}
+
+.navItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 48px;
+  min-height: 44px;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  position: relative;
+}
+
+.navItem:active {
+  transform: scale(0.94);
+}
+
+.navItemActive {
+  color: var(--accent-primary);
+}
+
+.navItemActive::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent-primary);
+}
+
+.navLabel {
+  font-size: 9px;
+  font-weight: var(--font-medium);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* ─── desktop: hidden ─── */
+@media (min-width: 769px) {
+  .bottomNav {
+    display: none;
+  }
+}
+
+/* ─── small phones: bigger tap targets, tighter layout ─── */
+@media (max-width: 480px) {
+  .navInner {
+    height: 50px;
+    padding: 0 var(--space-1);
+  }
+
+  .navItem {
+    min-width: 44px;
+    min-height: 44px;
+    padding: var(--space-0-5) var(--space-1);
+  }
+
+  .navLabel {
+    font-size: 8px;
+  }
+}
+
+@media (max-width: 360px) {
+  .navInner {
+    height: 44px;
+  }
+
+  .navItem {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .navLabel {
+    display: none;
+  }
+}

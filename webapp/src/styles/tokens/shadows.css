@@ -18,6 +18,18 @@
   /* Inner shadows */
   --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.3);
 
+  /* ═══════════════════════════════════════════════════════════════════════════
+     Z-INDEX SCALE
+     Establish a consistent layering hierarchy across the app.
+     ═══════════════════════════════════════════════════════════════════════════ */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-dropdown: 50;
+  --z-drawer: 100;
+  --z-overlay: 150;
+  --z-modal: 200;
+  --z-toast: 300;
+
   /* Glow effects for security indicators */
   --glow-critical: 0 0 20px rgba(255, 51, 51, 0.4);
   --glow-high: 0 0 15px rgba(239, 68, 68, 0.3);

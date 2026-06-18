@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, memo } from 'react'
-import { Terminal } from 'lucide-react'
+import { Terminal, ArrowLeft } from 'lucide-react'
 import type { MsfSession, MsfJob, NonMsfSession, SessionInteractResult } from '@/lib/websocket-types'
 import { SessionCard, NonMsfCard, JobCard } from './SessionCard'
 import { SessionTerminal } from './SessionTerminal'
@@ -42,6 +42,10 @@ export const ActiveSessions = memo(function ActiveSessions({
     }
   }, [onKillSession, selectedSessionId])
 
+  const handleBackToSessions = useCallback(() => {
+    setSelectedSessionId(null)
+  }, [])
+
   // Loading state
   if (isLoading) {
     return (
@@ -69,7 +73,7 @@ export const ActiveSessions = memo(function ActiveSessions({
   return (
     <div className={styles.container}>
       {/* Left panel — session list */}
-      <div className={styles.sidebar}>
+      <div className={`${styles.sidebar} ${selectedSessionId ? styles.sidebarHidden : ''}`}>
         <div className={styles.sidebarHeader}>
           <span className={styles.sidebarTitle}>
             Sessions
@@ -130,7 +134,17 @@ export const ActiveSessions = memo(function ActiveSessions({
       </div>
 
       {/* Right panel — terminal */}
-      <div className={styles.main}>
+      <div className={`${styles.main} ${!selectedSessionId ? styles.mainHidden : styles.mainFull}`}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+          <button
+            className={styles.mobileBackBtn}
+            onClick={handleBackToSessions}
+            aria-label="Back to sessions"
+          >
+            <ArrowLeft size={14} />
+            Sessions
+          </button>
+        </div>
         <SessionTerminal
           sessionId={selectedSessionId}
           sessionType={selectedSession?.type || 'shell'}

@@ -31,10 +31,20 @@ export function ProjectCard({
     day: 'numeric'
   })
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onSelect?.()
+    }
+  }
+
   return (
     <div
       className={`card cardClickable ${isSelected ? 'cardSelected' : ''} ${styles.projectCard}`}
       onClick={onSelect}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={onSelect ? handleKeyDown : undefined}
     >
       <div className="cardHeader">
         <div>

@@ -359,3 +359,107 @@
 .retryBtn:hover {
   background: var(--bg-hover);
 }
+
+/* ── Responsive: tablet/small desktop ──────────────────── */
+
+@media (max-width: 767px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .headerLeft,
+  .headerRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .filters {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-1-5);
+  }
+
+  .filterSelect {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .clearFilters {
+    flex-shrink: 0;
+  }
+
+  .table th {
+    padding: var(--space-1-5) var(--space-2);
+    font-size: 10px;
+  }
+
+  .row td {
+    padding: var(--space-1) var(--space-2);
+    font-size: 10px;
+  }
+
+  .remTitle {
+    max-width: 220px;
+  }
+
+  .thType,
+  .thCve {
+    display: none;
+  }
+
+  .tdType,
+  .tdCve {
+    display: none;
+  }
+}
+
+/* ── Responsive: small phones ──────────────────────────── */
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filterSelect {
+    width: 100%;
+  }
+
+  .triageBtn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .title {
+    font-size: 11px;
+  }
+
+  .table th {
+    padding: var(--space-1) var(--space-1-5);
+    font-size: 9px;
+  }
+
+  .row td {
+    padding: var(--space-1) var(--space-1-5);
+    font-size: 9px;
+  }
+
+  .remTitle {
+    max-width: 150px;
+  }
+
+  .thStatus {
+    display: none;
+  }
+
+  .tdStatus {
+    display: none;
+  }
+}
