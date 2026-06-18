@@ -11,6 +11,7 @@ import { PageBottomBar } from './components/PageBottomBar'
 import { ReconConfirmModal } from './components/ReconConfirmModal'
 import { GvmConfirmModal } from './components/GvmConfirmModal'
 import { ReconLogsDrawer } from './components/ReconLogsDrawer'
+import { PartialReconLogsDrawer } from './components/PartialReconLogsDrawer'
 import { ViewTabs, type ViewMode, type TunnelStatus, type TableViewMode } from './components/ViewTabs'
 import { DataTable } from './components/DataTable'
 import { NodeDetailsTable } from './components/NodeDetailsTable'
@@ -48,7 +49,6 @@ import { useProjectById } from '@/hooks/useProjects'
 import { useGraphTypeFilterPrefs, useGraphViewPrefs } from '@/hooks/useUserPreferences'
 import { useProject } from '@/providers/ProjectProvider'
 import { GVM_PHASES, GITHUB_HUNT_PHASES, TRUFFLEHOG_PHASES, PARTIAL_RECON_PHASE_MAP } from '@/lib/recon-types'
-import { WORKFLOW_TOOLS } from '@/components/projects/ProjectForm/WorkflowView/workflowDefinition'
 import type { ReconStatus, PartialReconState } from '@/lib/recon-types'
 import { OtherScansModal } from './components/OtherScansModal/OtherScansModal'
 import { useAlertModal, useToast } from '@/components/ui'
@@ -242,12 +242,7 @@ export default function GraphPage() {
   } = useReconStatus({
     projectId,
     enabled: !!projectId,
-    onComplete: useCallback(() => {
-      toast.success('Recon scan completed')
-    }, [toast]),
-    onError: useCallback((error: string) => {
-      toast.error(`Recon scan failed: ${error}`)
-    }, [toast]),
+    showToasts: true,
   })
 
   // Check if recon is running to enable auto-refresh of graph data
@@ -1629,25 +1624,18 @@ export default function GraphPage() {
         isConnected={trufflehogLogsConnected}
       />
 
-      {allPartialReconRuns.map(run => (
-        <ReconLogsDrawer
-          key={run.run_id}
-          isOpen={activeLogsDrawer === `partialRecon:${run.run_id}`}
-          onClose={() => setActiveLogsDrawer(null)}
-          logs={partialReconLogsMap[run.run_id] || []}
-          currentPhase={partialReconPhaseMap[run.run_id]?.phase || null}
-          currentPhaseNumber={partialReconPhaseMap[run.run_id]?.phaseNumber || null}
-          status={(run.status as ReconStatus) || 'idle'}
-          errorMessage={run.error}
-          onClearLogs={() => clearPartialReconLogsForRun(run.run_id)}
-          onStop={() => handleStopPartialRecon(run.run_id)}
-          title={`Partial Recon: ${WORKFLOW_TOOLS.find(t => t.id === run.tool_id)?.label || 'Running'}`}
-          phases={PARTIAL_RECON_PHASE_MAP[run.tool_id || ''] || ['Running']}
-          totalPhases={(PARTIAL_RECON_PHASE_MAP[run.tool_id || ''] || ['Running']).length}
-          hidePhaseProgress
-          isConnected={activePartialReconRunId === run.run_id ? partialReconLogsConnected : false}
-        />
-      ))}
+      <PartialReconLogsDrawer
+        isOpen={activeLogsDrawer?.startsWith('partialRecon:') || false}
+        onClose={() => setActiveLogsDrawer(null)}
+        runs={allPartialReconRuns}
+        logsMap={partialReconLogsMap}
+        phaseMap={partialReconPhaseMap}
+        activeRunId={activePartialReconRunId}
+        onSelectRun={(runId) => setActiveLogsDrawer(`partialRecon:${runId}`)}
+        onStop={handleStopPartialRecon}
+        onClearLogs={clearPartialReconLogsForRun}
+        isConnected={partialReconLogsConnected}
+      />
 
       <AIAssistantDrawer
         isOpen={isAIOpen}

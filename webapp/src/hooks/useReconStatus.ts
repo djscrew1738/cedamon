@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ReconState, ReconStatus } from '@/lib/recon-types'
+import { useToast } from '@/components/ui/Toast/Toast'
 
 interface UseReconStatusOptions {
   projectId: string | null
@@ -10,6 +11,7 @@ interface UseReconStatusOptions {
   onStatusChange?: (status: ReconStatus) => void
   onComplete?: () => void
   onError?: (error: string) => void
+  showToasts?: boolean // auto-show toast notifications on status transitions
 }
 
 interface UseReconStatusReturn {
@@ -33,6 +35,7 @@ export function useReconStatus({
   onStatusChange,
   onComplete,
   onError,
+  showToasts = false,
 }: UseReconStatusOptions): UseReconStatusReturn {
   const [state, setState] = useState<ReconState | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -45,6 +48,8 @@ export function useReconStatus({
   const onStatusChangeRef = useRef(onStatusChange)
   const onCompleteRef = useRef(onComplete)
   const onErrorRef = useRef(onError)
+
+  const toast = useToast()
 
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange
@@ -73,9 +78,15 @@ export function useReconStatus({
         onStatusChangeRef.current?.(data.status)
 
         if (data.status === 'completed') {
+          if (showToasts) toast.success('Reconnaissance pipeline completed')
           onCompleteRef.current?.()
         } else if (data.status === 'error' && data.error) {
+          if (showToasts) toast.error(`Recon failed: ${data.error}`)
           onErrorRef.current?.(data.error)
+        } else if (data.status === 'running' && showToasts) {
+          toast.info('Reconnaissance pipeline started')
+        } else if (data.status === 'paused' && showToasts) {
+          toast.warning('Reconnaissance pipeline paused')
         }
       }
 
@@ -92,6 +103,7 @@ export function useReconStatus({
 
     setIsLoading(true)
     setError(null)
+    if (showToasts) toast.info('Starting reconnaissance pipeline...')
 
     try {
       const response = await fetch(`/api/recon/${projectId}/start`, {
@@ -106,12 +118,14 @@ export function useReconStatus({
       const data: ReconState = await response.json()
       setState(data)
       previousStatusRef.current = data.status
+      if (showToasts) toast.success('Reconnaissance pipeline started')
       return data
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
       onErrorRef.current?.(errorMessage)
+      if (showToasts) toast.error(`Failed to start recon: ${errorMessage}`)
       return null
 
     } finally {
@@ -124,6 +138,7 @@ export function useReconStatus({
 
     setIsLoading(true)
     setState(prev => prev ? { ...prev, status: 'stopping' as ReconState['status'] } : prev)
+    if (showToasts) toast.info('Stopping reconnaissance pipeline...')
 
     try {
       const response = await fetch(`/api/recon/${projectId}/stop`, {
@@ -137,11 +152,13 @@ export function useReconStatus({
 
       const data: ReconState = await response.json()
       setState(data)
+      if (showToasts) toast.success('Reconnaissance pipeline stopped')
       return data
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
+      if (showToasts) toast.error(`Failed to stop recon: ${errorMessage}`)
       return null
 
     } finally {
@@ -153,6 +170,7 @@ export function useReconStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    if (showToasts) toast.info('Pausing reconnaissance pipeline...')
 
     try {
       const response = await fetch(`/api/recon/${projectId}/pause`, {
@@ -166,11 +184,13 @@ export function useReconStatus({
 
       const data: ReconState = await response.json()
       setState(data)
+      if (showToasts) toast.warning('Reconnaissance pipeline paused')
       return data
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
+      if (showToasts) toast.error(`Failed to pause recon: ${errorMessage}`)
       return null
 
     } finally {
@@ -182,6 +202,7 @@ export function useReconStatus({
     if (!projectId) return null
 
     setIsLoading(true)
+    if (showToasts) toast.info('Resuming reconnaissance pipeline...')
 
     try {
       const response = await fetch(`/api/recon/${projectId}/resume`, {
@@ -195,11 +216,13 @@ export function useReconStatus({
 
       const data: ReconState = await response.json()
       setState(data)
+      if (showToasts) toast.success('Reconnaissance pipeline resumed')
       return data
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
+      if (showToasts) toast.error(`Failed to resume recon: ${errorMessage}`)
       return null
 
     } finally {

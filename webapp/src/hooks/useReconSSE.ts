@@ -78,6 +78,7 @@ export function useReconSSE({
           phaseNumber: data.phaseNumber,
           isPhaseStart: data.isPhaseStart,
           level: data.level || 'info',
+          seq: data.seq,
         }
 
         setLogs(prev => [...prev, logEvent])
@@ -155,6 +156,7 @@ export function useReconSSE({
             phaseNumber: data.phaseNumber,
             isPhaseStart: data.isPhaseStart,
             level: data.level || 'info',
+            seq: data.seq,
           }
 
           setLogs(prev => [...prev, logEvent])

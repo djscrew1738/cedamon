@@ -116,9 +116,14 @@ export function useMultiPartialReconSSE({
             phaseNumber: data.phaseNumber,
             isPhaseStart: data.isPhaseStart,
             level: data.level || 'info',
+            seq: data.seq,
           }
 
-          const dedupKey = `${logEvent.timestamp}|${logEvent.log}`
+          // Use monotonic `seq` if available (precise dedup), fall back to
+          // timestamp|log pair for backward-compatible SSE payloads.
+          const dedupKey = logEvent.seq != null
+            ? `${runId}:${logEvent.seq}`
+            : `${logEvent.timestamp}|${logEvent.log}`
           if (seenKeysRef.has(dedupKey)) {
             return
           }

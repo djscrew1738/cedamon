@@ -23,6 +23,7 @@ export interface ReconLogEvent {
   phaseNumber?: number | null
   isPhaseStart?: boolean
   level: 'info' | 'warning' | 'error' | 'success' | 'action'
+  seq?: number
 }
 
 export interface ReconSSEEvent {
