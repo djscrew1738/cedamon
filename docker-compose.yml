@@ -436,6 +436,19 @@ services:
         max-size: "100m"
         max-file: "3"
 
+  # ── Recon runtime image (pre-built so orchestrator doesn't cold-build) ──
+  recon-image:
+    build:
+      context: .
+      dockerfile: recon/Dockerfile
+    image: redamon-recon:latest
+    container_name: redamon-recon-image-builder
+    profiles: ["tools"]
+    restart: "no"
+    command: ["echo", "redamon-recon:latest built"]
+    networks:
+      - redamon
+
   recon-orchestrator:
     build: ./recon_orchestrator
     container_name: redamon-recon-orchestrator

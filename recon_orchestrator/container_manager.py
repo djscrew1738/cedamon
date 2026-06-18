@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -99,6 +100,9 @@ class ContainerManager:
         self.github_hunt_states: dict[str, GithubHuntState] = {}
         self.trufflehog_states: dict[str, TrufflehogState] = {}
         self._start_locks: dict[str, asyncio.Lock] = {}
+        # Track sub-containers per run for selective cleanup.
+        # Key: project_id or partial run_id, Value: set of container IDs.
+        self._sub_container_ancestry: dict[str, set[str]] = {}
         # Dedicated executor for long-running log streaming threads
         # so they don't starve the default executor used by _exec() and _fetch_project_json
         self._log_executor = ThreadPoolExecutor(
@@ -128,6 +132,49 @@ class ContainerManager:
         """Run a synchronous Docker call in the default thread pool."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
+
+    async def _ensure_recon_image(self, context: str = "") -> None:
+        """Ensure the recon Docker image exists, building it if necessary.
+
+        Implements automatic retry with exponential backoff (1s, 4s, 16s)
+        to handle transient failures (network blips, layer cache corruption).
+        """
+        try:
+            await self._exec(self.client.images.get, self.recon_image)
+            logger.info(f"Recon image {self.recon_image} found {context}")
+            return
+        except NotFound:
+            pass  # Need to build
+
+        build_path = "/app"
+        dockerfile = "recon/Dockerfile"
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(
+                    f"Building recon image {self.recon_image} from "
+                    f"{build_path}/{dockerfile} {context} "
+                    f"(attempt {attempt}/{max_retries})"
+                )
+                await self._exec(
+                    self.client.images.build,
+                    path=build_path,
+                    dockerfile=dockerfile,
+                    tag=self.recon_image,
+                    rm=True,
+                )
+                logger.info(f"Recon image {self.recon_image} built {context}")
+                return
+            except Exception as e:
+                logger.warning(
+                    f"Image build attempt {attempt}/{max_retries} failed {context}: {e}"
+                )
+                if attempt < max_retries:
+                    await asyncio.sleep(2 ** (attempt - 1))  # 1s, 4s
+                else:
+                    raise RuntimeError(
+                        f"Failed to build recon image after {max_retries} attempts: {e}"
+                    ) from e
 
     def _save_state(self) -> None:
         """Persist the current orchestrator state to disk."""
@@ -376,22 +423,8 @@ class ContainerManager:
             self._save_state()
 
             try:
-                # Ensure recon image exists
-                logger.info(f"Checking recon image {self.recon_image} for project {project_id}")
-                try:
-                    await self._exec(self.client.images.get, self.recon_image)
-                    logger.info(f"Recon image {self.recon_image} found for project {project_id}")
-                except NotFound:
-                    # Use the project-root in-container path (/app) for the build context
-                    # so that COPY instructions in recon/Dockerfile (e.g. COPY graph_db/ /app/graph_db/)
-                    # resolve correctly. images.build() reads from the local (container) filesystem,
-                    # not the Docker host — but recon_path is a HOST path used for
-                    # volume mounts in spawned sibling containers.
-                    build_path = "/app"
-                    dockerfile = "recon/Dockerfile"
-                    logger.info(f"Building recon image {self.recon_image} from {build_path}/{dockerfile} for project {project_id}")
-                    await self._exec(self.client.images.build, path=build_path, dockerfile=dockerfile, tag=self.recon_image, rm=True)
-                    logger.info(f"Recon image {self.recon_image} built for project {project_id}")
+                # Ensure recon image exists (with retry)
+                await self._ensure_recon_image(context=f"for project {project_id}")
 
                 logger.info(
                     f"Spawning recon container {container_name} for project {project_id} "
@@ -478,8 +511,12 @@ class ContainerManager:
             self._save_state()
             return state
 
-    def _cleanup_sub_containers(self) -> int:
+    def _cleanup_sub_containers(self, since: datetime | None = None) -> int:
         """Stop and remove any running sub-containers (naabu, httpx, nuclei, etc.)
+
+        Args:
+            since: Only clean containers created at or after this timestamp.
+                   When None, cleans ALL matching sub-containers (full recon stop).
 
         Returns the count of containers cleaned up.
         """
@@ -489,6 +526,20 @@ class ContainerManager:
             containers = self.client.containers.list(all=True)
             for container in containers:
                 try:
+                    # Apply time-based filter for selective cleanup
+                    if since is not None:
+                        created_at = container.attrs.get("Created", "0")
+                        try:
+                            # Docker Created is RFC 3339 or Unix timestamp as string
+                            created_ts = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                        except (ValueError, AttributeError):
+                            try:
+                                created_ts = datetime.fromtimestamp(float(created_at), tz=timezone.utc)
+                            except (ValueError, TypeError):
+                                created_ts = datetime.now(timezone.utc)
+                        if created_ts < since:
+                            continue
+
                     # Check if container image matches any sub-container image
                     image_tags = container.image.tags if container.image.tags else []
                     image_name = container.attrs.get("Config", {}).get("Image", "")
@@ -724,6 +775,7 @@ class ContainerManager:
             self._log_executor.submit(read_logs)
 
             # Process logs from queue
+            seq = 0
             while True:
                 try:
                     line = await asyncio.wait_for(log_queue.get(), timeout=1.0)
@@ -755,6 +807,8 @@ class ContainerManager:
                                     pass
 
                         event = self._parse_log_line(log_text, current_phase, current_phase_num, timestamp=docker_ts)
+                        seq += 1
+                        event.seq = seq
 
                         # Update current phase tracking
                         if event.is_phase_start:
@@ -960,17 +1014,8 @@ class ContainerManager:
         )
 
         try:
-            # Ensure recon image exists
-            logger.info(f"Checking recon image {self.recon_image} for partial recon {run_id}")
-            try:
-                await self._exec(self.client.images.get, self.recon_image)
-                logger.info(f"Recon image {self.recon_image} found for partial recon {run_id}")
-            except NotFound:
-                build_path = "/app"
-                dockerfile = "recon/Dockerfile"
-                logger.info(f"Building recon image {self.recon_image} from {build_path}/{dockerfile} for partial recon {run_id}")
-                await self._exec(self.client.images.build, path=build_path, dockerfile=dockerfile, tag=self.recon_image, rm=True)
-                logger.info(f"Recon image {self.recon_image} built for partial recon {run_id}")
+            # Ensure recon image exists (with retry)
+            await self._ensure_recon_image(context=f"for partial recon {run_id}")
 
             # Write config JSON to /tmp/redamon/ (shared volume)
             import json
@@ -1060,9 +1105,14 @@ class ContainerManager:
 
         state.status = PartialReconStatus.STOPPING
 
+        # Capture start time before container stop for selective sub-container cleanup
+        since_ts = state.started_at
+
         if state.container_id:
             try:
                 container = self.client.containers.get(state.container_id)
+                if container.status == "paused":
+                    container.unpause()
                 container.stop(timeout=timeout)
                 container.remove()
                 state.status = PartialReconStatus.IDLE
@@ -1074,9 +1124,12 @@ class ContainerManager:
                 state.status = PartialReconStatus.ERROR
                 state.error = f"Failed to stop: {e}"
 
-        # Note: sub-container cleanup is NOT done here because it would kill
-        # containers from other parallel partial recons. Sub-containers are
-        # short-lived and will exit naturally.
+        # Selective sub-container cleanup: only kill tool containers spawned
+        # after this partial run started (avoids killing parallel runs).
+        if since_ts is not None:
+            cleaned = await self._exec(self._cleanup_sub_containers, since=since_ts)
+            if cleaned > 0:
+                logger.info(f"Cleaned up {cleaned} sub-container(s) for partial recon {run_id}")
 
         # Remove from state dict
         runs = self.partial_recon_states.get(project_id, {})
@@ -1094,6 +1147,59 @@ class ContainerManager:
             logger.warning("_refresh_partial_recon_state: config_path = Path(f'/tmp/redamon/partial_{project_id}_{run_id}.json')", exc_info=True)
             pass
 
+        self._save_state()
+        return state
+
+    async def pause_partial_recon(self, project_id: str, run_id: str) -> PartialReconState:
+        """Pause a specific partial recon using Docker cgroups freeze"""
+        state = await self.get_partial_recon_status(project_id, run_id)
+
+        if state.status != PartialReconStatus.RUNNING:
+            return state
+
+        if state.container_id:
+            try:
+                container = self.client.containers.get(state.container_id)
+                container.pause()
+                state.status = PartialReconStatus.PAUSED
+                logger.info(f"Paused partial recon container for project {project_id}, run {run_id}")
+            except NotFound:
+                state.status = PartialReconStatus.ERROR
+                state.error = "Container not found"
+            except Exception as e:
+                state.status = PartialReconStatus.ERROR
+                state.error = f"Failed to pause: {e}"
+
+        # Persist back to partial recon states
+        runs = self.partial_recon_states.get(project_id, {})
+        if run_id in runs:
+            runs[run_id] = state
+        self._save_state()
+        return state
+
+    async def resume_partial_recon(self, project_id: str, run_id: str) -> PartialReconState:
+        """Resume a paused partial recon"""
+        state = await self.get_partial_recon_status(project_id, run_id)
+
+        if state.status != PartialReconStatus.PAUSED:
+            return state
+
+        if state.container_id:
+            try:
+                container = self.client.containers.get(state.container_id)
+                container.unpause()
+                state.status = PartialReconStatus.RUNNING
+                logger.info(f"Resumed partial recon container for project {project_id}, run {run_id}")
+            except NotFound:
+                state.status = PartialReconStatus.ERROR
+                state.error = "Container not found"
+            except Exception as e:
+                state.status = PartialReconStatus.ERROR
+                state.error = f"Failed to resume: {e}"
+
+        runs = self.partial_recon_states.get(project_id, {})
+        if run_id in runs:
+            runs[run_id] = state
         self._save_state()
         return state
 
@@ -1163,6 +1269,7 @@ class ContainerManager:
 
             self._log_executor.submit(read_logs)
 
+            seq = 0
             while True:
                 try:
                     line = await asyncio.wait_for(log_queue.get(), timeout=1.0)
@@ -1191,6 +1298,8 @@ class ContainerManager:
                                     pass
 
                         event = self._parse_log_line(log_text, current_phase, current_phase_num, timestamp=docker_ts)
+                        seq += 1
+                        event.seq = seq
                         # Partial recon always runs a single tool/phase, so pin
                         # phase_number to 1 regardless of which full-pipeline
                         # pattern the line happens to match (e.g. NUCLEI => 5).
@@ -1672,16 +1781,32 @@ class ContainerManager:
             return False
 
     def ensure_gvm_scanner_image(self) -> bool:
-        """Ensure the GVM scanner image exists; build it if missing."""
-        try:
-            self.client.images.get(self.gvm_image)
-            return True
-        except NotFound:
-            logger.info(f"GVM scanner image {self.gvm_image} not found; building")
-            return self.build_gvm_scanner_image()
-        except Exception as e:
-            logger.error(f"Failed to check GVM scanner image: {e}")
-            return False
+        """Ensure the GVM scanner image exists; build it if missing (with retry)."""
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.client.images.get(self.gvm_image)
+                return True
+            except NotFound:
+                if attempt < max_retries:
+                    logger.info(
+                        f"GVM scanner image {self.gvm_image} not found; building "
+                        f"(attempt {attempt}/{max_retries})"
+                    )
+                    if self.build_gvm_scanner_image():
+                        return True
+                    time.sleep(2 ** (attempt - 1))
+                else:
+                    logger.info(
+                        f"GVM scanner image {self.gvm_image} not found; "
+                        f"final build attempt"
+                    )
+                    return self.build_gvm_scanner_image()
+            except Exception as e:
+                logger.error(f"Failed to check GVM scanner image: {e}")
+                if attempt >= max_retries:
+                    return False
+                time.sleep(2 ** (attempt - 1))
 
     def _probe_gvm_feed_sync(self) -> Tuple[bool, dict]:
         """Run a one-off readiness probe against the gvmd socket."""

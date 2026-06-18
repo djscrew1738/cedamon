@@ -520,6 +520,7 @@ async def stream_logs(project_id: str):
                         "phase": event.phase,
                         "phaseNumber": event.phase_number,
                         "isPhaseStart": event.is_phase_start,
+                        "seq": event.seq,
                         "level": event.level,
                     }),
                 }
@@ -692,6 +693,22 @@ async def stop_partial_recon(project_id: str, run_id: str):
     return await container_manager.stop_partial_recon(project_id, run_id)
 
 
+@app.post("/recon/{project_id}/partial/{run_id}/pause", response_model=PartialReconState)
+async def pause_partial_recon(project_id: str, run_id: str):
+    """Pause a specific partial recon run"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return await container_manager.pause_partial_recon(project_id, run_id)
+
+
+@app.post("/recon/{project_id}/partial/{run_id}/resume", response_model=PartialReconState)
+async def resume_partial_recon(project_id: str, run_id: str):
+    """Resume a paused partial recon run"""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return await container_manager.resume_partial_recon(project_id, run_id)
+
+
 @app.get("/recon/{project_id}/partial/{run_id}/logs")
 async def stream_partial_logs(project_id: str, run_id: str):
     """Stream logs from a specific partial recon container via SSE"""
@@ -713,6 +730,7 @@ async def stream_partial_logs(project_id: str, run_id: str):
                         "phase": event.phase,
                         "phaseNumber": event.phase_number,
                         "isPhaseStart": event.is_phase_start,
+                        "seq": event.seq,
                         "level": event.level,
                     }),
                 }
@@ -1033,6 +1051,7 @@ async def stream_gvm_logs(project_id: str):
                         "phase": event.phase,
                         "phaseNumber": event.phase_number,
                         "isPhaseStart": event.is_phase_start,
+                        "seq": event.seq,
                         "level": event.level,
                     }),
                 }
@@ -1157,6 +1176,7 @@ async def stream_github_hunt_logs(project_id: str):
                         "phase": event.phase,
                         "phaseNumber": event.phase_number,
                         "isPhaseStart": event.is_phase_start,
+                        "seq": event.seq,
                         "level": event.level,
                     }),
                 }
@@ -1281,6 +1301,7 @@ async def stream_trufflehog_logs(project_id: str):
                         "phase": event.phase,
                         "phaseNumber": event.phase_number,
                         "isPhaseStart": event.is_phase_start,
+                        "seq": event.seq,
                         "level": event.level,
                     }),
                 }

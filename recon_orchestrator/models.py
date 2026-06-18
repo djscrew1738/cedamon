@@ -50,6 +50,7 @@ class ReconLogEvent(BaseModel):
     is_phase_start: bool = False
     is_phase_end: bool = False
     level: str = "info"  # info, warning, error, success, action
+    seq: int = 0  # Monotonic sequence number for reliable dedup
 
 
 class HealthResponse(BaseModel):
@@ -112,6 +113,7 @@ class GvmLogEvent(BaseModel):
     is_phase_start: bool = False
     is_phase_end: bool = False
     level: str = "info"
+    seq: int = 0
 
 
 # =============================================================================
