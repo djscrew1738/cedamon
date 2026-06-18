@@ -255,3 +255,72 @@
 .confirmNo:hover {
   background: var(--bg-primary);
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 768px) {
+  .overlay {
+    animation-duration: 150ms;
+  }
+
+  .header {
+    padding: var(--space-2-5) var(--space-3);
+  }
+
+  .item {
+    padding: var(--space-2-5);
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-2) var(--space-2-5);
+    gap: var(--space-2);
+  }
+
+  .headerTitle {
+    font-size: 0.8125rem;
+  }
+
+  .backButton {
+    width: 36px;
+    height: 36px;
+  }
+
+  .newChatButton {
+    padding: 6px 10px;
+    font-size: 0.6875rem;
+  }
+
+  .list {
+    padding: var(--space-1-5);
+  }
+
+  .item {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .itemTitle {
+    font-size: 0.75rem;
+  }
+
+  .itemMeta {
+    gap: var(--space-1);
+  }
+
+  .itemTime {
+    font-size: 0.625rem;
+  }
+
+  .deleteButton {
+    opacity: 1;
+    width: 32px;
+    height: 32px;
+  }
+
+  .empty {
+    height: 140px;
+    font-size: 0.75rem;
+  }
+}

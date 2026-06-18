@@ -69,3 +69,25 @@
   border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 480px) {
+  .monitor {
+    max-width: 180px;
+    padding: var(--space-0-5) var(--space-1-5);
+    gap: var(--space-1);
+  }
+
+  .progressTrack {
+    width: 48px;
+  }
+
+  .label {
+    font-size: 9px;
+  }
+
+  .phase {
+    font-size: 9px;
+  }
+}

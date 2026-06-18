@@ -116,3 +116,48 @@
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 768px) {
+  .detail {
+    padding: var(--space-3);
+  }
+
+  .sections {
+    gap: var(--space-4);
+  }
+}
+
+@media (max-width: 480px) {
+  .detail {
+    padding: var(--space-2);
+    border-left-width: 2px;
+  }
+
+  .sections {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .propsGrid {
+    max-height: 200px;
+  }
+
+  .propKey {
+    min-width: 90px;
+    font-size: 10px;
+  }
+
+  .propValue {
+    font-size: 10px;
+  }
+
+  .connList {
+    max-height: 200px;
+  }
+
+  .connItem {
+    font-size: 10px;
+  }
+}
