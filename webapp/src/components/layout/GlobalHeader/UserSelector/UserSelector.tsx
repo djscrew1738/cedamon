@@ -1,32 +1,23 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Users, LogOut, KeyRound } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
 import { useAuth } from '@/providers/AuthProvider'
 import { useUsers } from '@/hooks/useUsers'
+import { useClickOutside } from '@/hooks'
 import styles from './UserSelector.module.css'
 
 export function UserSelector() {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useClickOutside<HTMLDivElement>(() => setIsOpen(false))
   const { userId, setUserId, setCurrentProject } = useProject()
   const { user: authUser, isAdmin, logout } = useAuth()
   const { data: users } = useUsers()
 
   const currentUser = users?.find(u => u.id === userId)
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   const handleSelectUser = (user: { id: string; name: string }) => {
     if (user.id !== userId) {

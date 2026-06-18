@@ -48,4 +48,23 @@
   --radius-xl: 0.75rem;    /* 12px */
   --radius-2xl: 1rem;      /* 16px */
   --radius-full: 9999px;   /* Pill shape */
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     RESPONSIVE SPACING ALIASES
+     These map to different physical sizes based on viewport.
+     Use --space-sm / --space-md / --space-lg in components instead of
+     hardcoded --space-N values when the spacing should scale on mobile.
+     ═══════════════════════════════════════════════════════════════════════════ */
+  --space-sm: var(--space-2);
+  --space-md: var(--space-4);
+  --space-lg: var(--space-6);
+}
+
+/* Mobile: tighten spacing aliases on narrow viewports */
+@media (max-width: 767px) {
+  :root {
+    --space-sm: var(--space-1-5);
+    --space-md: var(--space-3);
+    --space-lg: var(--space-5);
+  }
 }

@@ -18,6 +18,7 @@ import type { ReconStatus } from '@/lib/recon-types'
 import { WORKFLOW_TOOLS } from './WorkflowView/workflowDefinition'
 import { ReconLogsDrawer } from '@/app/graph/components/ReconLogsDrawer'
 import { PartialReconBadges } from '@/components/PartialReconBadges'
+import { useDrawerPosition } from '@/hooks'
 import styles from './ProjectForm.module.css'
 
 // Import sections
@@ -328,25 +329,7 @@ export function ProjectForm({
   }, [mode, userId])
 
   // Track body wrapper position so fixed-position log drawers pin to the main content area
-  useEffect(() => {
-    const body = bodyRef.current
-    if (!body) return
-    const update = () => {
-      const rect = body.getBoundingClientRect()
-      document.documentElement.style.setProperty('--drawer-top', `${rect.top}px`)
-      document.documentElement.style.setProperty('--drawer-bottom', `${window.innerHeight - rect.bottom}px`)
-    }
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(body)
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  }, [])
+  useDrawerPosition(bodyRef, { trackScroll: true })
 
   const updateField = <K extends keyof ProjectFormData>(
     field: K,

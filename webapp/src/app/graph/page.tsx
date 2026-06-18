@@ -43,7 +43,7 @@ import { useGraphData, useDimensions, useNodeSelection, useTableData, useGraphVi
 import { useStableGraphData } from './hooks/useStableGraphData'
 import { exportToCsv, exportToJson, exportToMarkdown } from './utils/exportCsv'
 import { clusterGraphData } from './utils/clusterNodes'
-import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE, useTrufflehogStatus, useTrufflehogSSE, useActiveSessions, useMultiPartialReconStatus, useMultiPartialReconSSE } from '@/hooks'
+import { useTheme, useSession, useReconStatus, useReconSSE, useGvmStatus, useGvmSSE, useGithubHuntStatus, useGithubHuntSSE, useTrufflehogStatus, useTrufflehogSSE, useActiveSessions, useMultiPartialReconStatus, useMultiPartialReconSSE, useDrawerPosition, usePolling } from '@/hooks'
 import { useProjectById } from '@/hooks/useProjects'
 import { useGraphTypeFilterPrefs, useGraphViewPrefs } from '@/hooks/useUserPreferences'
 import { useProject } from '@/providers/ProjectProvider'
@@ -124,20 +124,7 @@ export default function GraphPage() {
   }, [projectId, clearSelection])
 
   // Track .body position for fixed-position log drawers
-  useEffect(() => {
-    const body = bodyRef.current
-    if (!body) return
-    const update = () => {
-      const rect = body.getBoundingClientRect()
-      document.documentElement.style.setProperty('--drawer-top', `${rect.top}px`)
-      document.documentElement.style.setProperty('--drawer-bottom', `${window.innerHeight - rect.bottom}px`)
-    }
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(body)
-    window.addEventListener('resize', update)
-    return () => { ro.disconnect(); window.removeEventListener('resize', update) }
-  }, [])
+  useDrawerPosition(bodyRef)
   // Check if GVM stack is installed and whether feed sync is complete
   useEffect(() => {
     fetch('/api/gvm/available')
@@ -203,36 +190,27 @@ export default function GraphPage() {
     }>
   }>({ activeCount: 0, conversations: [] })
 
-  useEffect(() => {
+  // Poll agent conversation status every 5 seconds
+  usePolling(useCallback(async () => {
     if (!projectId || !userId) return
-    const fetchStatus = async () => {
-      try {
-        const res = await fetch(`/api/conversations?projectId=${projectId}&userId=${userId}`)
-        if (!res.ok) return
-        const convs = await res.json()
-        const active = convs.filter((c: any) => c.agentRunning)
-        setAgentSummary({ activeCount: active.length, conversations: convs })
-      } catch { /* ignore fetch errors */ }
-    }
-    fetchStatus()
-    const interval = setInterval(fetchStatus, 5000)
-    return () => clearInterval(interval)
-  }, [projectId, userId])
+    try {
+      const res = await fetch(`/api/conversations?projectId=${projectId}&userId=${userId}`)
+      if (!res.ok) return
+      const convs = await res.json()
+      const active = convs.filter((c: any) => c.agentRunning)
+      setAgentSummary({ activeCount: active.length, conversations: convs })
+    } catch { /* ignore fetch errors */ }
+  }, [projectId, userId]), { interval: 5000, deps: [projectId, userId] })
 
   // Tunnel status polling — check every 10s which tunnels are active
   const [tunnelStatus, setTunnelStatus] = useState<TunnelStatus>()
 
-  useEffect(() => {
-    const fetchTunnels = async () => {
-      try {
-        const res = await fetch('/api/agent/tunnel-status')
-        if (res.ok) setTunnelStatus(await res.json())
-      } catch { /* ignore */ }
-    }
-    fetchTunnels()
-    const interval = setInterval(fetchTunnels, 10000)
-    return () => clearInterval(interval)
-  }, [])
+  usePolling(useCallback(async () => {
+    try {
+      const res = await fetch('/api/agent/tunnel-status')
+      if (res.ok) setTunnelStatus(await res.json())
+    } catch { /* ignore */ }
+  }, []), { interval: 10000 })
 
   // Check if user has a GitHub access token configured in global settings
   useEffect(() => {

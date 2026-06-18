@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import styles from './error.module.css'
 
 const isChunkLoadError = (error: Error) =>
   error.name === 'ChunkLoadError' ||
@@ -27,50 +28,17 @@ export default function GraphError({
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '60vh',
-        padding: 'var(--space-8)',
-        textAlign: 'center',
-      }}
-    >
-      <h2
-        style={{
-          fontSize: 'var(--text-2xl)',
-          fontWeight: 'var(--font-bold)',
-          color: 'var(--text-primary)',
-          marginBottom: 'var(--space-3)',
-        }}
-      >
+    <div className={styles.container}>
+      <h2 className={styles.heading}>
         Failed to load graph view
       </h2>
-      <p
-        style={{
-          color: 'var(--text-secondary)',
-          marginBottom: 'var(--space-6)',
-          maxWidth: '480px',
-        }}
-      >
+      <p className={styles.message}>
         {error.message || 'An unexpected error occurred while rendering the graph.'}
       </p>
       <button
         type="button"
         onClick={reset}
-        style={{
-          background: 'var(--accent-primary)',
-          color: 'var(--text-on-accent, #fff)',
-          border: 'none',
-          padding: 'var(--space-3) var(--space-6)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--text-base)',
-          fontWeight: 'var(--font-medium)',
-          cursor: 'pointer',
-          transition: 'var(--transition-all)',
-        }}
+        className={styles.retryButton}
       >
         Retry
       </button>

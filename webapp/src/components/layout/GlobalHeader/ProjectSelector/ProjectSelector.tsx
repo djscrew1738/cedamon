@@ -1,30 +1,20 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { ChevronDown, FolderOpen, Plus, Settings } from 'lucide-react'
 import { useProject } from '@/providers/ProjectProvider'
 import { useProjects, type ProjectListItem } from '@/hooks/useProjects'
+import { useClickOutside } from '@/hooks'
 import styles from './ProjectSelector.module.css'
 
 export function ProjectSelector() {
   const router = useRouter()
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useClickOutside<HTMLDivElement>(() => setIsOpen(false))
   const { currentProject, setCurrentProject, userId } = useProject()
   const { data: projects } = useProjects(userId || undefined)
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   const handleSelectProject = (project: ProjectListItem) => {
     setCurrentProject({

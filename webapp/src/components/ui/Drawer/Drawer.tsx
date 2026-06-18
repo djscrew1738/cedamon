@@ -37,6 +37,10 @@ export interface DrawerProps {
   onResizeEnd?: (widthPx: number) => void
 }
 
+/** CSS selector for all focusable elements within the drawer */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export function Drawer({
   isOpen,
   onClose,
@@ -167,6 +171,54 @@ export function Drawer({
     pointerIdRef.current = null
   }, [])
 
+  // ── Focus management ──
+  const previousActiveElement = useRef<HTMLElement | null>(null)
+
+  // Trap focus within the drawer when open
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab' || mode !== 'overlay') return
+      const drawer = drawerRef.current
+      if (!drawer) return
+      const focusable = drawer.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    },
+    [mode, onClose],
+  )
+
+  useEffect(() => {
+    if (!isOpen) return
+    previousActiveElement.current = document.activeElement as HTMLElement
+    // Focus the first focusable element inside the drawer
+    requestAnimationFrame(() => {
+      const drawer = drawerRef.current
+      if (!drawer) return
+      const focusable = drawer.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+      focusable?.focus()
+    })
+    return () => {
+      previousActiveElement.current?.focus()
+    }
+  }, [isOpen])
+
   const transformStyle = isDragging && dragOffset !== 0
     ? ({ transform: `translateX(${dragOffset}px)` } as React.CSSProperties)
     : undefined
@@ -178,6 +230,10 @@ export function Drawer({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onKeyDown={handleKeyDown}
+      role={mode === 'overlay' ? 'dialog' : undefined}
+      aria-modal={mode === 'overlay' ? true : undefined}
+      aria-label={typeof title === 'string' ? title : undefined}
       className={`${styles.drawer} ${positionClass} ${modeClass} ${isOpen ? styles.drawerOpen : ''} ${isResizing ? styles.drawerResizing : ''} ${isDragging ? styles.drawerDragging : ''} ${className}`}
       style={{ '--drawer-custom-width': width, ...transformStyle } as React.CSSProperties}
     >

@@ -5,6 +5,10 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import styles from './Modal.module.css'
 
+/** CSS selector for all focusable elements within the modal */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 interface ModalProps {
   /** Whether the modal is open */
   isOpen: boolean
@@ -49,9 +53,30 @@ export function Modal({
       if (closeOnEscape && e.key === 'Escape') {
         e.preventDefault()
         onClose()
+        return
+      }
+      // Trap focus within the modal
+      if (e.key === 'Tab') {
+        const modal = modalRef.current
+        if (!modal) return
+        const focusable = modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault()
+            last.focus()
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault()
+            first.focus()
+          }
+        }
       }
     },
-    [closeOnEscape, onClose]
+    [closeOnEscape, onClose],
   )
 
   // Handle overlay click
@@ -64,23 +89,24 @@ export function Modal({
     [closeOnOverlayClick, onClose]
   )
 
-  // Focus trap and body scroll lock
+  // Focus management and body scroll lock
   useEffect(() => {
     if (isOpen) {
-      // Store the currently focused element
       previousActiveElement.current = document.activeElement as HTMLElement
 
-      // Focus the modal
-      modalRef.current?.focus()
+      // Focus the first focusable element inside the modal
+      requestAnimationFrame(() => {
+        const modal = modalRef.current
+        if (!modal) return
+        const focusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+        focusable?.focus()
+      })
 
       // Lock body scroll
       document.body.style.overflow = 'hidden'
 
       return () => {
-        // Restore body scroll
         document.body.style.overflow = ''
-
-        // Restore focus
         previousActiveElement.current?.focus()
       }
     }
