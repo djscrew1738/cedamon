@@ -10,6 +10,16 @@ This package contains helper functions organized by category:
 - katana_helpers: Katana web crawler for URL discovery
 - cve_helpers: CVE lookup from NVD and Vulners APIs
 - security_checks: Custom security checks (direct IP access, TLS, headers, etc.)
+- adaptive_rate: Dynamic rate limiting based on target response patterns
+- coverage_metrics: Scan coverage tracking and gap analysis
+- template_selector: Service-aware Nuclei template selection
+- finding_dedup: Cross-phase finding deduplication
+- network_health: Pre-scan Tor/proxy health assessment
+- scan_checkpoint: Scan checkpoint and resumability
+- smart_retry: Unified retry decorator with failure classification
+- target_priority: Target prioritization queue based on attack surface
+- dns_prevalidation: DNS pre-validation before port scanning
+- cve_version_correlation: CVE to service version correlation
 """
 
 # Standard logging
@@ -106,6 +116,84 @@ from .anonymity import (
     TorProxy,
 )
 
+# Scan quality improvements
+from .adaptive_rate import (
+    AdaptiveRateLimiter,
+    TargetHealthMonitor,
+    RateDecision,
+)
+
+from .coverage_metrics import (
+    CoverageTracker,
+    ScanStatus,
+    get_coverage_tracker,
+    reset_coverage_tracker,
+)
+
+from .template_selector import (
+    select_templates_for_fingerprint,
+    select_templates_from_http_probe,
+    build_nuclei_template_args,
+    print_template_selection_summary,
+    normalize_tech_name,
+)
+
+from .finding_dedup import (
+    FindingDeduplicator,
+    deduplicate_scan_results,
+    CanonicalFinding,
+)
+
+from .network_health import (
+    assess_tor_health,
+    assess_direct_connectivity,
+    run_pre_scan_health_check,
+    check_tor_port,
+    request_new_tor_circuit,
+    NetworkHealthReport,
+)
+
+# Additional scan quality improvements (batch 2)
+from .scan_checkpoint import (
+    ScanCheckpoint,
+    should_resume_scan,
+)
+
+from .smart_retry import (
+    smart_retry,
+    retry_api_call,
+    retry_dns_lookup,
+    retry_network_request,
+    RetryConfig,
+    RetryStats,
+    ErrorClass,
+    CircuitBreakerOpen,
+    get_all_retry_stats,
+    classify_error,
+)
+
+from .target_priority import (
+    TargetPriorityQueue,
+    ScoredTarget,
+    prioritize_from_http_probe,
+    print_priority_summary,
+)
+
+from .dns_prevalidation import (
+    DNSPreValidator,
+    DNSValidationResult,
+    prevalidate_subdomains,
+    filter_dns_stale,
+)
+
+from .cve_version_correlation import (
+    CVEVersionCorrelator,
+    VersionRange,
+    ServiceVersion,
+    correlate_vulns_with_versions,
+    KNOWN_CVE_VERSIONS,
+)
+
 __all__ = [
     # Docker
     "is_docker_installed",
@@ -171,5 +259,57 @@ __all__ = [
     "get_real_ip",
     "require_tor",
     "TorProxy",
+    # Scan quality improvements
+    "AdaptiveRateLimiter",
+    "TargetHealthMonitor",
+    "RateDecision",
+    "CoverageTracker",
+    "ScanStatus",
+    "get_coverage_tracker",
+    "reset_coverage_tracker",
+    "select_templates_for_fingerprint",
+    "select_templates_from_http_probe",
+    "build_nuclei_template_args",
+    "print_template_selection_summary",
+    "normalize_tech_name",
+    "FindingDeduplicator",
+    "deduplicate_scan_results",
+    "CanonicalFinding",
+    "assess_tor_health",
+    "assess_direct_connectivity",
+    "run_pre_scan_health_check",
+    "check_tor_port",
+    "request_new_tor_circuit",
+    "NetworkHealthReport",
+    # Scan checkpoint & resumability
+    "ScanCheckpoint",
+    "should_resume_scan",
+    # Smart retry
+    "smart_retry",
+    "retry_api_call",
+    "retry_dns_lookup",
+    "retry_network_request",
+    "RetryConfig",
+    "RetryStats",
+    "ErrorClass",
+    "CircuitBreakerOpen",
+    "get_all_retry_stats",
+    "classify_error",
+    # Target priority
+    "TargetPriorityQueue",
+    "ScoredTarget",
+    "prioritize_from_http_probe",
+    "print_priority_summary",
+    # DNS pre-validation
+    "DNSPreValidator",
+    "DNSValidationResult",
+    "prevalidate_subdomains",
+    "filter_dns_stale",
+    # CVE version correlation
+    "CVEVersionCorrelator",
+    "VersionRange",
+    "ServiceVersion",
+    "correlate_vulns_with_versions",
+    "KNOWN_CVE_VERSIONS",
 ]
 

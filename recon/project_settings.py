@@ -10,14 +10,13 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+logger = logging.getLogger(__name__)
+
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent.parent / ".env")
-except Exception:
-    logger.warning("<module>: from dotenv import load_dotenv", exc_info=True)
-    pass
-
-logger = logging.getLogger(__name__)
+except ImportError:
+    pass  # dotenv is optional - .env loading will be skipped
 
 # =============================================================================
 # DEFAULT SETTINGS - Used as fallback for CLI usage and missing API fields

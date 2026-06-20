@@ -38,6 +38,33 @@ from recon.helpers.scan_runtime import (
     check_disk_space,
 )
 
+# Scan quality improvements (v4.16)
+from recon.helpers import (
+    # Pre-scan network health check
+    run_pre_scan_health_check,
+    NetworkHealthReport,
+    # Checkpoint/resumability
+    ScanCheckpoint,
+    should_resume_scan,
+    # DNS pre-validation
+    prevalidate_subdomains,
+    filter_dns_stale,
+    # Target prioritization
+    prioritize_from_http_probe,
+    print_priority_summary,
+    # Template selection (service-aware)
+    select_templates_from_http_probe,
+    print_template_selection_summary,
+    # Finding deduplication
+    deduplicate_scan_results,
+    # Coverage tracking
+    get_coverage_tracker,
+    reset_coverage_tracker,
+    ScanStatus,
+    # CVE version correlation
+    correlate_vulns_with_versions,
+)
+
 # Settings are loaded lazily in main() to avoid blocking the module import with
 # synchronous HTTP calls to the webapp API. This keeps container cold-start fast
 # and makes the module safe to import in tests/other tooling.
@@ -1150,27 +1177,44 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_file = OUTPUT_DIR / f"recon_{PROJECT_ID}.json"
 
+    # Check for resumable scan checkpoint
+    checkpoint = ScanCheckpoint(PROJECT_ID, str(OUTPUT_DIR))
+    resume_data = None
+    if should_resume_scan(PROJECT_ID, str(OUTPUT_DIR)):
+        resume_data = checkpoint.load()
+        if resume_data:
+            print(f"[*][Pipeline] Resuming from checkpoint: {resume_data.get('last_phase', 'unknown')}")
+            print(f"[*][Pipeline] Last checkpoint: {resume_data.get('timestamp', 'unknown')}")
+
     # Initialize result structure with dynamic scan_type and empty modules_executed
-    combined_result = {
-        "metadata": {
-            "scan_type": build_scan_type(),
-            "scan_timestamp": datetime.now().isoformat(),
-            "target": root_domain,
-            "root_domain": root_domain,
-            "user_id": USER_ID,
-            "project_id": PROJECT_ID,
-            "filtered_mode": filtered_mode,
-            "subdomain_filter": full_subdomains if filtered_mode else [],
-            "anonymous_mode": anonymous,
-            "bruteforce_mode": bruteforce if not filtered_mode else False,
-            "modules_executed": []
-        },
-        "domain": root_domain,
-        "whois": {},
-        "subdomains": [],
-        "subdomain_count": 0,
-        "dns": {}
-    }
+    # If resuming, use checkpoint data as base
+    if resume_data and resume_data.get('combined_result'):
+        combined_result = resume_data['combined_result']
+        # Update timestamp for resumed scan
+        combined_result["metadata"]["resumed_at"] = datetime.now().isoformat()
+        combined_result["metadata"]["resumed_from_phase"] = resume_data.get('last_phase')
+        print(f"[+][Pipeline] Loaded {len(combined_result.get('subdomains', []))} subdomains from checkpoint")
+    else:
+        combined_result = {
+            "metadata": {
+                "scan_type": build_scan_type(),
+                "scan_timestamp": datetime.now().isoformat(),
+                "target": root_domain,
+                "root_domain": root_domain,
+                "user_id": USER_ID,
+                "project_id": PROJECT_ID,
+                "filtered_mode": filtered_mode,
+                "subdomain_filter": full_subdomains if filtered_mode else [],
+                "anonymous_mode": anonymous,
+                "bruteforce_mode": bruteforce if not filtered_mode else False,
+                "modules_executed": []
+            },
+            "domain": root_domain,
+            "whois": {},
+            "subdomains": [],
+            "subdomain_count": 0,
+            "dns": {}
+        }
 
     print(
         f"[*][Pipeline] Scan plan: type={combined_result['metadata']['scan_type']} "
@@ -1423,6 +1467,18 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         if "port_scan" in combined_result:
             _graph_update_bg("update_graph_from_port_scan", combined_result, USER_ID, PROJECT_ID)
 
+        # Checkpoint after port_scan phase
+        checkpoint.complete_phase("port_scan", combined_result.get("port_scan", {}))
+
+        # Track coverage for port scan targets
+        port_scan_hosts = list(combined_result.get("port_scan", {}).get("by_host", {}).keys())
+        if port_scan_hosts:
+            coverage.register_targets(port_scan_hosts, "port_scan")
+            for host in port_scan_hosts:
+                host_data = combined_result["port_scan"]["by_host"][host]
+                ports_found = len(host_data.get("port_details", []))
+                coverage.complete_target(host, "port_scan", ScanStatus.SUCCESS, findings_count=ports_found)
+
     # =====================================================================
     # GROUP 3.5 — Nmap Service Version Detection + NSE Vulnerability Scripts
     # Depends on: merged port_scan data (needs discovered open ports)
@@ -1522,10 +1578,29 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 _graph_update_bg("update_graph_from_http_probe", combined_result, USER_ID, PROJECT_ID)
                 if 'urlscan' in combined_result:
                     _graph_update_bg("update_graph_from_urlscan_enrichment", combined_result, USER_ID, PROJECT_ID)
+
+                # Checkpoint after http_probe phase
+                checkpoint.complete_phase("http_probe", combined_result.get("http_probe", {}))
+
+                # Track coverage for http_probe targets
+                http_probe_urls = list(combined_result.get("http_probe", {}).get("by_url", {}).keys())
+                if http_probe_urls:
+                    coverage.register_targets(http_probe_urls, "http_probe")
+                    for url in http_probe_urls:
+                        url_data = combined_result["http_probe"]["by_url"][url]
+                        status_code = url_data.get("status_code", 0)
+                        if 200 <= status_code < 400:
+                            coverage.complete_target(url, "http_probe", ScanStatus.SUCCESS)
+                        elif status_code >= 500:
+                            coverage.complete_target(url, "http_probe", ScanStatus.ERROR)
+                        else:
+                            coverage.complete_target(url, "http_probe", ScanStatus.SUCCESS)
+
             except Exception as e:
                 print(f"[!][Pipeline] http_probe failed: {e}")
                 combined_result["metadata"].setdefault("phase_errors", {})["http_probe"] = str(e)
                 save_recon_file(combined_result, output_file)
+                checkpoint.fail_phase("http_probe", str(e))
 
     # Check if we should skip active scanning modules (resource_enum, vuln_scan)
     # These require live targets from http_probe to work
@@ -1553,10 +1628,25 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 combined_result["metadata"]["modules_executed"].append("resource_enum")
                 save_recon_file(combined_result, output_file)
                 _graph_update_bg("update_graph_from_resource_enum", combined_result, USER_ID, PROJECT_ID)
+
+                # Checkpoint after resource_enum phase
+                checkpoint.complete_phase("resource_enum", combined_result.get("resource_enum", {}))
+
+                # Track coverage for resource_enum targets (crawled URLs)
+                resource_by_url = combined_result.get("resource_enum", {}).get("by_url", {})
+                if resource_by_url:
+                    crawled_urls = list(resource_by_url.keys())
+                    coverage.register_targets(crawled_urls, "resource_enum")
+                    for url in crawled_urls:
+                        url_data = resource_by_url[url]
+                        endpoints_found = len(url_data.get("endpoints", []))
+                        coverage.complete_target(url, "resource_enum", ScanStatus.SUCCESS, findings_count=endpoints_found)
+
             except Exception as e:
                 print(f"[!][Pipeline] resource_enum failed: {e}")
                 combined_result["metadata"].setdefault("phase_errors", {})["resource_enum"] = str(e)
                 save_recon_file(combined_result, output_file)
+                checkpoint.fail_phase("resource_enum", str(e))
 
     # GROUP 4.5 — AI Surface Recon (runs after resource_enum)
     combined_result = _maybe_run_ai_surface(combined_result, _settings, output_file)
@@ -1604,6 +1694,7 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 f"endpoints={vuln_input_endpoints} live_urls={vuln_input_urls}"
             )
             print("-" * 40)
+            phase_a_errors = {}
             with ThreadPoolExecutor(max_workers=len(phase_a_tools)) as pool:
                 futures = {pool.submit(fn, combined_result, _settings): key
                            for key, fn in phase_a_tools.items()}
@@ -1617,7 +1708,24 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                     except Exception as e:
                         print(f"[!][Pipeline] {key} failed: {e}")
                         combined_result["metadata"].setdefault("phase_errors", {})[key] = str(e)
+                        phase_a_errors[key] = str(e)
                         save_recon_file(combined_result, output_file)
+
+            # Checkpoint after vuln_scan phase (GROUP 6 Phase A)
+            if "vuln_scan" in combined_result:
+                checkpoint.complete_phase("vuln_scan", combined_result.get("vuln_scan", {}))
+
+                # Track coverage for vuln_scan targets
+                vuln_by_target = combined_result.get("vuln_scan", {}).get("by_target", {})
+                if vuln_by_target:
+                    vuln_targets = list(vuln_by_target.keys())
+                    coverage.register_targets(vuln_targets, "vuln_scan")
+                    for target in vuln_targets:
+                        target_data = vuln_by_target[target]
+                        findings_count = target_data.get("finding_count", 0)
+                        coverage.complete_target(target, "vuln_scan", ScanStatus.SUCCESS, findings_count=findings_count)
+            elif "vuln_scan" in phase_a_errors:
+                checkpoint.fail_phase("vuln_scan", phase_a_errors["vuln_scan"])
 
         # ================================================================
         # GROUP 6 Phase B — MITRE enrichment (depends on Nuclei CVEs)
@@ -1716,9 +1824,28 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                       f"High: {graphql_summary['by_severity']['high']}, " +
                       f"Medium: {graphql_summary['by_severity']['medium']})")
 
+    # Coverage metrics report
+    print(f"\n[*][Pipeline] SCAN COVERAGE METRICS")
+    print("-" * 40)
+    coverage_report = coverage.get_report()
+    for phase, phase_data in coverage_report.get("by_phase", {}).items():
+        total = phase_data.get("total", 0)
+        success = phase_data.get("success", 0)
+        pct = (success / total * 100) if total > 0 else 0
+        failed = phase_data.get("failed", [])
+        print(f"[+][Coverage] {phase}: {success}/{total} ({pct:.1f}%)")
+        if failed:
+            print(f"    Failed: {', '.join(failed[:5])}" + (f" (+{len(failed)-5} more)" if len(failed) > 5 else ""))
+
+    # Add coverage metrics to result metadata
+    combined_result["metadata"]["scan_coverage"] = coverage_report
+
+    # Mark checkpoint as complete
+    checkpoint.complete_phase("pipeline_complete", {"status": "success"})
+
     # Final pretty-print save for human readability
     save_recon_file(combined_result, output_file, pretty=True)
-    print(f"[+][Pipeline] Output saved: {output_file}")
+    print(f"\n[+][Pipeline] Output saved: {output_file}")
     print(f"{'=' * 70}")
 
     return combined_result
@@ -1752,6 +1879,33 @@ def main():
         cleanup_orphan_containers(project_id=PROJECT_ID)
     except Exception as e:
         print(f"[!][Pipeline] Could not clean stale containers: {e}")
+
+    # Initialize scan quality tracking
+    reset_coverage_tracker()
+    coverage = get_coverage_tracker()
+
+    # Pre-scan network health check (Tor/proxy assessment)
+    if USE_TOR_FOR_RECON:
+        print("\n[*][Pipeline] Pre-scan network health check...")
+        health_report = run_pre_scan_health_check(
+            use_tor=True,
+            test_count=_settings.get('TOR_HEALTH_CHECK_COUNT', 3),
+        )
+        if not health_report.tor_healthy:
+            print(f"[!][Pipeline] Tor health check FAILED: {health_report.tor_recommendation}")
+            if health_report.tor_success_rate < 0.3:
+                print("[!][Pipeline] Tor success rate critically low — scan quality will be degraded")
+                # Record health warning in metadata (will be saved with results)
+        else:
+            print(f"[✓][Pipeline] Tor health OK: {health_report.tor_success_rate*100:.0f}% success, "
+                  f"{health_report.tor_avg_latency:.1f}s avg latency")
+            if health_report.tor_avg_latency > 5:
+                print(f"[!][Pipeline] High Tor latency detected — auto-reducing rate limits")
+                # Dynamically reduce rate limits for high-latency Tor
+                for key in ['NUCLEI_RATE_LIMIT', 'HTTPX_RATE_LIMIT', 'KATANA_RATE_LIMIT']:
+                    if key in _settings and _settings[key] > 20:
+                        _settings[key] = max(20, _settings[key] // 2)
+                        print(f"    {key}: reduced to {_settings[key]}")
 
     # IP Mode: skip domain verification and run IP-based recon instead
     if IP_MODE and TARGET_IPS:
