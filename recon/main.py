@@ -1376,6 +1376,43 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         _graph_update_bg("update_graph_from_urlscan_discovery", combined_result, USER_ID, PROJECT_ID)
 
     # =====================================================================
+    # GROUP 2.5 — DNS Pre-validation (before port scan)
+    # Validates subdomains exist and filters wildcards/stale entries
+    # =====================================================================
+    if _settings.get('DNS_PREVALIDATION_ENABLED', True):
+        subdomains_to_validate = list(combined_result.get("dns", {}).get("subdomains", {}).keys())
+        if subdomains_to_validate:
+            print(f"\n[*][Pipeline] GROUP 2.5: DNS Pre-validation — {len(subdomains_to_validate)} subdomain(s)")
+            print("-" * 40)
+            try:
+                prevalidation_result = prevalidate_subdomains(
+                    subdomains_to_validate,
+                    timeout=_settings.get('DNS_PREVALIDATION_TIMEOUT', 5.0),
+                    workers=_settings.get('DNS_PREVALIDATION_WORKERS', 50),
+                    detect_wildcards=_settings.get('DNS_PREVALIDATION_DETECT_WILDCARDS', True),
+                )
+                # Filter stale/wildcard entries from DNS results
+                if prevalidation_result.get("stale_domains") or prevalidation_result.get("wildcard_domains"):
+                    filtered_dns = filter_dns_stale(
+                        combined_result.get("dns", {}),
+                        prevalidation_result.get("stale_domains", []),
+                        prevalidation_result.get("wildcard_domains", []),
+                    )
+                    combined_result["dns"] = filtered_dns
+                    combined_result["metadata"]["dns_prevalidation"] = {
+                        "original_count": len(subdomains_to_validate),
+                        "validated_count": prevalidation_result.get("valid_count", 0),
+                        "stale_removed": len(prevalidation_result.get("stale_domains", [])),
+                        "wildcards_removed": len(prevalidation_result.get("wildcard_domains", [])),
+                    }
+                    print(f"[+][DNS] Pre-validation complete: {prevalidation_result.get('valid_count', 0)} valid, "
+                          f"{len(prevalidation_result.get('stale_domains', []))} stale, "
+                          f"{len(prevalidation_result.get('wildcard_domains', []))} wildcard")
+                    save_recon_file(combined_result, output_file)
+            except Exception as e:
+                print(f"[!][DNS] Pre-validation failed (continuing): {e}")
+
+    # =====================================================================
     # GROUP 2b — Uncover Target Expansion (before port scan / OSINT)
     # =====================================================================
     if _settings.get('OSINT_ENRICHMENT_ENABLED', False) and _settings.get('UNCOVER_ENABLED', False):
@@ -1609,6 +1646,28 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # Auto-enable JS Recon / GraphQL Scan / vuln_scan when live targets exist
     _auto_enable_contextual_modules(_settings, combined_result)
 
+    # =====================================================================
+    # GROUP 4.2 — Target Prioritization (risk-based scan ordering)
+    # Prioritizes targets by attack surface score for vuln_scan efficiency
+    # =====================================================================
+    if _settings.get('TARGET_PRIORITIZATION_ENABLED', True) and not skip_active_scans:
+        http_probe_data = combined_result.get("http_probe", {})
+        if http_probe_data.get("by_url"):
+            print(f"\n[*][Pipeline] GROUP 4.2: Target Prioritization")
+            print("-" * 40)
+            try:
+                prioritized = prioritize_from_http_probe(http_probe_data, combined_result.get("port_scan", {}))
+                if prioritized:
+                    combined_result["target_priority"] = prioritized
+                    combined_result["metadata"]["target_prioritization"] = {
+                        "targets_prioritized": len(prioritized.get("ranked_targets", [])),
+                        "high_value_targets": len([t for t in prioritized.get("ranked_targets", []) if t.get("score", 0) >= 70]),
+                    }
+                    print_priority_summary(prioritized)
+                    save_recon_file(combined_result, output_file)
+            except Exception as e:
+                print(f"[!][Priority] Target prioritization failed (continuing): {e}")
+
     if skip_active_scans:
         print(f"\n{'=' * 70}")
         print(f"[!][Pipeline] SKIPPING ACTIVE SCANS: {skip_reason}")
@@ -1663,6 +1722,30 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             print(f"[!][JsRecon] Error: {e}")
 
     if not skip_active_scans:
+        # ================================================================
+        # GROUP 5.9 — Service-Aware Template Selection (before vuln_scan)
+        # Selects relevant Nuclei templates based on detected technologies
+        # ================================================================
+        selected_templates = None
+        if _settings.get('TEMPLATE_SELECTION_ENABLED', True) and "vuln_scan" in SCAN_MODULES:
+            http_probe_data = combined_result.get("http_probe", {})
+            if http_probe_data.get("technologies_found"):
+                print(f"\n[*][Pipeline] GROUP 5.9: Service-Aware Template Selection")
+                print("-" * 40)
+                try:
+                    selected_templates = select_templates_from_http_probe(http_probe_data)
+                    if selected_templates:
+                        combined_result["metadata"]["template_selection"] = {
+                            "templates_selected": len(selected_templates.get("templates", [])),
+                            "technologies_matched": len(selected_templates.get("matched_technologies", [])),
+                        }
+                        print_template_selection_summary(selected_templates)
+                        # Pass selected templates to settings for vuln_scan
+                        if selected_templates.get("templates"):
+                            _settings["_selected_templates_from_fingerprint"] = selected_templates["templates"]
+                except Exception as e:
+                    print(f"[!][Templates] Template selection failed (using defaults): {e}")
+
         # ================================================================
         # GROUP 6 Phase A — Parallel active vuln scanners (Nuclei || GraphQL)
         # ================================================================
@@ -1740,6 +1823,65 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 print(f"[!][Pipeline] mitre_enrichment failed: {e}")
                 combined_result["metadata"].setdefault("phase_errors", {})["mitre_enrichment"] = str(e)
                 save_recon_file(combined_result, output_file)
+
+        # ================================================================
+        # GROUP 6 Phase C — CVE Version Correlation (depends on nmap + vuln_scan)
+        # Cross-validates CVE findings with detected service versions
+        # ================================================================
+        if _settings.get('CVE_VERSION_CORRELATION_ENABLED', True) and 'vuln_scan' in combined_result:
+            nmap_data = combined_result.get("nmap_scan", {})
+            vuln_data = combined_result.get("vuln_scan", {})
+            if nmap_data and vuln_data.get("all_cves"):
+                print(f"\n[*][Pipeline] GROUP 6 Phase C: CVE Version Correlation")
+                print("-" * 40)
+                try:
+                    correlation_result = correlate_vulns_with_versions(vuln_data, nmap_data)
+                    if correlation_result:
+                        combined_result["cve_correlation"] = correlation_result
+                        combined_result["metadata"]["cve_version_correlation"] = {
+                            "cves_correlated": correlation_result.get("correlated_count", 0),
+                            "confirmed_applicable": correlation_result.get("confirmed_applicable", 0),
+                            "unconfirmed": correlation_result.get("unconfirmed_count", 0),
+                        }
+                        print(f"[+][CVE] Correlated {correlation_result.get('correlated_count', 0)} CVEs with service versions")
+                        print(f"[+][CVE] Confirmed applicable: {correlation_result.get('confirmed_applicable', 0)}")
+                        save_recon_file(combined_result, output_file)
+                except Exception as e:
+                    print(f"[!][CVE] Version correlation failed (continuing): {e}")
+
+        # ================================================================
+        # GROUP 6 Phase D — Finding Deduplication (after all vuln scanners)
+        # Deduplicates findings from Nuclei, security_checks, GraphQL, takeover
+        # ================================================================
+        if _settings.get('FINDING_DEDUP_ENABLED', True):
+            sources_with_findings = []
+            if 'vuln_scan' in combined_result:
+                sources_with_findings.append('vuln_scan')
+            if 'graphql_scan' in combined_result:
+                sources_with_findings.append('graphql_scan')
+            if 'subdomain_takeover' in combined_result:
+                sources_with_findings.append('subdomain_takeover')
+            if 'security_checks' in combined_result:
+                sources_with_findings.append('security_checks')
+
+            if len(sources_with_findings) > 1:
+                print(f"\n[*][Pipeline] GROUP 6 Phase D: Finding Deduplication")
+                print("-" * 40)
+                try:
+                    dedup_result = deduplicate_scan_results(combined_result, sources_with_findings)
+                    if dedup_result:
+                        combined_result["deduplicated_findings"] = dedup_result
+                        combined_result["metadata"]["finding_deduplication"] = {
+                            "sources_processed": len(sources_with_findings),
+                            "original_count": dedup_result.get("original_count", 0),
+                            "deduplicated_count": dedup_result.get("deduplicated_count", 0),
+                            "duplicates_removed": dedup_result.get("duplicates_removed", 0),
+                        }
+                        print(f"[+][Dedup] Processed {dedup_result.get('original_count', 0)} findings from {len(sources_with_findings)} sources")
+                        print(f"[+][Dedup] Removed {dedup_result.get('duplicates_removed', 0)} duplicates → {dedup_result.get('deduplicated_count', 0)} unique")
+                        save_recon_file(combined_result, output_file)
+                except Exception as e:
+                    print(f"[!][Dedup] Finding deduplication failed (continuing): {e}")
 
     # External Domains — aggregate from all sources and persist
     try:

@@ -769,6 +769,51 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'ROE_TIME_WINDOW_END_TIME': '18:00',
     'ROE_GLOBAL_MAX_RPS': 0,
 
+    # ==========================================================================
+    # SCAN QUALITY IMPROVEMENTS (v4.16)
+    # ==========================================================================
+
+    # DNS Pre-validation — validates subdomains before port scanning
+    # Filters wildcards and stale DNS entries to reduce scan noise
+    'DNS_PREVALIDATION_ENABLED': True,
+    'DNS_PREVALIDATION_TIMEOUT': 5.0,
+    'DNS_PREVALIDATION_WORKERS': 50,
+    'DNS_PREVALIDATION_DETECT_WILDCARDS': True,
+
+    # Target Prioritization — risk-based scan ordering
+    # Prioritizes targets by attack surface score for vuln_scan efficiency
+    'TARGET_PRIORITIZATION_ENABLED': True,
+
+    # Service-Aware Template Selection — optimizes Nuclei template selection
+    # Uses httpx technology fingerprints to select relevant templates only
+    'TEMPLATE_SELECTION_ENABLED': True,
+
+    # Finding Deduplication — removes duplicate findings across tools
+    # Deduplicates Nuclei, GraphQL, takeover, and security_checks findings
+    'FINDING_DEDUP_ENABLED': True,
+
+    # CVE Version Correlation — cross-validates CVEs with service versions
+    # Correlates Nuclei CVE findings with nmap-detected service versions
+    'CVE_VERSION_CORRELATION_ENABLED': True,
+
+    # Network Health Check — validates Tor/proxy before scanning
+    # Checks circuit quality and adjusts rate limits accordingly
+    'NETWORK_HEALTH_CHECK_ENABLED': True,
+    'NETWORK_HEALTH_PROBE_COUNT': 5,
+    'NETWORK_HEALTH_MIN_SUCCESS_RATE': 0.6,
+    'NETWORK_HEALTH_MAX_LATENCY': 10.0,
+
+    # Scan Checkpoint/Resumability — enables scan resume after failures
+    'CHECKPOINT_ENABLED': True,
+    'CHECKPOINT_AUTO_SAVE_INTERVAL': 30,
+
+    # Adaptive Rate Limiting — auto-adjusts rates based on target response
+    'ADAPTIVE_RATE_ENABLED': True,
+    'ADAPTIVE_RATE_INITIAL_RPS': 50,
+    'ADAPTIVE_RATE_MIN_RPS': 5,
+    'ADAPTIVE_RATE_MAX_RPS': 200,
+    'ADAPTIVE_RATE_WINDOW_SIZE': 100,
+
     # GraphQL Security Testing
     'GRAPHQL_SECURITY_ENABLED': True,
     'GRAPHQL_INTROSPECTION_TEST': True,
