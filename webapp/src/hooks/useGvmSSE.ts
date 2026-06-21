@@ -15,6 +15,7 @@ interface UseGvmSSEOptions {
 interface UseGvmSSEReturn {
   logs: ReconLogEvent[]
   isConnected: boolean
+  isReconnecting: boolean
   error: string | null
   clearLogs: () => void
   currentPhase: string | null
@@ -31,6 +32,7 @@ export function useGvmSSE({
 }: UseGvmSSEOptions): UseGvmSSEReturn {
   const [logs, setLogs] = useState<ReconLogEvent[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const [isReconnecting, setIsReconnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentPhase, setCurrentPhase] = useState<string | null>(null)
   const [currentPhaseNumber, setCurrentPhaseNumber] = useState<number | null>(null)
@@ -58,6 +60,7 @@ export function useGvmSSE({
 
     eventSource.onopen = () => {
       setIsConnected(true)
+      setIsReconnecting(false)
       setError(null)
       reconnectAttempts.current = 0
     }
@@ -165,6 +168,7 @@ export function useGvmSSE({
       eventSource.close()
 
       if (reconnectAttempts.current < maxReconnectAttempts) {
+        setIsReconnecting(true)
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 10000)
         reconnectAttempts.current++
 
@@ -172,6 +176,7 @@ export function useGvmSSE({
           connect()
         }, delay)
       } else {
+        setIsReconnecting(false)
         setError('Connection lost. Max reconnection attempts reached.')
         onError?.('Connection lost. Max reconnection attempts reached.')
       }
@@ -208,6 +213,7 @@ export function useGvmSSE({
   return {
     logs,
     isConnected,
+    isReconnecting,
     error,
     clearLogs,
     currentPhase,

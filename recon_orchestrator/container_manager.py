@@ -1464,11 +1464,11 @@ class ContainerManager:
         try:
             # Wait for GVM feed sync before spawning the scanner. This avoids
             # scanner crashes when gvmd is not yet ready to accept connections.
-            if not self.is_gvm_ready(timeout=60):
-                raise RuntimeError(
-                    "GVM feed sync is not complete. The scanner cannot start until "
-                    "the GVM vulnerability database has finished syncing."
-                )
+            from gvm_ready_helper import probe_gvm_readiness
+
+            readiness = probe_gvm_readiness(timeout=60)
+            if not readiness["ready"]:
+                raise RuntimeError(readiness["message"])
 
             # Ensure GVM scanner image exists (pre-build on startup if missing)
             if not self.ensure_gvm_scanner_image():

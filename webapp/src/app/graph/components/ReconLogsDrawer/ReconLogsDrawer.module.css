@@ -166,6 +166,15 @@
   color: var(--status-success);
 }
 
+.connectionReconnecting .connectionDot {
+  background: var(--status-warning);
+}
+
+.connectionReconnecting {
+  border-color: var(--status-warning);
+  color: var(--status-warning);
+}
+
 .connectionDisconnected .connectionDot {
   background: var(--status-error);
 }

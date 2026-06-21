@@ -129,19 +129,26 @@ export default function GraphPage() {
 
   // Track .body position for fixed-position log drawers
   useDrawerPosition(bodyRef)
-  // Check if GVM stack is installed and whether feed sync is complete
+  // Check if GVM stack is installed and whether feed sync is complete.
+  // Poll every 30s so the UI catches transitions (e.g. feed sync finishing).
   useEffect(() => {
-    fetch('/api/gvm/available')
-      .then(res => res.json())
-      .then(data => {
-        setGvmAvailable(data.available ?? false)
-        setGvmReady(data.ready ?? false)
-        setGvmReadinessMessage(data.message)
-      })
-      .catch(() => {
-        setGvmAvailable(false)
-        setGvmReady(false)
-      })
+    const checkGvmAvailable = () => {
+      fetch('/api/gvm/available')
+        .then(res => res.json())
+        .then(data => {
+          setGvmAvailable(data.available ?? false)
+          setGvmReady(data.ready ?? false)
+          setGvmReadinessMessage(data.message)
+        })
+        .catch(() => {
+          setGvmAvailable(false)
+          setGvmReady(false)
+        })
+    }
+
+    checkGvmAvailable()
+    const interval = setInterval(checkGvmAvailable, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const { isDark } = useTheme()

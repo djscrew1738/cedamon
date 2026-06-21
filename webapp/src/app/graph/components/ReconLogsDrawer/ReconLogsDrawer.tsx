@@ -39,6 +39,7 @@ interface ReconLogsDrawerProps {
   errorMessage?: string | null
   hidePhaseProgress?: boolean
   isConnected?: boolean
+  isReconnecting?: boolean
 }
 
 export function ReconLogsDrawer({
@@ -58,6 +59,7 @@ export function ReconLogsDrawer({
   errorMessage,
   hidePhaseProgress = false,
   isConnected = false,
+  isReconnecting = false,
 }: ReconLogsDrawerProps) {
   const logsEndRef = useRef<HTMLDivElement>(null)
   const logsContainerRef = useRef<HTMLDivElement>(null)
@@ -193,11 +195,11 @@ export function ReconLogsDrawer({
           <span className={styles.statusText} title={getStatusText()}>{getStatusText()}</span>
           {(status === 'running' || status === 'starting' || status === 'paused' || status === 'stopping') && (
             <span
-              className={`${styles.connectionBadge} ${isConnected ? styles.connectionConnected : styles.connectionDisconnected}`}
-              title={isConnected ? 'Live log stream connected' : 'Reconnecting to log stream...'}
+              className={`${styles.connectionBadge} ${isConnected ? styles.connectionConnected : isReconnecting ? styles.connectionReconnecting : styles.connectionDisconnected}`}
+              title={isConnected ? 'Live log stream connected' : isReconnecting ? 'Reconnecting to log stream...' : 'Disconnected'}
             >
               <span className={styles.connectionDot} />
-              {isConnected ? 'Live' : 'Reconnecting'}
+              {isConnected ? 'Live' : isReconnecting ? 'Reconnecting' : 'Disconnected'}
             </span>
           )}
         </div>

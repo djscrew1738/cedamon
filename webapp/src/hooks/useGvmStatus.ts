@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { GvmState, GvmStatus } from '@/lib/recon-types'
+import { useToast } from '@/components/ui/Toast/Toast'
 
 interface UseGvmStatusOptions {
   projectId: string | null
@@ -10,6 +11,7 @@ interface UseGvmStatusOptions {
   onStatusChange?: (status: GvmStatus) => void
   onComplete?: () => void
   onError?: (error: string) => void
+  showToasts?: boolean // auto-show toast notifications on status transitions
 }
 
 interface UseGvmStatusReturn {
@@ -33,6 +35,7 @@ export function useGvmStatus({
   onStatusChange,
   onComplete,
   onError,
+  showToasts = false,
 }: UseGvmStatusOptions): UseGvmStatusReturn {
   const [state, setState] = useState<GvmState | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -44,6 +47,8 @@ export function useGvmStatus({
   const onStatusChangeRef = useRef(onStatusChange)
   const onCompleteRef = useRef(onComplete)
   const onErrorRef = useRef(onError)
+
+  const toast = useToast()
 
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange
@@ -72,9 +77,15 @@ export function useGvmStatus({
         onStatusChangeRef.current?.(data.status)
 
         if (data.status === 'completed') {
+          if (showToasts) toast.success('GVM vulnerability scan completed')
           onCompleteRef.current?.()
         } else if (data.status === 'error' && data.error) {
+          if (showToasts) toast.error(`GVM scan failed: ${data.error}`)
           onErrorRef.current?.(data.error)
+        } else if (data.status === 'running' && showToasts) {
+          toast.info('GVM vulnerability scan started')
+        } else if (data.status === 'paused' && showToasts) {
+          toast.warning('GVM vulnerability scan paused')
         }
       }
 
