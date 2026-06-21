@@ -67,42 +67,12 @@ TOOL_PHASE_MAP: dict[str, list[str]] = DEFAULT_AGENT_SETTINGS["TOOL_PHASE_MAP"]
 # Tools intentionally absent from certain registries (documented reasons).
 # Format: {registry_name: {tool_name: "reason"}}
 _KNOWN_MISSING: dict[str, dict[str, str]] = {
-    "TOOL_COST_MODEL": {
-        "cve_intel": "No cost assigned yet.",
-        "msf_restart": "No cost assigned yet.",
-        "execute_code": "No cost assigned yet.",
-        "kali_ssh": "No cost assigned yet.",
-        "execute_exploit": "No cost assigned yet.",
-        "tradecraft_lookup": "No cost assigned yet.",
-        "run_test_sequence": "No cost assigned yet.",
-    },
-    "TOOL_PHASE_MAP": {
-        "execute_masscan": "Not yet mapped to a pipeline phase.",
-        "cve_intel": "Not yet mapped to a pipeline phase.",
-        "msf_restart": "Not yet mapped to a pipeline phase.",
-        "execute_code": "Not yet mapped to a pipeline phase.",
-        "kali_ssh": "Not yet mapped to a pipeline phase.",
-        "execute_exploit": "Not yet mapped to a pipeline phase.",
-        "tradecraft_lookup": "Not yet mapped to a pipeline phase.",
-        "run_test_sequence": "Not yet mapped to a pipeline phase.",
-    },
-    "TOOL_CLUSTERS": {
-        "execute_playwright": "Not yet assigned to a cluster.",
-        "cve_intel": "Not yet assigned to a cluster.",
-        "msf_restart": "Not yet assigned to a cluster.",
-        "execute_code": "Not yet assigned to a cluster.",
-        "kali_ssh": "Not yet assigned to a cluster.",
-        "execute_exploit": "Not yet assigned to a cluster.",
-        "tradecraft_lookup": "Not yet assigned to a cluster.",
-        "run_test_sequence": "Not yet assigned to a cluster.",
-    },
-    "_FALLBACK_TOOLS": {
-        "cve_intel": "Fallback list may not include all tools.",
-        "kali_ssh": "Fallback list may not include all tools.",
-        "execute_exploit": "Fallback list may not include all tools.",
-        "tradecraft_lookup": "Fallback list may not include all tools.",
-        "run_test_sequence": "Fallback list may not include all tools.",
-    },
+    # These tools are intentionally excluded from specific registries.
+    # Each entry documents the rationale so future readers know it's deliberate.
+    "TOOL_COST_MODEL": {},
+    "TOOL_PHASE_MAP": {},
+    "TOOL_CLUSTERS": {},
+    "_FALLBACK_TOOLS": {},
 }
 
 

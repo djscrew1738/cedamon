@@ -19,10 +19,10 @@ INTERNAL_HEADERS = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")}
 # DANGEROUS TOOLS — require manual confirmation before execution
 # =============================================================================
 DANGEROUS_TOOLS = frozenset({
-    'execute_nmap', 'execute_naabu', 'execute_nuclei', 'execute_curl',
+    'execute_nmap', 'execute_naabu', 'execute_masscan', 'execute_nuclei', 'execute_curl',
     'execute_httpx', 'msf_restart', 'kali_shell', 'metasploit_console',
     'execute_code', 'execute_hydra', 'execute_playwright', 'execute_wpscan',
-    'execute_arjun', 'execute_ffuf', 'execute_amass', 'execute_gau',
+    'execute_searchsploit', 'execute_arjun', 'execute_ffuf', 'execute_amass', 'execute_gau',
     'execute_katana',
 })
 
@@ -228,6 +228,7 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
         'execute_subfinder': ['informational', 'exploitation'],
         'execute_wpscan': ['informational', 'exploitation'],
         'execute_jsluice': ['informational', 'exploitation'],
+        'execute_masscan': ['informational', 'exploitation'],
         'execute_amass': ['informational', 'exploitation'],
         'execute_arjun': ['informational', 'exploitation'],
         'execute_ffuf': ['informational', 'exploitation'],
@@ -237,11 +238,14 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
         'execute_nuclei': ['informational', 'exploitation'],
         'execute_searchsploit': ['informational', 'exploitation'],
         'kali_shell': ['informational', 'exploitation', 'post_exploitation'],
+        'kali_ssh': ['informational', 'exploitation', 'post_exploitation'],
         'execute_code': ['informational', 'exploitation', 'post_exploitation'],
+        'execute_exploit': ['exploitation', 'post_exploitation'],
         'execute_playwright': ['informational', 'exploitation', 'post_exploitation'],
         'execute_hydra': ['exploitation', 'post_exploitation'],
         'metasploit_console': ['exploitation', 'post_exploitation'],
         'msf_restart': ['exploitation', 'post_exploitation'],
+        'run_test_sequence': ['informational', 'exploitation'],
         'web_search': ['informational', 'exploitation', 'post_exploitation'],
         'cve_intel': ['informational', 'exploitation', 'post_exploitation'],
         'shodan': ['informational', 'exploitation', 'post_exploitation'],

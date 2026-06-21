@@ -152,6 +152,30 @@ TOOL_COST_MODEL: dict[str, dict[str, Any]] = {
         "parallel_safe": True,
         "category": "vuln_scan",
     },
+    "msf_restart": {
+        "cost": 1,
+        "time_estimate": "< 5s",
+        "parallel_safe": False,
+        "category": "exploit",
+    },
+    "kali_ssh": {
+        "cost": 2,
+        "time_estimate": "5-30s",
+        "parallel_safe": False,
+        "category": "exploit",
+    },
+    "execute_exploit": {
+        "cost": 4,
+        "time_estimate": "10-120s",
+        "parallel_safe": False,
+        "category": "exploit",
+    },
+    "run_test_sequence": {
+        "cost": 2,
+        "time_estimate": "5-30s",
+        "parallel_safe": True,
+        "category": "test",
+    },
 
     # ---- Intelligence ----
     "query_graph": {

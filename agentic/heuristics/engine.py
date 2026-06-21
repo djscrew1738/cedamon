@@ -46,9 +46,9 @@ _FALLBACK_TOOLS: set[str] = {
     "execute_amass", "execute_arjun", "execute_ffuf", "execute_gau",
     "execute_jsluice", "execute_katana", "execute_wpscan",
     "execute_nmap", "execute_nuclei", "execute_searchsploit",
-    "kali_shell", "execute_playwright", "execute_hydra",
-    "metasploit_console", "msf_restart", "execute_code", "cve_intel",
-    "execute_masscan",
+    "kali_shell", "kali_ssh", "execute_playwright", "execute_hydra",
+    "metasploit_console", "msf_restart", "execute_code", "execute_exploit",
+    "cve_intel", "tradecraft_lookup", "execute_masscan", "run_test_sequence",
 }
 
 _ALLOWED_PHASES = {"informational", "exploitation", "post_exploitation"}
@@ -80,6 +80,14 @@ TOOL_CLUSTERS: dict[str, str] = {
     "execute_hydra": "exploit",
     "metasploit_console": "exploit",
     "kali_shell": "exploit",
+    "kali_ssh": "exploit",
+    "execute_playwright": "exploit",
+    "execute_code": "exploit",
+    "execute_exploit": "exploit",
+    "msf_restart": "exploit",
+    "cve_intel": "intel",
+    "tradecraft_lookup": "intel",
+    "run_test_sequence": "test",
 }
 
 _PROFILE_COST_MULTIPLIER = {"stealth": 1.8, "normal": 1.0, "aggressive": 0.6}

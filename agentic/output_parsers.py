@@ -115,6 +115,9 @@ _SUBFINDER_DOMAIN = re.compile(
 _NAABU_PORT = re.compile(
     r"Found\s+(\d+)\.",  # typical naabu -json output
 )
+_MASSCAN_PORT = re.compile(
+    r"discovered\s+port\s+(\d+)/",  # masscan plain-text output
+)
 
 _AMASS_DOMAIN = re.compile(
     r"^([a-z0-9]([a-z0-9\-]*[a-z0-9])?\.)+[a-z]{2,}\s*$",
@@ -162,7 +165,7 @@ PARSER_REGISTRY: dict[str, Any] = {
     "execute_arjun": "parse_arjun",
     "execute_jsluice": "parse_jsluice",
     "execute_hydra": "parse_hydra",
-    "execute_masscan": "parse_naabu",  # same format as naabu
+    "execute_masscan": "parse_masscan",
     "execute_curl": "parse_curl",
     "execute_playwright": "parse_playwright",
     "execute_searchsploit": "parse_searchsploit",
@@ -249,10 +252,57 @@ def parse_naabu(raw: str) -> dict[str, Any]:
             ports.append(int(m.group(1)))
         except ValueError:
             pass
+    for m in _MASSCAN_PORT.finditer(raw):
+        try:
+            ports.append(int(m.group(1)))
+        except ValueError:
+            pass
     # also try JSON-line format
     for obj in _iter_json_lines(raw):
         if "port" in obj:
             ports.append(int(obj["port"]))
+    return {"ports": sorted(set(ports)), "findings": []}
+
+
+def parse_masscan(raw: str) -> dict[str, Any]:
+    """Parse masscan output into ports & findings.
+
+    Handles multiple masscan output formats:
+    - ``-oL`` (list format):  ``open tcp <port> <ip> <timestamp>``
+    - JSON lines (``-oJ``):   ``{"ip": ..., "ports": [{"port": <n>, ...}]}``
+    - Default text:           ``discovered port <port>/tcp on <ip> at ...``
+    """
+    ports: list[int] = []
+
+    # -oL format: open tcp PORT IP TIMESTAMP
+    for m in re.finditer(r"^open\s+tcp\s+(\d+)", raw, re.MULTILINE):
+        try:
+            ports.append(int(m.group(1)))
+        except ValueError:
+            pass
+
+    # default text format: discovered port PORT/protocol on ...
+    for m in re.finditer(r"discovered\s+port\s+(\d+)/", raw):
+        try:
+            ports.append(int(m.group(1)))
+        except ValueError:
+            pass
+
+    # JSON lines format (-oJ)
+    for obj in _iter_json_lines(raw):
+        if "port" in obj:
+            try:
+                ports.append(int(obj["port"]))
+            except ValueError:
+                pass
+        if "ports" in obj and isinstance(obj["ports"], list):
+            for p in obj["ports"]:
+                if isinstance(p, dict) and "port" in p:
+                    try:
+                        ports.append(int(p["port"]))
+                    except ValueError:
+                        pass
+
     return {"ports": sorted(set(ports)), "findings": []}
 
 
