@@ -343,7 +343,7 @@ async def initialize_node(state: AgentState, config, *, llm, neo4j_creds) -> dic
                 "awaiting_user_approval": False,
                 "phase_transition_pending": None,
                 "_abort_transition": False,
-                "original_objective": state.get("original_objective", latest_message),  # Backward compat
+                "original_objective": latest_message,
                 # Chain memory (preserve across objectives)
                 "chain_findings_memory": state.get("chain_findings_memory", []),
                 "chain_failures_memory": state.get("chain_failures_memory", []),
@@ -384,7 +384,7 @@ async def initialize_node(state: AgentState, config, *, llm, neo4j_creds) -> dic
         "conversation_objectives": objectives,
         "current_objective_index": current_idx,
         "objective_history": state.get("objective_history", []),
-        "original_objective": state.get("original_objective", latest_message),  # Backward compat
+        "original_objective": latest_message,
         "target_info": state.get("target_info", TargetInfo().model_dump()),
         "user_id": user_id,
         "project_id": project_id,

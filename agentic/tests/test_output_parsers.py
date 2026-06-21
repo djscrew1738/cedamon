@@ -481,6 +481,81 @@ class TestParseSearchsploit(unittest.TestCase):
         self.assertEqual(len(result["exploits"]), 1)
         self.assertEqual(result["exploits"][0]["edb_id"], "33333")
 
+    def test_results_wrapper_format(self):
+        """Handle JSON with RESULTS wrapper key."""
+        raw = """\
+{
+  "RESULTS": [
+    {
+      "EDB-ID": "44444",
+      "Title": "Wrapped Exploit",
+      "Type": "remote",
+      "Platform": "linux",
+      "Path": "/tmp/exploit.sh"
+    }
+  ]
+}"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(len(result["exploits"]), 1)
+        self.assertEqual(result["exploits"][0]["edb_id"], "44444")
+        self.assertEqual(result["findings"][0]["severity"], "high")
+
+    def test_dos_severity_is_high(self):
+        """DoS exploits should be severity high (like remote)."""
+        raw = """\
+[
+  {
+    "EDB-ID": "55555",
+    "Title": "Widget 1.0 - Denial of Service (DoS)",
+    "Type": "dos",
+    "Platform": "linux",
+    "Path": ""
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(result["findings"][0]["severity"], "high")
+
+    def test_partial_entries(self):
+        """Entries missing optional fields should still parse."""
+        raw = """\
+[
+  {
+    "EDB-ID": "66666",
+    "Title": "Minimal Exploit",
+    "Type": "local",
+    "Platform": "windows",
+    "Path": ""
+  },
+  {
+    "EDB-ID": "77777",
+    "Title": "Another Exploit"
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(len(result["exploits"]), 2)
+        self.assertEqual(result["exploits"][0]["edb_id"], "66666")
+        self.assertEqual(result["exploits"][1]["edb_id"], "77777")
+        self.assertEqual(result["exploits"][1]["platform"], "")
+
+    def test_non_dict_entries_skipped(self):
+        """Non-dict entries in the JSON array should be skipped."""
+        raw = """\
+[
+  {
+    "EDB-ID": "88888",
+    "Title": "Only Real Entry",
+    "Type": "remote",
+    "Platform": "linux",
+    "Path": ""
+  },
+  null,
+  "not a dict",
+  42
+]"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(len(result["exploits"]), 1)
+        self.assertEqual(result["exploits"][0]["edb_id"], "88888")
+
 
 class TestParseMasscan(unittest.TestCase):
     """Masscan reuses parse_naabu (same output shape)."""
@@ -491,7 +566,7 @@ masscan: discovered port 80/tcp on 10.0.0.1
 masscan: discovered port 443/tcp on 10.0.0.1
 masscan: discovered port 22/tcp on 10.0.0.2
 """
-        result = parse_naabu(raw)
+        result = parse_masscan(raw)
         self.assertEqual(result["ports"], [22, 80, 443])
 
     def test_json_line_format(self):
@@ -499,11 +574,38 @@ masscan: discovered port 22/tcp on 10.0.0.2
 {"port": 3306, "proto": "tcp", "ip": "10.0.0.1"}
 {"port": 5432, "proto": "tcp", "ip": "10.0.0.1"}
 """
-        result = parse_naabu(raw)
+        result = parse_masscan(raw)
         self.assertEqual(result["ports"], [3306, 5432])
 
     def test_empty(self):
-        result = parse_naabu("")
+        result = parse_masscan("")
+        self.assertEqual(result["ports"], [])
+
+    def test_mixed_formats(self):
+        """Handle interleaved plain-text and JSON lines."""
+        raw = """\
+masscan: discovered port 22/tcp on 10.0.0.1
+{"port": 8080, "proto": "tcp", "ip": "10.0.0.2"}
+masscan: discovered port 443/tcp on 10.0.0.3
+"""
+        result = parse_masscan(raw)
+        self.assertIn(22, result["ports"])
+        self.assertIn(8080, result["ports"])
+        self.assertIn(443, result["ports"])
+
+    def test_various_port_formats(self):
+        """Handle different masscan output variations (udp, extra fields)."""
+        raw = """\
+masscan: discovered port 53/udp on 10.0.0.1
+masscan: discovered port 123/udp on 10.0.0.1
+masscan: discovered port 22/tcp on 10.0.0.2
+"""
+        result = parse_masscan(raw)
+        self.assertEqual(result["ports"], [22, 53, 123])
+
+    def test_garbage(self):
+        """Garbage input should not raise and return empty ports."""
+        result = parse_masscan("!@#$%^&*()\ngarbage\n")
         self.assertEqual(result["ports"], [])
 
 

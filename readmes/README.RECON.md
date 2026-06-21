@@ -1724,3 +1724,163 @@ Unauthorized scanning is illegal. RedAmon is intended for:
 | Vuln Scan | [readmes/README.VULN_SCAN.md](README.VULN_SCAN.md) |
 | MITRE CWE/CAPEC | [readmes/README.MITRE.md](README.MITRE.md) |
 | GVM/OpenVAS | [README.GVM.md](README.GVM.md) |
+
+---
+
+## Pipeline Data Flow
+
+The full recon pipeline flows through a directed acyclic graph (DAG) of phases, each
+responsible for a distinct discovery or analysis step.
+
+```mermaid
+flowchart LR
+    subgraph Input["Input Sources"]
+        T[Target] --> PM[Project Manager]
+        RF[Recon File] --> PM
+    end
+    
+    subgraph Orchestration["Orchestrator Layer"]
+        PM --> CK[Checkpoint]
+        CK --> PS[Port Scan]
+        PS --> HP[HTTP Probe]
+        HP --> RE[Resource Enum]
+        RE --> VS[Vuln Scan]
+        VS --> CR[Coverage Report]
+    end
+    
+    subgraph Execution["Container Layer"]
+        PS --> NM[Nmap]
+        PS --> MA[Masscan]
+        PS --> NA[Naabu]
+        HP --> HT[HTTPx]
+        RE --> FF[FFUF]
+        RE --> AR[Arjun]
+        RE --> JS[JSluice]
+        VS --> NU[Nuclei]
+    end
+    
+    subgraph Output["Output Layer"]
+        CR --> DB[(Neo4j Graph)]
+        CR --> RC[Recon Context]
+        RC --> AG[Agentic Engine]
+    end
+    
+    subgraph Quality["Quality Layer"]
+        AL[Adaptive Rate Limiter]
+        CT[Coverage Tracker]
+        TS[Template Selector]
+        FD[Finding Dedup]
+        NH[Network Health]
+        SR[Smart Retry]
+        TP[Target Priority]
+        CV[CVE-Version Correlator]
+        DP[DNS Pre-Validation]
+    end
+    
+    Execution --> Quality
+    Quality --> Output
+```
+
+The pipeline executes as a **directed acyclic graph (DAG) of phases**. Each phase
+(port scan, HTTP probe, resource enumeration, vulnerability scan) produces an
+incremental checkpoint that feeds into the next stage. The Project Manager
+resolves the target specification (domain, CIDR, or recon-file reference) and
+hands it to the orchestrator, which sequences phases according to their
+dependency order while respecting the DAG structure.
+
+**Each phase can spawn multiple container executions.** For example, the port
+scan phase may dispatch concurrent Nmap, Masscan, and Naabu containers depending
+on the target profile and adaptive rate-limiter settings. Quality helpers wrap
+every phase execution to provide resilience: the Adaptive Rate Limiter throttles
+container concurrency based on network health signals, Smart Retry handles
+transient failures, and Finding Dedup prevents duplicate findings from
+overlapping tool outputs.
+
+**Output from the Quality Layer flows into Neo4j** via the graph update mixins
+and into a structured **Recon Context** object. The Agentic Engine consumes the
+Recon Context to drive higher-order analysis — correlating CVEs with
+service versions, mapping attack surfaces, and generating reports. The Coverage
+Tracker and Coverage Report phases ensure that each target receives adequate
+scan depth before the pipeline completes, and the Template Selector dynamically
+chooses vulnerability templates based on the technologies detected during HTTP
+probing.
+
+---
+
+## Pipeline Data Flow
+
+The full recon pipeline flows through a directed acyclic graph (DAG) of phases, each
+responsible for a distinct discovery or analysis step.
+
+```mermaid
+flowchart LR
+    subgraph Input["Input Sources"]
+        T[Target] --> PM[Project Manager]
+        RF[Recon File] --> PM
+    end
+    
+    subgraph Orchestration["Orchestrator Layer"]
+        PM --> CK[Checkpoint]
+        CK --> PS[Port Scan]
+        PS --> HP[HTTP Probe]
+        HP --> RE[Resource Enum]
+        RE --> VS[Vuln Scan]
+        VS --> CR[Coverage Report]
+    end
+    
+    subgraph Execution["Container Layer"]
+        PS --> NM[Nmap]
+        PS --> MA[Masscan]
+        PS --> NA[Naabu]
+        HP --> HT[HTTPx]
+        RE --> FF[FFUF]
+        RE --> AR[Arjun]
+        RE --> JS[JSluice]
+        VS --> NU[Nuclei]
+    end
+    
+    subgraph Output["Output Layer"]
+        CR --> DB[(Neo4j Graph)]
+        CR --> RC[Recon Context]
+        RC --> AG[Agentic Engine]
+    end
+    
+    subgraph Quality["Quality Layer"]
+        AL[Adaptive Rate Limiter]
+        CT[Coverage Tracker]
+        TS[Template Selector]
+        FD[Finding Dedup]
+        NH[Network Health]
+        SR[Smart Retry]
+        TP[Target Priority]
+        CV[CVE-Version Correlator]
+        DP[DNS Pre-Validation]
+    end
+    
+    Execution --> Quality
+    Quality --> Output
+```
+
+The pipeline executes as a **directed acyclic graph (DAG) of phases**. Each phase
+(port scan, HTTP probe, resource enumeration, vulnerability scan) produces an
+incremental checkpoint that feeds into the next stage. The Project Manager
+resolves the target specification (domain, CIDR, or recon-file reference) and
+hands it to the orchestrator, which sequences phases according to their
+dependency order while respecting the DAG structure.
+
+**Each phase can spawn multiple container executions.** For example, the port
+scan phase may dispatch concurrent Nmap, Masscan, and Naabu containers depending
+on the target profile and adaptive rate-limiter settings. Quality helpers wrap
+every phase execution to provide resilience: the Adaptive Rate Limiter throttles
+container concurrency based on network health signals, Smart Retry handles
+transient failures, and Finding Dedup prevents duplicate findings from
+overlapping tool outputs.
+
+**Output from the Quality Layer flows into Neo4j** via the graph update mixins
+and into a structured **Recon Context** object. The Agentic Engine consumes the
+Recon Context to drive higher-order analysis -- correlating CVEs with
+service versions, mapping attack surfaces, and generating reports. The Coverage
+Tracker and Coverage Report phases ensure that each target receives adequate
+scan depth before the pipeline completes, and the Template Selector dynamically
+chooses vulnerability templates based on the technologies detected during HTTP
+probing.

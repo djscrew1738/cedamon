@@ -5,11 +5,9 @@ import {
   Target,
   Search,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   Play,
   Bug,
-  Flag,
   Package,
   ListChecks,
   RefreshCw,
@@ -20,16 +18,15 @@ import {
   Shield,
   Network,
   X,
-  ScrollText,
-  Square,
-  Clock,
-  TrendingUp,
-  Terminal,
 } from 'lucide-react'
 import styles from './AttackPanel.module.css'
 import { useMultiPartialReconStatus } from '@/hooks'
 import { useToast } from '@/components/ui'
 import type { PartialReconState, PartialReconStatus } from '@/lib/recon-types'
+import { AttackSurfaceSummaryCard } from './AttackSurfaceSummaryCard'
+import { CategoryFilterBar } from './CategoryFilterBar'
+import { AttackResultCard } from './AttackResultCard'
+import { AttackSuggestionCard } from './AttackSuggestionCard'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,41 +124,6 @@ function formatStatKey(key: string): string {
   return key
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
-}
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return ''
-  try {
-    const date = new Date(iso)
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return iso
-  }
-}
-
-const EXPLOITABLE_STAT_KEYS = ['vulnerabilities_found', 'critical', 'high', 'exploited', 'rce_found', 'shells']
-
-function hasExploitableFindings(run: PartialReconState): boolean {
-  if (run.status !== 'completed') return false
-  if (!run.stats) return false
-  return EXPLOITABLE_STAT_KEYS.some(key => {
-    const value = run.stats?.[key]
-    return typeof value === 'number' && value > 0
-  })
-}
-
-function renderRunStats(stats: Record<string, number> | null): React.ReactNode {
-  if (!stats || Object.keys(stats).length === 0) return null
-  return (
-    <div className={styles.resultStats}>
-      {Object.entries(stats).map(([key, value]) => (
-        <span key={key} className={styles.resultStat}>
-          <TrendingUp size={10} />
-          {formatStatKey(key)}: {formatCount(value)}
-        </span>
-      ))}
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -496,16 +458,13 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
           <div className={styles.summaryTitle}>Attack Surface Overview</div>
           <div className={styles.summaryGrid}>
             {summaryMetrics.map(metric => (
-              <div key={metric.label} className={styles.summaryCard}>
-                <div className={styles.summaryIcon}>{metric.icon}</div>
-                <div className={styles.summaryValueRow}>
-                  <span className={styles.summaryValue}>{formatCount(metric.value)}</span>
-                  {deltas[metric.label] ? (
-                    <span className={styles.deltaBadge}>+{formatCount(deltas[metric.label])}</span>
-                  ) : null}
-                </div>
-                <div className={styles.summaryLabel}>{metric.label}</div>
-              </div>
+              <AttackSurfaceSummaryCard
+                key={metric.label}
+                icon={metric.icon}
+                label={metric.label}
+                value={formatCount(metric.value)}
+                delta={deltas[metric.label] ? formatCount(deltas[metric.label]) : undefined}
+              />
             ))}
           </div>
         </div>
@@ -525,62 +484,15 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
             </button>
           </div>
           <div className={styles.resultsList}>
-            {terminalRuns.map(run => {
-              const isError = run.status === 'error'
-              return (
-                <div key={run.run_id} className={`${styles.resultCard} ${isError ? styles.resultError : ''}`}>
-                  <div className={styles.resultIcon}>
-                    {isError ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
-                  </div>
-                  <div className={styles.resultBody}>
-                    <div className={styles.resultTop}>
-                      <span className={styles.resultTool}>{run.tool_id}</span>
-                      <span className={`${styles.resultStatus} ${isError ? styles.resultStatusError : styles.resultStatusSuccess}`}>
-                        {isError ? 'Failed' : 'Completed'}
-                      </span>
-                      {run.completed_at && (
-                        <span className={styles.resultTime}>
-                          <Clock size={10} />
-                          {formatTimestamp(run.completed_at)}
-                        </span>
-                      )}
-                    </div>
-                    {run.error && <div className={styles.resultErrorText}>{run.error}</div>}
-                    {renderRunStats(run.stats)}
-                  </div>
-                  <div className={styles.resultActions}>
-                    {onTogglePartialReconLogs && (
-                      <button
-                        className={styles.ghostBtn}
-                        onClick={() => onTogglePartialReconLogs(run.run_id)}
-                        title="View logs"
-                      >
-                        <ScrollText size={14} />
-                      </button>
-                    )}
-                    {hasExploitableFindings(run) && onRequestReverseShell && (
-                      <button
-                        className={styles.shellBtn}
-                        onClick={() => onRequestReverseShell(run)}
-                        title="Escalate to reverse shell"
-                        aria-label={`Escalate ${run.tool_id} to reverse shell`}
-                      >
-                        <Terminal size={14} />
-                        <span>Reverse Shell</span>
-                      </button>
-                    )}
-                    <button
-                      className={styles.resultDismiss}
-                      onClick={() => handleDismissResult(run.run_id)}
-                      title="Dismiss"
-                      aria-label={`Dismiss ${run.tool_id} result`}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+            {terminalRuns.map(run => (
+              <AttackResultCard
+                key={run.run_id}
+                run={run}
+                onShowLogs={onTogglePartialReconLogs}
+                onCompleteReverseShell={onRequestReverseShell}
+                onDismiss={handleDismissResult}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -608,29 +520,12 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
 
       {/* Category filter pills */}
       {suggestions.length > 0 && (
-        <div className={styles.filters}>
-          <button
-            className={`${styles.filterPill} ${activeFilter === null ? styles.filterPillActive : ''}`}
-            onClick={() => setActiveFilter(null)}
-            aria-pressed={activeFilter === null}
-          >
-            All
-          </button>
-          {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
-            <button
-              key={key}
-              className={`${styles.filterPill} ${activeFilter === key ? styles.filterPillActive : ''}`}
-              onClick={() => setActiveFilter(key)}
-              aria-pressed={activeFilter === key}
-            >
-              {cfg.icon}
-              <span>{cfg.label}</span>
-              {categoryCounts[key] && (
-                <span className={styles.filterCount}>{categoryCounts[key]}</span>
-              )}
-            </button>
-          ))}
-        </div>
+        <CategoryFilterBar
+          categories={CATEGORY_CONFIG}
+          activeCategory={activeFilter}
+          categoryCounts={categoryCounts}
+          onCategoryChange={setActiveFilter}
+        />
       )}
 
       {/* Error banners */}
@@ -680,98 +575,25 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
             {filtered.map(suggestion => {
               const cfg = CATEGORY_CONFIG[suggestion.category] || CATEGORY_CONFIG.recon
               const runState = getRunForSuggestion(suggestion.id)
-              const isActive = runState && (runState.status === 'starting' || runState.status === 'running')
-              const isAlreadyRun = suggestion.alreadyRun || ranAttacks.has(suggestion.id)
+              const isActive = !!(runState && (runState.status === 'starting' || runState.status === 'running'))
+              const isAlreadyRun = !!(suggestion.alreadyRun || ranAttacks.has(suggestion.id))
 
               return (
-                <div
+                <AttackSuggestionCard
                   key={suggestion.id}
-                  className={`${styles.card} ${isAlreadyRun && !isActive ? styles.cardDone : ''}`}
-                >
-                  {/* Left accent bar */}
-                  <div className={styles.cardAccent} style={{ backgroundColor: cfg.color }} />
-
-                  <div className={styles.cardBody}>
-                    {/* Header row */}
-                    <div className={styles.cardHeader}>
-                      <div className={styles.cardTitleRow}>
-                        <span className={styles.categoryBadge} style={{ color: cfg.color }}>
-                          {cfg.icon}
-                          <span>{cfg.label}</span>
-                        </span>
-                        <span className={`${styles.priorityBadge} ${styles[`priority${suggestion.priority}`]}`}>
-                          {PRIORITY_LABELS[suggestion.priority]}
-                        </span>
-                        {runState && (
-                          <span
-                            className={`${styles.statusBadge} ${styles[`status${runState.status}`]}`}
-                            title={runState.error || undefined}
-                          >
-                            {STATUS_LABELS[runState.status]}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className={styles.cardTitle}>{suggestion.title}</h3>
-                      <p className={styles.cardDesc}>{suggestion.description}</p>
-                    </div>
-
-                    {/* Rationale + meta row */}
-                    <div className={styles.cardMeta}>
-                      <div className={styles.rationale}>
-                        <Flag size={12} />
-                        <span>{suggestion.rationale}</span>
-                      </div>
-                      <div className={styles.stats}>
-                        <span className={styles.stat}>
-                          <Target size={12} />
-                          {suggestion.matchedNodeCount} targets
-                        </span>
-                        {suggestion.prerequisites.map(p => (
-                          <span key={p} className={styles.prereq}>{p}</span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Action row */}
-                    <div className={styles.cardActions}>
-                      {isActive ? (
-                        <>
-                          <button
-                            className={`${styles.runBtn} ${styles.stopBtn}`}
-                            onClick={() => handleStopAttack(suggestion)}
-                          >
-                            <Square size={14} fill="currentColor" />
-                            <span>Stop</span>
-                          </button>
-                          {onTogglePartialReconLogs && runState && (
-                            <button
-                              className={styles.ghostBtn}
-                              onClick={() => onTogglePartialReconLogs(runState.run_id)}
-                            >
-                              <ScrollText size={14} />
-                              <span>Logs</span>
-                            </button>
-                          )}
-                        </>
-                      ) : isAlreadyRun ? (
-                        <span className={styles.doneLabel}>
-                          <CheckCircle2 size={14} />
-                          Already completed
-                        </span>
-                      ) : (
-                        <button
-                          className={styles.runBtn}
-                          onClick={() => handleRunAttack(suggestion)}
-                          disabled={isAnyRunning || isRunningAll}
-                        >
-                          <Play size={14} />
-                          <span>Run Attack</span>
-                        </button>
-                      )}
-                      <span className={styles.toolId}>via {suggestion.toolId}</span>
-                    </div>
-                  </div>
-                </div>
+                  suggestion={suggestion}
+                  categoryConfig={cfg}
+                  priorityLabel={PRIORITY_LABELS[suggestion.priority]}
+                  statusLabel={runState ? STATUS_LABELS[runState.status] : undefined}
+                  isActive={isActive}
+                  isAlreadyRun={isAlreadyRun}
+                  runState={runState}
+                  isAnyRunning={isAnyRunning}
+                  isRunningAll={isRunningAll}
+                  onRun={() => handleRunAttack(suggestion)}
+                  onStop={() => handleStopAttack(suggestion)}
+                  onShowLogs={onTogglePartialReconLogs}
+                />
               )
             })}
           </div>

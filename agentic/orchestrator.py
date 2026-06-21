@@ -445,7 +445,7 @@ class AgentOrchestrator:
         """
         try:
             picker_model = get_setting(
-                'TRADECRAFT_SECTION_PICKER_MODEL', 'claude-haiku-4-5-20251001'
+                'TRADECRAFT_SECTION_PICKER_MODEL', 'claude-haiku-4-5'
             )
             from langchain_anthropic import ChatAnthropic
             from orchestrator_helpers.llm_setup import (

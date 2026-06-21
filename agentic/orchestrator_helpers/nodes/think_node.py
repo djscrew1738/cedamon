@@ -120,8 +120,8 @@ async def think_node(state: AgentState, config, *, llm, guidance_queues, neo4j_c
     if current_idx < len(objectives):
         current_objective = objectives[current_idx].get("content", "No objective specified")
     else:
-        # Fallback to original_objective for backward compatibility
-        current_objective = state.get("original_objective", "No objective specified")
+        # Fallback to conversation_objectives for backward compatibility
+        current_objective = state.get("conversation_objectives", "No objective specified")
 
     # Build the prompt with current state
     chain_context_formatted = format_chain_context(

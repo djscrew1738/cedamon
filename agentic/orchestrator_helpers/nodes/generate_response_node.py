@@ -71,7 +71,7 @@ async def generate_response_node(
     current_objective = (
         objectives[current_idx].get("content", "")
         if current_idx < len(objectives)
-        else state.get("original_objective", "")
+        else state.get("conversation_objectives", "")
     )
 
     # Emit a thinking event with tier-appropriate message
