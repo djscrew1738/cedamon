@@ -19,6 +19,7 @@ interface UseMultiPartialReconStatusReturn {
   error: string | null
   startPartialRecon: (params: PartialReconParams) => Promise<PartialReconState | null>
   stopPartialRecon: (runId: string) => Promise<PartialReconState | null>
+  pausePartialRecon: (runId: string) => Promise<PartialReconState | null>
   refetch: () => Promise<void>
 }
 
@@ -154,6 +155,39 @@ export function useMultiPartialReconStatus({
     }
   }, [projectId, fetchAllStatuses])
 
+  const pausePartialRecon = useCallback(async (runId: string): Promise<PartialReconState | null> => {
+    if (!projectId) return null
+
+    // Optimistic update
+    setRuns(prev => prev.map(r =>
+      r.run_id === runId ? { ...r, status: 'paused' as PartialReconStatus } : r
+    ))
+
+    try {
+      const response = await fetch(`/api/recon/${projectId}/partial/${runId}/pause`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to pause partial recon')
+      }
+
+      const data: PartialReconState = await response.json()
+      setRuns(prev => prev.map(r =>
+        r.run_id === runId ? data : r
+      ))
+      return data
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setError(errorMessage)
+      // Revert optimistic update
+      await fetchAllStatuses()
+      return null
+    }
+  }, [projectId, fetchAllStatuses])
+
   // Initial fetch on mount
   useEffect(() => {
     if (!projectId || !enabled) {
@@ -203,6 +237,7 @@ export function useMultiPartialReconStatus({
     error,
     startPartialRecon,
     stopPartialRecon,
+    pausePartialRecon,
     refetch: fetchAllStatuses,
   }
 }

@@ -1,0 +1,38 @@
+# Docker Build CI — Ensures all container images build successfully
+
+name: CI — Docker Builds
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - "**/Dockerfile"
+      - "**/docker-compose*.yml"
+      - ".github/workflows/ci-docker.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "**/Dockerfile"
+      - "**/docker-compose*.yml"
+      - ".github/workflows/ci-docker.yml"
+
+jobs:
+  build:
+    name: Build images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: agent
+            dockerfile: agentic/Dockerfile
+            context: agentic
+          - name: webapp
+            dockerfile: webapp/Dockerfile
+            context: webapp
+          - name: orchestrator
+            dockerfile: recon_orchestrator/Dockerfile
+            context: recon_orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.service.name }}
+        run: docker build -t redamon-${{ matrix.service.name }}:ci -f ${{ matrix.service.dockerfile }} ${{ matrix.service.context }}

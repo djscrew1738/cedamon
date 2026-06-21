@@ -302,6 +302,7 @@ class PersistentMsfConsole:
                     self.process.kill()
                     self.process.wait(timeout=5)
                 except:
+                    print(f"[!] stop: process.kill()")
                     pass
             else:
                 try:

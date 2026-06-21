@@ -289,6 +289,7 @@ def _do_ingestion(
                             fetch_kwargs["since"] = last_ingest
                             logger.info(f"NVD incremental update since {last_ingest}")
                 except Exception:
+                    logger.warning("_do_ingestion: stats_check = neo4j_loader.get_stats()", exc_info=True)
                     pass
 
         try:
@@ -384,6 +385,7 @@ def _do_ingestion(
         try:
             neo4j_loader.driver.close()
         except Exception:
+            logger.warning("_do_ingestion: Cleanup Neo4j driver", exc_info=True)
             pass
 
     return stats

@@ -341,6 +341,12 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
     SECURITY_CHECK_TIMEOUT = settings.get('SECURITY_CHECK_TIMEOUT', 10)
     SECURITY_CHECK_MAX_WORKERS = settings.get('SECURITY_CHECK_MAX_WORKERS', 10)
 
+    # Adaptive Rate Limiting settings (for security checks HTTP requests)
+    ADAPTIVE_RATE_ENABLED = settings.get('ADAPTIVE_RATE_ENABLED', False)
+    ADAPTIVE_RATE_INITIAL = settings.get('ADAPTIVE_RATE_INITIAL_RPS', 50.0)
+    ADAPTIVE_RATE_MIN = settings.get('ADAPTIVE_RATE_MIN_RPS', 5.0)
+    ADAPTIVE_RATE_MAX = settings.get('ADAPTIVE_RATE_MAX_RPS', 200.0)
+
     # Check if Nuclei scanner is enabled
     NUCLEI_ENABLED = settings.get('NUCLEI_ENABLED', True)
 
@@ -1063,6 +1069,10 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                 ai_model=AI_PIPELINE_MODEL,
                 ai_user_id=os.environ.get('USER_ID', ''),
                 ai_project_id=os.environ.get('PROJECT_ID', ''),
+                adaptive_rate_enabled=ADAPTIVE_RATE_ENABLED,
+                adaptive_rate_initial=ADAPTIVE_RATE_INITIAL,
+                adaptive_rate_min=ADAPTIVE_RATE_MIN,
+                adaptive_rate_max=ADAPTIVE_RATE_MAX,
             )
 
             # Merge security checks into vuln_scan results

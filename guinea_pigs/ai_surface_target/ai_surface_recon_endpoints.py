@@ -134,6 +134,7 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             self.rfile.read(length) if length else b""
         except Exception:
+            print("[!] ai_surface_recon_endpoints: failed to read request body")
             pass
 
         if pp in ("/v1/chat/completions", "/v1/completions", "/v1/responses",

@@ -11,6 +11,7 @@ Security Check Categories:
 
 import socket
 import ssl
+import time
 import requests
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Set
@@ -26,6 +27,79 @@ from recon.helpers.cdn_ranges import (
 # Suppress SSL warnings for security testing
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# =============================================================================
+# Adaptive Rate-Limited Request Helper
+# =============================================================================
+# Module-level rate limiter instance (set by run_security_checks)
+_RATE_LIMITER = None
+
+
+def _set_rate_limiter(limiter) -> None:
+    """Set the module-level rate limiter for security checks."""
+    global _RATE_LIMITER
+    _RATE_LIMITER = limiter
+
+
+def rate_limited_request(
+    method: str,
+    url: str,
+    timeout: int = 10,
+    **kwargs
+) -> requests.Response:
+    """
+    Make an HTTP request with adaptive rate limiting.
+    
+    Records response metrics to the rate limiter (if enabled) and enforces
+    inter-request delays based on current rate.
+    
+    Args:
+        method: HTTP method ('get', 'post', 'head')
+        url: Target URL
+        timeout: Request timeout in seconds
+        **kwargs: Additional arguments passed to requests
+        
+    Returns:
+        requests.Response object
+        
+    Raises:
+        requests.exceptions.RequestException on network errors
+    """
+    # Apply rate-limited delay if limiter is active
+    if _RATE_LIMITER is not None:
+        delay = _RATE_LIMITER.get_delay_seconds()
+        if delay > 0.01:  # Skip negligible delays
+            time.sleep(delay)
+    
+    start_time = time.time()
+    status_code = 0
+    
+    try:
+        if method.lower() == 'get':
+            response = requests.get(url, timeout=timeout, **kwargs)
+        elif method.lower() == 'post':
+            response = requests.post(url, timeout=timeout, **kwargs)
+        elif method.lower() == 'head':
+            response = requests.head(url, timeout=timeout, **kwargs)
+        else:
+            response = requests.request(method, url, timeout=timeout, **kwargs)
+        
+        status_code = response.status_code
+        return response
+        
+    except requests.exceptions.Timeout:
+        # Treat timeouts as connection errors for rate limiting
+        status_code = 0
+        raise
+    except requests.exceptions.ConnectionError:
+        status_code = 0
+        raise
+    finally:
+        # Record metrics to rate limiter
+        if _RATE_LIMITER is not None:
+            latency_ms = (time.time() - start_time) * 1000
+            _RATE_LIMITER.record_response(status_code, latency_ms)
 
 
 # =============================================================================
@@ -2276,6 +2350,10 @@ def run_security_checks(
     ai_model: str = '',
     ai_user_id: str = '',
     ai_project_id: str = '',
+    adaptive_rate_enabled: bool = False,
+    adaptive_rate_initial: float = 50.0,
+    adaptive_rate_min: float = 5.0,
+    adaptive_rate_max: float = 200.0,
 ) -> Dict[str, Any]:
     """
     Run all enabled security checks on recon data.
@@ -2291,6 +2369,10 @@ def run_security_checks(
             agent's /llm/waf-classify endpoint on a static-negative match.
         ai_model: LLM model id forwarded to the agent (e.g. 'claude-opus-4-6').
         ai_user_id, ai_project_id: Forwarded for per-user provider key resolution.
+        adaptive_rate_enabled: Enable adaptive rate limiting for HTTP requests.
+        adaptive_rate_initial: Starting requests per second (default 50).
+        adaptive_rate_min: Minimum rate floor (default 5).
+        adaptive_rate_max: Maximum rate ceiling (default 200).
 
     Returns:
         Dictionary with security check findings
@@ -2298,6 +2380,19 @@ def run_security_checks(
     _set_ai_ctx(ai_classifier_enabled, ai_model, ai_user_id, ai_project_id)
     if _AI_CTX["enabled"]:
         print(f"[*][WAF-AI] Classifier cascade enabled, model={_AI_CTX['model']}")
+
+    # Configure adaptive rate limiting
+    if adaptive_rate_enabled:
+        from recon.helpers.adaptive_rate import AdaptiveRateLimiter
+        rate_limiter = AdaptiveRateLimiter(
+            initial_rps=adaptive_rate_initial,
+            min_rps=adaptive_rate_min,
+            max_rps=adaptive_rate_max,
+        )
+        _set_rate_limiter(rate_limiter)
+        print(f"[*][AdaptiveRate] Enabled for security checks: {adaptive_rate_initial} rps (min={adaptive_rate_min}, max={adaptive_rate_max})")
+    else:
+        _set_rate_limiter(None)
 
     print("\n" + "=" * 70)
     print("[*][SecurityCheck] Custom Security Checks")
@@ -2525,6 +2620,20 @@ def run_security_checks(
             }
         }
     }
+
+    # Add adaptive rate limiter summary if enabled
+    if _RATE_LIMITER is not None:
+        rate_summary = _RATE_LIMITER.get_summary()
+        result["security_checks"]["adaptive_rate"] = {
+            "enabled": True,
+            "initial_rps": rate_summary["initial_rps"],
+            "final_rps": rate_summary["current_rps"],
+            "adjustments_made": rate_summary["adjustments_made"],
+            "metrics": rate_summary["current_metrics"],
+        }
+        if rate_summary["adjustments_made"] > 0:
+            print(f"[*][AdaptiveRate] Final rate: {rate_summary['current_rps']:.1f} rps "
+                  f"(started at {rate_summary['initial_rps']:.1f}, {rate_summary['adjustments_made']} adjustments)")
 
     # Print summary
     print(f"\n{'=' * 70}")

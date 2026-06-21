@@ -68,6 +68,19 @@ TARGETS = [
     "recon/main.py",
     "recon/project_settings.py",
     "recon/helpers/resource_enum/endpoint_helpers.py",
+    # Tier 1.1 — Non-recon silent excepts
+    "github_secret_hunt/github_secret_hunt.py",
+    "graph_db/mixins/recon/js_recon_mixin.py",
+    "graph_db/neo4j_client_legacy.py",
+    "graph_db/schema.py",
+    "guinea_pigs/ai_surface_target/smart_recon_surface_automation.py",
+    "gvm_scan/gvm_scanner.py",
+    "gvm_scan/ready_probe.py",
+    "knowledge_base/curation/data_ingestion.py",
+    "mcp/servers/metasploit_server.py",
+    "mcp/servers/network_recon_server.py",
+    "mcp/servers/nuclei_server.py",
+    "mcp/servers/terminal_server.py",
 ]
 
 

@@ -72,7 +72,7 @@ export function ClusterNodeList({ cluster, onSelectChild }: ClusterNodeListProps
   const offsetY = startIndex * ROW_HEIGHT
 
   return (
-    <div className={styles.root}>
+    <section className={styles.root} aria-label={`${cluster.clusterChildType ?? 'Node'} list`}>
       <div className={styles.header}>
         <span
           className={styles.typeBadge}
@@ -92,6 +92,7 @@ export function ClusterNodeList({ cluster, onSelectChild }: ClusterNodeListProps
           className={styles.search}
           type="text"
           placeholder="Filter..."
+          aria-label="Filter nodes"
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
@@ -116,6 +117,7 @@ export function ClusterNodeList({ cluster, onSelectChild }: ClusterNodeListProps
                     className={styles.row}
                     style={{ height: ROW_HEIGHT }}
                     onClick={() => onSelectChild(child)}
+                    aria-label={`Select ${child.name || child.id}`}
                   >
                     {isNested ? (
                       <Folder size={12} className={styles.rowIcon} style={{ color: dotColor }} />
@@ -137,6 +139,6 @@ export function ClusterNodeList({ cluster, onSelectChild }: ClusterNodeListProps
           </div>
         )}
       </div>
-    </div>
+    </section>
   )
 }

@@ -174,6 +174,7 @@ class GVMScanner:
                     try:
                         self._connection.disconnect()
                     except Exception:
+                        logger.warning("connect: Clean up any previous failed connection", exc_info=True)
                         pass
                     self._connection = None
                     self.gmp = None
@@ -244,6 +245,7 @@ class GVMScanner:
             try:
                 self._connection.disconnect()
             except Exception:
+                logger.warning("disconnect: _connection.disconnect()", exc_info=True)
                 pass
         self._connection = None
         self.connected = False

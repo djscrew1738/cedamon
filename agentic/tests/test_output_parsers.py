@@ -30,6 +30,7 @@ from output_parsers import (  # noqa: E402
     parse_hydra,
     parse_curl,
     parse_playwright,
+    parse_searchsploit,
 )
 
 
@@ -383,6 +384,128 @@ class TestParsePlaywright(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+class TestParseSearchsploit(unittest.TestCase):
+    def test_json_line_format(self):
+        raw = """\
+[
+  {
+    "EDB-ID": "12345",
+    "Title": "Foobar 1.0 - Remote Code Execution (RCE)",
+    "Type": "remote",
+    "Platform": "linux",
+    "Path": "/usr/share/exploitdb/exploits/linux/remote/12345.py"
+  },
+  {
+    "EDB-ID": "67890",
+    "Title": "Bazapp 2.1 - Local Privilege Escalation",
+    "Type": "local",
+    "Platform": "windows",
+    "Path": "/usr/share/exploitdb/exploits/windows/local/67890.c"
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertIn("exploits", result)
+        self.assertIn("findings", result)
+        self.assertIn("vulnerabilities", result)
+        self.assertEqual(len(result["exploits"]), 2)
+        self.assertEqual(result["exploits"][0]["edb_id"], "12345")
+        self.assertEqual(result["exploits"][1]["edb_id"], "67890")
+        self.assertEqual(result["exploits"][0]["type"], "remote")
+        self.assertEqual(result["exploits"][1]["type"], "local")
+
+    def test_cve_extraction(self):
+        raw = """\
+[
+  {
+    "EDB-ID": "99999",
+    "Title": "WidgetX 3.0 - Buffer Overflow (CVE-2025-1234)",
+    "Type": "remote",
+    "Platform": "linux",
+    "Path": ""
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertIn("vulnerabilities", result)
+        self.assertEqual(result["vulnerabilities"], ["2025-1234"])
+
+    def test_findings_severity_remote_is_high(self):
+        raw = """\
+[
+  {
+    "EDB-ID": "11111",
+    "Title": "Remote exploit",
+    "Type": "remote",
+    "Platform": "linux",
+    "Path": ""
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(result["findings"][0]["severity"], "high")
+
+    def test_findings_severity_local_is_medium(self):
+        raw = """\
+[
+  {
+    "EDB-ID": "22222",
+    "Title": "Local exploit",
+    "Type": "local",
+    "Platform": "linux",
+    "Path": ""
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(result["findings"][0]["severity"], "medium")
+
+    def test_empty(self):
+        result = parse_searchsploit("")
+        self.assertEqual(result, {"exploits": [], "findings": [], "vulnerabilities": []})
+
+    def test_garbage(self):
+        result = parse_searchsploit("!@#$%^")
+        self.assertEqual(result, {"exploits": [], "findings": [], "vulnerabilities": []})
+
+    def test_alternate_key_names(self):
+        """Handle searchsploit output that uses lowercase keys."""
+        raw = """\
+[
+  {
+    "id": "33333",
+    "title": "Alt key exploit",
+    "type": "remote",
+    "platform": "linux",
+    "path": "/tmp/exploit.sh"
+  }
+]"""
+        result = parse_searchsploit(raw)
+        self.assertEqual(len(result["exploits"]), 1)
+        self.assertEqual(result["exploits"][0]["edb_id"], "33333")
+
+
+class TestParseMasscan(unittest.TestCase):
+    """Masscan reuses parse_naabu (same output shape)."""
+
+    def test_plain_format(self):
+        raw = """\
+masscan: discovered port 80/tcp on 10.0.0.1
+masscan: discovered port 443/tcp on 10.0.0.1
+masscan: discovered port 22/tcp on 10.0.0.2
+"""
+        result = parse_naabu(raw)
+        self.assertEqual(result["ports"], [22, 80, 443])
+
+    def test_json_line_format(self):
+        raw = """\
+{"port": 3306, "proto": "tcp", "ip": "10.0.0.1"}
+{"port": 5432, "proto": "tcp", "ip": "10.0.0.1"}
+"""
+        result = parse_naabu(raw)
+        self.assertEqual(result["ports"], [3306, 5432])
+
+    def test_empty(self):
+        result = parse_naabu("")
+        self.assertEqual(result["ports"], [])
+
+
 class TestEdgeCases(unittest.TestCase):
     def test_all_parsers_handle_empty_string(self):
         for handler_name in set(PARSER_REGISTRY.values()):
@@ -403,7 +526,7 @@ class TestEdgeCases(unittest.TestCase):
         """Every parser returns a dict with the same known shape."""
         expected_keys = {"ports", "services", "technologies", "vulnerabilities",
                          "credentials", "findings", "subdomains", "endpoints",
-                         "parameters"}
+                         "parameters", "exploits"}
         for handler_name in set(PARSER_REGISTRY.values()):
             handler = globals()[handler_name]
             with self.subTest(handler=handler_name):

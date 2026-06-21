@@ -434,7 +434,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
   }, [terminalRuns])
 
   return (
-    <div className={styles.container}>
+    <section className={styles.container} aria-label="Attack Panel">
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
@@ -520,7 +520,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
         <div className={styles.resultsSection}>
           <div className={styles.resultsHeader}>
             <span className={styles.resultsTitle}>Recent Results</span>
-            <button className={styles.resultsClear} onClick={handleClearResults}>
+            <button className={styles.resultsClear} onClick={handleClearResults} aria-label="Clear results">
               Clear
             </button>
           </div>
@@ -612,6 +612,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
           <button
             className={`${styles.filterPill} ${activeFilter === null ? styles.filterPillActive : ''}`}
             onClick={() => setActiveFilter(null)}
+            aria-pressed={activeFilter === null}
           >
             All
           </button>
@@ -620,6 +621,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
               key={key}
               className={`${styles.filterPill} ${activeFilter === key ? styles.filterPillActive : ''}`}
               onClick={() => setActiveFilter(key)}
+              aria-pressed={activeFilter === key}
             >
               {cfg.icon}
               <span>{cfg.label}</span>
@@ -633,14 +635,14 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
 
       {/* Error banners */}
       {error && (
-        <div className={styles.errorBanner}>
+        <div className={styles.errorBanner} role="alert">
           <AlertCircle size={14} />
           <span>{error}</span>
           <button onClick={() => setError(null)} className={styles.errorDismiss} aria-label="Dismiss error">&#x2715;</button>
         </div>
       )}
       {reconStatusError && (
-        <div className={styles.errorBanner}>
+        <div className={styles.errorBanner} role="alert">
           <AlertCircle size={14} />
           <span>{reconStatusError}</span>
           <button onClick={() => refetchReconStatuses()} className={styles.errorDismiss} title="Retry">
@@ -775,6 +777,6 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
           </div>
         )}
       </div>
-    </div>
+    </section>
   )
 }

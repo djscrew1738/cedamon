@@ -577,6 +577,7 @@ class GitHubSecretHunter:
                 with open(self.output_file, 'w') as f:
                     json.dump(data, f, indent=2)
             except:
+                print(f"[!] _save_incremental: Fallback: write directly")
                 pass
 
     def _handle_rate_limit(self):

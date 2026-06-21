@@ -198,7 +198,9 @@ class ContainerManager:
                 logger.warning(f"Periodic state persistence failed: {e}")
 
     async def shutdown(self) -> None:
-        """Stop the background persistence task and perform a final flush."""
+        """Stop the background persistence task, clean up all containers,
+        and perform a final state flush."""
+        await self.cleanup()
         if self._persist_task is not None:
             self._persist_task.cancel()
             try:
@@ -647,8 +649,8 @@ class ContainerManager:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to stop: {e}"
 
-        # Clean up any sub-containers (naabu, httpx, nuclei, etc.)
-        cleaned = await self._exec(self._cleanup_sub_containers)
+        # Clean up sub-containers created after this recon started
+        cleaned = await self._exec(self._cleanup_sub_containers, since=state.started_at)
         if cleaned > 0:
             logger.info(f"Cleaned up {cleaned} sub-container(s) for project {project_id}")
 
@@ -739,6 +741,10 @@ class ContainerManager:
             if state.last_log_timestamp is not None:
                 since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
+            # In-memory dedup ring: catches lines Docker re-emits when since= truncates to second granularity
+            _dedup_ring: dict[tuple[str, int], None] = {}
+            _dedup_ring_max = 200
+
             def read_logs():
                 """Synchronous function to read logs and put them in the queue"""
                 try:
@@ -827,6 +833,14 @@ class ContainerManager:
                                 self.running_states.get(project_id), docker_ts
                             )
 
+                        # Dedup against Docker second-granular since= re-emission
+                        if docker_ts is not None:
+                            _dedup_key = (log_text, int(docker_ts.timestamp()))
+                            if _dedup_key in _dedup_ring:
+                                continue
+                            _dedup_ring[_dedup_key] = None
+                            if len(_dedup_ring) > _dedup_ring_max:
+                                _dedup_ring.pop(next(iter(_dedup_ring)))
                         yield event
 
                 except asyncio.TimeoutError:
@@ -1241,6 +1255,10 @@ class ContainerManager:
             if state.last_log_timestamp is not None:
                 since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
+            # In-memory dedup ring: catches lines Docker re-emits when since= truncates to second granularity
+            _dedup_ring: dict[tuple[str, int], None] = {}
+            _dedup_ring_max = 200
+
             def read_logs():
                 try:
                     log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
@@ -1314,6 +1332,14 @@ class ContainerManager:
                                 cur = self.partial_recon_states[project_id][run_id].last_log_timestamp
                                 if cur is None or docker_ts > cur:
                                     self.partial_recon_states[project_id][run_id].last_log_timestamp = docker_ts
+                        # Dedup against Docker second-granular since= re-emission
+                        if docker_ts is not None:
+                            _dedup_key = (log_text, int(docker_ts.timestamp()))
+                            if _dedup_key in _dedup_ring:
+                                continue
+                            _dedup_ring[_dedup_key] = None
+                            if len(_dedup_ring) > _dedup_ring_max:
+                                _dedup_ring.pop(next(iter(_dedup_ring)))
                         yield event
 
                 except asyncio.TimeoutError:
@@ -1651,6 +1677,10 @@ class ContainerManager:
             if state.last_log_timestamp is not None:
                 since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
+            # In-memory dedup ring: catches lines Docker re-emits when since= truncates to second granularity
+            _dedup_ring: dict[tuple[str, int], None] = {}
+            _dedup_ring_max = 200
+
             def read_logs():
                 try:
                     log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
@@ -1723,6 +1753,14 @@ class ContainerManager:
                                 self.gvm_states.get(project_id), docker_ts
                             )
 
+                        # Dedup against Docker second-granular since= re-emission
+                        if docker_ts is not None:
+                            _dedup_key = (log_text, int(docker_ts.timestamp()))
+                            if _dedup_key in _dedup_ring:
+                                continue
+                            _dedup_ring[_dedup_key] = None
+                            if len(_dedup_ring) > _dedup_ring_max:
+                                _dedup_ring.pop(next(iter(_dedup_ring)))
                         yield event
 
                 except asyncio.TimeoutError:
@@ -2188,6 +2226,10 @@ class ContainerManager:
             if state.last_log_timestamp is not None:
                 since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
+            # In-memory dedup ring: catches lines Docker re-emits when since= truncates to second granularity
+            _dedup_ring: dict[tuple[str, int], None] = {}
+            _dedup_ring_max = 200
+
             def read_logs():
                 try:
                     log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
@@ -2260,6 +2302,14 @@ class ContainerManager:
                                 self.github_hunt_states.get(project_id), docker_ts
                             )
 
+                        # Dedup against Docker second-granular since= re-emission
+                        if docker_ts is not None:
+                            _dedup_key = (log_text, int(docker_ts.timestamp()))
+                            if _dedup_key in _dedup_ring:
+                                continue
+                            _dedup_ring[_dedup_key] = None
+                            if len(_dedup_ring) > _dedup_ring_max:
+                                _dedup_ring.pop(next(iter(_dedup_ring)))
                         yield event
 
                 except asyncio.TimeoutError:
@@ -2594,6 +2644,10 @@ class ContainerManager:
             if state.last_log_timestamp is not None:
                 since_ts = state.last_log_timestamp + timedelta(microseconds=1)
 
+            # In-memory dedup ring: catches lines Docker re-emits when since= truncates to second granularity
+            _dedup_ring: dict[tuple[str, int], None] = {}
+            _dedup_ring_max = 200
+
             def read_logs():
                 try:
                     log_stream_kwargs = {"stream": True, "follow": True, "timestamps": True}
@@ -2666,6 +2720,14 @@ class ContainerManager:
                                 self.trufflehog_states.get(project_id), docker_ts
                             )
 
+                        # Dedup against Docker second-granular since= re-emission
+                        if docker_ts is not None:
+                            _dedup_key = (log_text, int(docker_ts.timestamp()))
+                            if _dedup_key in _dedup_ring:
+                                continue
+                            _dedup_ring[_dedup_key] = None
+                            if len(_dedup_ring) > _dedup_ring_max:
+                                _dedup_ring.pop(next(iter(_dedup_ring)))
                         yield event
 
                 except asyncio.TimeoutError:

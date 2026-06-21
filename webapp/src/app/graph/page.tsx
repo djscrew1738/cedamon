@@ -315,6 +315,7 @@ export default function GraphPage() {
     isAnyRunning: isPartialReconRunning,
     startPartialRecon,
     stopPartialRecon,
+    pausePartialRecon,
     refetch: refetchPartialReconStatuses,
   } = useMultiPartialReconStatus({
     projectId,
@@ -1243,13 +1244,13 @@ export default function GraphPage() {
     }
     for (const run of activePartialRecons) {
       if (run.status === 'running' || run.status === 'starting') {
-        tasks.push(stopPartialRecon(run.run_id))
+        tasks.push(pausePartialRecon(run.run_id))
       }
     }
     // Stop all running AI agent conversations
     tasks.push(fetch('/api/agent/emergency-stop-all', { method: 'POST' }))
     await Promise.allSettled(tasks)
-  }, [reconState?.status, gvmState?.status, githubHuntState?.status, trufflehogState?.status, activePartialRecons, pauseRecon, pauseGvm, pauseGithubHunt, pauseTrufflehog, stopPartialRecon])
+  }, [reconState?.status, gvmState?.status, githubHuntState?.status, trufflehogState?.status, activePartialRecons, pauseRecon, pauseGvm, pauseGithubHunt, pauseTrufflehog, pausePartialRecon, stopPartialRecon])
 
   // Show message if no project is selected
   if (!projectLoading && !projectId) {

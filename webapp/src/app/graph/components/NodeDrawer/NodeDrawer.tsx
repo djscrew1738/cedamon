@@ -100,6 +100,7 @@ export function NodeDrawer({
             <button
               className={clusterStyles.backBtn}
               onClick={onCollapseChild}
+              aria-label="Go back"
             >
               <ArrowLeft size={14} />
               Back
@@ -132,6 +133,7 @@ export function NodeDrawer({
                   className={styles.deleteButton}
                   onClick={handleDeleteClick}
                   disabled={isDeleting}
+                  aria-label="Delete node"
                   title="Delete node"
                 >
                   {isDeleting ? '...' : '\uD83D\uDDD1'}
@@ -186,7 +188,14 @@ export function NodeDrawer({
 
           {/* Delete confirmation modal */}
           {showDeleteConfirm && (
-            <div className={styles.confirmOverlay} onClick={handleDeleteCancel}>
+            <div
+              className={styles.confirmOverlay}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Confirm node deletion"
+              onClick={handleDeleteCancel}
+              onKeyDown={(e) => { if (e.key === 'Escape') handleDeleteCancel() }}
+            >
               <div className={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
                 <div className={styles.confirmIcon}>
                   <AlertTriangle size={28} />
