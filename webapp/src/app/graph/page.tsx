@@ -463,6 +463,16 @@ export default function GraphPage() {
 
   // Live scan progress monitor data
   const activeScans = useMemo(() => {
+    const fmtElapsed = (startedAt: string | null | undefined): string | null => {
+      if (!startedAt) return null
+      const elapsed = Date.now() - new Date(startedAt).getTime()
+      if (elapsed < 0) return null
+      const mins = Math.floor(elapsed / 60000)
+      const secs = Math.floor((elapsed % 60000) / 1000)
+      if (mins > 0) return `${mins}m ${secs}s`
+      return `${secs}s`
+    }
+
     const scans: import('@/app/graph/components/ScanProgressMonitor').ActiveScan[] = []
     if (reconState?.status === 'running' || reconState?.status === 'starting' || reconState?.status === 'paused') {
       scans.push({
@@ -471,6 +481,7 @@ export default function GraphPage() {
         phase: reconState.current_phase,
         phaseNumber: reconState.phase_number,
         totalPhases: reconState.total_phases,
+        elapsed: fmtElapsed(reconState.started_at),
       })
     }
     if (gvmState?.status === 'running' || gvmState?.status === 'starting' || gvmState?.status === 'paused') {
@@ -480,6 +491,7 @@ export default function GraphPage() {
         phase: gvmState.current_phase,
         phaseNumber: gvmState.phase_number,
         totalPhases: gvmState.total_phases,
+        elapsed: fmtElapsed(gvmState.started_at),
       })
     }
     if (githubHuntState?.status === 'running' || githubHuntState?.status === 'starting' || githubHuntState?.status === 'paused') {
@@ -489,6 +501,7 @@ export default function GraphPage() {
         phase: githubHuntState.current_phase,
         phaseNumber: githubHuntState.phase_number,
         totalPhases: githubHuntState.total_phases,
+        elapsed: fmtElapsed(githubHuntState.started_at),
       })
     }
     if (trufflehogState?.status === 'running' || trufflehogState?.status === 'starting' || trufflehogState?.status === 'paused') {
@@ -498,6 +511,7 @@ export default function GraphPage() {
         phase: trufflehogState.current_phase,
         phaseNumber: trufflehogState.phase_number,
         totalPhases: trufflehogState.total_phases,
+        elapsed: fmtElapsed(trufflehogState.started_at),
       })
     }
     activePartialRecons.forEach(run => {
@@ -508,6 +522,7 @@ export default function GraphPage() {
         phase: phases[0] || 'Running',
         phaseNumber: 1,
         totalPhases: phases.length,
+        elapsed: fmtElapsed(run.started_at),
       })
     })
     return scans

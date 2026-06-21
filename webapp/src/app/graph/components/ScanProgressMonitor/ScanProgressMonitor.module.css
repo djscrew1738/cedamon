@@ -1,13 +1,33 @@
-.monitor {
+/* ─── Wrapper (relative anchor for dropdown) ─── */
+.wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* ─── Collapsed trigger badge ─── */
+.trigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1-5);
   padding: var(--space-1) var(--space-2);
   background: var(--bg-secondary);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  max-width: 260px;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.trigger:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-primary);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 .spinner {
@@ -24,35 +44,133 @@
   }
 }
 
-.info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.label {
+.triggerLabel {
   font-size: 10px;
   font-weight: var(--font-semibold);
+}
+
+.chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ─── Expanded dropdown ─── */
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: var(--space-1-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 100;
+}
+
+/* ─── Each scan row ─── */
+.scanRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scanRow + .scanRow {
+  padding-top: var(--space-1-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.scanRowHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotRunning {
+  background: #22c55e;
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
+}
+
+.dotStarting {
+  background: #eab308;
+  box-shadow: 0 0 4px rgba(234, 179, 8, 0.5);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dotPaused {
+  background: #f97316;
+}
+
+.dotError {
+  background: #ef4444;
+}
+
+.dotIdle {
+  background: #6b7280;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.scanRowLabel {
+  font-size: 11px;
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.phase {
+.scanRowElapsed {
   font-size: 10px;
-  opacity: 0.85;
+  color: var(--text-tertiary);
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pausedTag {
+  font-size: 9px;
+  font-weight: var(--font-semibold);
+  padding: 0 4px;
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.scanRowPhase {
+  font-size: 10px;
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-left: calc(7px + var(--space-1-5)); /* align with text after dot */
 }
 
+/* ─── Progress bar (reused from previous layout) ─── */
 .progressTrack {
-  width: 64px;
+  width: 100%;
   height: 4px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
   overflow: hidden;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .progressFill {
@@ -61,33 +179,17 @@
   transition: width 300ms ease;
 }
 
-.moreBadge {
-  font-size: 10px;
-  font-weight: var(--font-semibold);
-  padding: 1px 5px;
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-}
-
 /* ─── Responsive ─── */
 
 @media (max-width: 480px) {
-  .monitor {
-    max-width: 180px;
+  .trigger {
     padding: var(--space-0-5) var(--space-1-5);
     gap: var(--space-1);
   }
 
-  .progressTrack {
-    width: 48px;
-  }
-
-  .label {
-    font-size: 9px;
-  }
-
-  .phase {
-    font-size: 9px;
+  .dropdown {
+    min-width: 200px;
+    max-width: 260px;
+    right: 0;
   }
 }
