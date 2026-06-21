@@ -1,8 +1,8 @@
 # Recon Pipeline — 6‑Tier Improvement Plan
 
-**Status:** Active · **Updated:** 2026-06-16  
-**Tiers completed:** 1.2 (silent excepts), 1.3 (searchsploit parser)  
-**Tiers remaining:** 1.1, 2, 3, 4, 5, 6
+**Status:** Active · **Updated:** 2026-06-21  
+**Tiers completed:** 1.1, 1.2, 1.3, 2.1, 3.5, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3  
+**Tiers remaining:** 1.4, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 5.4, 6.1, 6.2, 6.3, 6.4
 
 ---
 
@@ -57,11 +57,9 @@ All 12 sites across 11 files fixed: removed trailing `pass` after print/log line
 
 > **Goal:** Close critical test gaps, especially for the container manager and parsers.
 
-### 🔲 Tier 2.1 — Parser Tests
-- Add `TestParseSearchsploit` test class (Tier 1.3 delivered parser, no tests yet)
-- Add `TestParseMasscan` test class (currently reuses `parse_naabu` via alias)
-- Verify `test_tool_registry_consistency.py` _KNOWN_MISSING list is up to date
-  - `cve_intel` and `tradecraft_lookup` are stale entries (both now in TOOL_PHASE_MAP)
+### ✅ Tier 2.1 — Parser Tests (DONE)
+- `TestParseSearchsploit` and `TestParseMasscan` test classes added
+- `_KNOWN_MISSING` list verified and cleaned up
 
 ### 🔲 Tier 2.2 — Container Manager Tests ⚠️ **HIGH PRIORITY**
 `recon_orchestrator/container_manager.py` is **2569 lines with zero tests**. Critical coverage needed:
@@ -115,10 +113,9 @@ All 12 sites across 11 files fixed: removed trailing `pass` after print/log line
 - If masscan output format diverges from naabu, it breaks silently
 - **Action:** Create independent entry point with its own test coverage (low effort, high safety)
 
-### 🔲 Tier 3.5 — Stale Test Exception Cleanup
+### ✅ Tier 3.5 — Stale Test Exception Cleanup (DONE)
 - `agentic/tests/test_tool_registry_consistency.py` lines 80-87
-- `cve_intel` and `tradecraft_lookup` are listed as missing from TOOL_PHASE_MAP but ARE present
-- Update `_KNOWN_MISSING` dict to match current code
+- `cve_intel` and `tradecraft_lookup` — both already in TOOL_PHASE_MAP, `_KNOWN_MISSING` already empty
 
 ---
 
@@ -126,7 +123,7 @@ All 12 sites across 11 files fixed: removed trailing `pass` after print/log line
 
 > **Goal:** Make the pipeline comprehensible and maintainable for new contributors.
 
-### 🔲 Tier 4.1 — "Adding a New Tool/Parser" Guide
+### ✅ Tier 4.1 — "Adding a New Tool/Parser" Guide (DONE)
 Adding a tool currently requires touching at least 5 places with no single reference document:
 1. Parser function in `agentic/output_parsers.py`
 2. `PARSER_REGISTRY` entry
@@ -136,28 +133,30 @@ Adding a tool currently requires touching at least 5 places with no single refer
 6. Tests
 7. Canonical tool list
 
-**Action:** Create `readmes/GUIDE_ADDING_TOOL.md` with step-by-step checklist and examples.
+**Done:** `readmes/GUIDE_ADDING_TOOL.md` exists with step-by-step checklist and examples.
 
-### 🔲 Tier 4.2 — Pipeline Data-Flow Documentation
-**What's missing:** How output flows from `parse_tool_output()` → merge into `TargetInfo` → persist to Neo4j → surface in UI is undocumented end-to-end.
+### ✅ Tier 4.2 — Pipeline Data-Flow Documentation (DONE)
+**What was missing:** How output flows from `parse_tool_output()` → merge into `TargetInfo` → persist to Neo4j → surface in UI was undocumented end-to-end.
 
-**Action:** Add data-flow diagram and narrative to `readmes/README.RECON.md`.
+**Done:** Data-flow diagram and narrative added to `readmes/README.RECON.md`.
 
-### 🔲 Tier 4.3 — Container Lifecycle Architecture Doc
+### ✅ Tier 4.3 — Container Lifecycle Architecture Doc (DONE)
 `container_manager.py` is 2569 lines with no architectural overview. Document:
 - Sub-container model
 - Orphan detection strategy
 - Cleanup phases and triggers
 - Shutdown sequence
 
-**Action:** Create `readmes/CONTAINER_MANAGER_ARCH.md`.
+**Done:** `readmes/CONTAINER_MANAGER_ARCH.md` created.
 
-### 🔲 Tier 4.4 — `tool_cost_model.py` Module Docstring
+### ✅ Tier 4.4 — `tool_cost_model.py` Module Docstring (DONE)
 Currently has no module-level docstring. Add explanation of:
 - Purpose of the cost model
 - How costs are assigned (integer scale meaning)
 - How time estimates are determined
 - Category classification scheme
+
+**Done:** Module-level docstring already present in `agentic/tool_cost_model.py`.
 
 ---
 
@@ -165,9 +164,9 @@ Currently has no module-level docstring. Add explanation of:
 
 > **Goal:** Reduce technical debt and improve code organization.
 
-### 🔲 Tier 5.1 — Split Monolithic `output_parsers.py`
-**Current state:** 609-line single file with 16+ parser functions + dispatch logic  
-**Action:** Split into `agentic/output_parsers/` directory:
+### ✅ Tier 5.1 — Split Monolithic `output_parsers.py` (DONE)
+**Previous state:** 609-line single file with 16+ parser functions + dispatch logic  
+**Done:** Split into `agentic/output_parsers/` directory:
 ```
 output_parsers/
 ├── __init__.py          # exports + PARSER_REGISTRY + parse_tool_output
@@ -178,19 +177,22 @@ output_parsers/
 ├── searchsploit.py      # parse_searchsploit (Tier 1.3)
 ├── ...
 ```
-**Risk:** Medium — impacts imports across codebase; careful refactoring needed
 
-### 🔲 Tier 5.2 — AttackPanel Component Splitting
-**Current state:** `AttackPanel.tsx` is 780 lines
+### ✅ Tier 5.2 — AttackPanel Component Splitting (DONE)
+**Previous state:** `AttackPanel.tsx` is 780 lines
 - Split `SuggestionCard` into its own component
 - Extract filter/search bar
 - Extract attack stats summary
 - Extract run/stop handlers into custom hook
 
-### 🔲 Tier 5.3 — Deprecated Field Cleanup
+**Done:** 4 sub-components extracted.
+
+### ✅ Tier 5.3 — Deprecated Field Cleanup (DONE)
 - Remove `BEARER_TOKEN` legacy field from `agentic/project_settings.py:342`
 - Remove `original_objective` deprecated field from `agentic/state.py:792`
 - Remove dated snapshot references (e.g., `claude-sonnet-4-20250514`)
+
+**Done:** All deprecated fields cleaned up.
 
 ### 🔲 Tier 5.4 — Unified Utility Functions
 - Deduplicate `cleanup_temp_dir` / `create_temp_dir` across recon modules
@@ -233,29 +235,29 @@ output_parsers/
 
 ## Appendix: Priority Matrix
 
-| Tier | Item | Effort | Impact | Risk | Priority |
-|------|------|--------|--------|------|----------|
-| 1.1 | Non-recon silent excepts | Low | Medium | Low | **P1** |
-| 2.2 | Container manager tests | High | High | High | **P1** |
-| 3.1 | masscan→TOOL_PHASE_MAP | Low | Medium | Low | **P1** |
-| 3.2 | searchsploit→TOOL_COST_MODEL | Low | Medium | Low | **P1** |
-| 3.3 | playwright→TOOL_CLUSTERS | Low | Medium | Low | **P1** |
-| 2.1 | searchsploit/masscan parser tests | Low | Medium | Low | **P2** |
-| 3.4 | masscan parser independence | Low | Low | Low | **P2** |
-| 3.5 | Stale test data fix | Low | Low | Low | **P2** |
-| 4.1 | "Adding a tool" guide | Medium | High | None | **P2** |
-| 5.1 | Split output_parsers.py | Medium | Medium | Medium | **P3** |
-| 4.2 | Pipeline data-flow docs | Medium | Medium | None | **P3** |
-| 4.3 | Container lifecycle docs | Medium | Medium | None | **P3** |
-| 5.2 | AttackPanel split | Medium | Low | Medium | **P3** |
-| 5.3 | Deprecated field cleanup | Low | Low | Low | **P3** |
-| 1.4 | Retry/resilience audit | Medium | Medium | Low | **P3** |
-| 6.1 | Heuristic engine expansion | Medium | High | Low | **P3** |
-| 5.4 | Utility deduplication | Medium | Low | Low | **P4** |
-| 4.4 | tool_cost_model.py docstring | Low | Low | None | **P4** |
-| 2.3 | Cross-registry consistency tests | Low | Medium | Low | **P4** |
-| 2.4 | Integration smoke tests | Medium | Medium | Low | **P4** |
-| 6.2-6.4 | Feature work (separate plans) | Varies | Varies | Varies | Per-plan |
+| Tier | Item | Effort | Impact | Risk | Priority | Status |
+|------|------|--------|--------|------|----------|--------|
+| 1.1 | Non-recon silent excepts | Low | Medium | Low | **P1** | ✅ |
+| 2.2 | Container manager tests | High | High | High | **P1** | 🔲 |
+| 3.1 | masscan→TOOL_PHASE_MAP | Low | Medium | Low | **P1** | 🔲 |
+| 3.2 | searchsploit→TOOL_COST_MODEL | Low | Medium | Low | **P1** | 🔲 |
+| 3.3 | playwright→TOOL_CLUSTERS | Low | Medium | Low | **P1** | 🔲 |
+| 2.1 | searchsploit/masscan parser tests | Low | Medium | Low | **P2** | ✅ |
+| 3.4 | masscan parser independence | Low | Low | Low | **P2** | 🔲 |
+| 3.5 | Stale test data fix | Low | Low | Low | **P2** | ✅ |
+| 4.1 | "Adding a tool" guide | Medium | High | None | **P2** | ✅ |
+| 5.1 | Split output_parsers.py | Medium | Medium | Medium | **P3** | ✅ |
+| 4.2 | Pipeline data-flow docs | Medium | Medium | None | **P3** | ✅ |
+| 4.3 | Container lifecycle docs | Medium | Medium | None | **P3** | ✅ |
+| 5.2 | AttackPanel split | Medium | Low | Medium | **P3** | ✅ |
+| 5.3 | Deprecated field cleanup | Low | Low | Low | **P3** | ✅ |
+| 1.4 | Retry/resilience audit | Medium | Medium | Low | **P3** | 🔲 |
+| 6.1 | Heuristic engine expansion | Medium | High | Low | **P3** | 🔲 |
+| 5.4 | Utility deduplication | Medium | Low | Low | **P4** | 🔲 |
+| 4.4 | tool_cost_model.py docstring | Low | Low | None | **P4** | ✅ |
+| 2.3 | Cross-registry consistency tests | Low | Medium | Low | **P4** | 🔲 |
+| 2.4 | Integration smoke tests | Medium | Medium | Low | **P4** | 🔲 |
+| 6.2-6.4 | Feature work (separate plans) | Varies | Varies | Varies | Per-plan | 🔲 |
 
 ## Appendix: Completed Work
 
@@ -264,3 +266,13 @@ output_parsers/
 | Tier 1.2 — Silent except fix | 2026-06-16 | 37 files patched, all syntax-validated |
 | Tier 1.3 — parse_searchsploit | 2026-06-15 | Parser added and registered |
 | Tier 5.2 — Mobile responsive | 2026-06-15 | AttackPanel 768px/480px breakpoints merged |
+| Tier 1.1 — Non-recon silent excepts | 2026-06-20 | 12 sites across 11 files fixed |
+| Tier 2.1 — Parser tests | 2026-06-21 | searchsploit + masscan tests added |
+| Tier 3.5 — Stale test cleanup | 2026-06-21 | _KNOWN_MISSING already empty |
+| Tier 4.1 — Adding a tool guide | 2026-06-21 | GUIDE_ADDING_TOOL.md created |
+| Tier 4.2 — Pipeline data-flow docs | 2026-06-21 | Mermaid diagram added to README.RECON.md |
+| Tier 4.3 — Container lifecycle docs | 2026-06-21 | CONTAINER_MANAGER_ARCH.md created |
+| Tier 4.4 — tool_cost_model.py docstring | 2026-06-21 | Module docstring already present |
+| Tier 5.1 — Split output_parsers.py | 2026-06-21 | output_parsers/ directory created |
+| Tier 5.2 — AttackPanel split | 2026-06-21 | 4 sub-components extracted |
+| Tier 5.3 — Deprecated field cleanup | 2026-06-21 | BEARER_TOKEN, original_objective, snapshots removed |

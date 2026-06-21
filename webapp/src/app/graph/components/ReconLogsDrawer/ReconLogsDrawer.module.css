@@ -57,6 +57,18 @@
   transition: var(--transition-all);
 }
 
+/* Tab count badge shown next to the title in multi-tab mode */
+.tabCount {
+  font-size: 10px;
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-default);
+  margin-left: var(--space-1);
+}
+
 .closeButton:hover {
   background: var(--bg-hover);
   color: var(--text-primary);

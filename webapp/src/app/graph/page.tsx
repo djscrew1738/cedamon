@@ -10,7 +10,7 @@ import { AIAssistantDrawer } from './components/AIAssistantDrawer'
 import { PageBottomBar } from './components/PageBottomBar'
 import { ReconConfirmModal } from './components/ReconConfirmModal'
 import { GvmConfirmModal } from './components/GvmConfirmModal'
-import { ReconLogsDrawer } from './components/ReconLogsDrawer'
+import { ReconLogsDrawer, type LogTab } from './components/ReconLogsDrawer'
 import { PartialReconLogsDrawer } from './components/PartialReconLogsDrawer'
 import { ViewTabs, type ViewMode, type TunnelStatus, type TableViewMode } from './components/ViewTabs'
 import { DataTable } from './components/DataTable'
@@ -80,7 +80,11 @@ export default function GraphPage() {
   const [isAIOpen, setIsAIOpen] = useState(false)
   const [isFileSystemOpen, setIsFileSystemOpen] = useState(false)
   const [isReconModalOpen, setIsReconModalOpen] = useState(false)
-  const [activeLogsDrawer, setActiveLogsDrawer] = useState<'recon' | 'gvm' | 'githubHunt' | 'trufflehog' | `partialRecon:${string}` | null>(null)
+  // Multi-tab log drawer state — each pipeline can be opened as a tab
+  const [openLogTabs, setOpenLogTabs] = useState<string[]>([])
+  const [activeLogTabId, setActiveLogTabId] = useState<string>('recon')
+  // Separate state for partial recon drawer (keeps its own internal tabs)
+  const [activeLogsDrawer, setActiveLogsDrawer] = useState<string | null>(null)
   const [hasReconData, setHasReconData] = useState(false)
   const [hasGvmData, setHasGvmData] = useState(false)
   const [hasGithubHuntData, setHasGithubHuntData] = useState(false)
@@ -123,6 +127,8 @@ export default function GraphPage() {
   // Close all drawers when project changes
   useEffect(() => {
     setIsAIOpen(false)
+    setOpenLogTabs([])
+    setActiveLogTabId('recon')
     setActiveLogsDrawer(null)
     clearSelection()
   }, [projectId, clearSelection])
@@ -1035,20 +1041,51 @@ export default function GraphPage() {
     }
     const openLogs = searchParams.get('openlogs')
     if (openLogs && projectId) {
-      setActiveLogsDrawer(openLogs as 'recon' | 'gvm' | 'githubHunt' | 'trufflehog' | `partialRecon:${string}`)
+      setOpenLogTabs(prev => prev.includes(openLogs) ? prev : [...prev, openLogs])
+      setActiveLogTabId(openLogs)
       router.replace(`/graph?project=${projectId}`)
     }
   }, [searchParams, projectId, router])
+
+  const openTab = useCallback((tabId: string) => {
+    setOpenLogTabs(prev => prev.includes(tabId) ? prev : [...prev, tabId])
+    setActiveLogTabId(tabId)
+  }, [])
+
+  const closeTab = useCallback((tabId: string) => {
+    setOpenLogTabs(prev => {
+      const next = prev.filter(id => id !== tabId)
+      // If the closed tab was active, switch to the last remaining tab
+      if (activeLogTabId === tabId && next.length > 0) {
+        setActiveLogTabId(next[next.length - 1])
+      }
+      return next
+    })
+  }, [activeLogTabId])
+
+  const toggleTab = useCallback((tabId: string) => {
+    setOpenLogTabs(prev => {
+      if (prev.includes(tabId)) {
+        const next = prev.filter(id => id !== tabId)
+        if (activeLogTabId === tabId && next.length > 0) {
+          setActiveLogTabId(next[next.length - 1])
+        }
+        return next
+      }
+      setActiveLogTabId(tabId)
+      return [...prev, tabId]
+    })
+  }, [activeLogTabId])
 
   const handleConfirmRecon = useCallback(async () => {
     clearLogs()
     const result = await startRecon()
     if (result) {
       setIsReconModalOpen(false)
-      setActiveLogsDrawer('recon')
+      openTab('recon')
       toast.info('Recon scan started')
     }
-  }, [startRecon, clearLogs, toast])
+  }, [startRecon, clearLogs, toast, openTab])
 
   const handleDownloadJSON = useCallback(async () => {
     if (!projectId) return
@@ -1070,8 +1107,8 @@ export default function GraphPage() {
   }, [projectId, refetchGraph, toast])
 
   const handleToggleLogs = useCallback(() => {
-    setActiveLogsDrawer(prev => prev === 'recon' ? null : 'recon')
-  }, [])
+    toggleTab('recon')
+  }, [toggleTab])
 
   const handleStartGvm = useCallback(() => {
     setIsGvmModalOpen(true)
@@ -1082,10 +1119,10 @@ export default function GraphPage() {
     const result = await startGvm()
     if (result) {
       setIsGvmModalOpen(false)
-      setActiveLogsDrawer('gvm')
+      openTab('gvm')
       toast.info('GVM scan started')
     }
-  }, [startGvm, clearGvmLogs, toast])
+  }, [startGvm, clearGvmLogs, toast, openTab])
 
   const handleDownloadGvmJSON = useCallback(async () => {
     if (!projectId) return
@@ -1093,22 +1130,22 @@ export default function GraphPage() {
   }, [projectId])
 
   const handleToggleGvmLogs = useCallback(() => {
-    setActiveLogsDrawer(prev => prev === 'gvm' ? null : 'gvm')
-  }, [])
+    toggleTab('gvm')
+  }, [toggleTab])
 
   const handleStartGithubHunt = useCallback(async () => {
     try {
       clearGithubHuntLogs()
       const result = await startGithubHunt()
       if (result) {
-        setActiveLogsDrawer('githubHunt')
+        openTab('githubHunt')
         toast.info('GitHub Hunt started')
       }
     } catch (err) {
       console.error('Failed to start GitHub Hunt:', err)
       toast.error('Failed to start GitHub Hunt')
     }
-  }, [startGithubHunt, clearGithubHuntLogs, toast])
+  }, [startGithubHunt, clearGithubHuntLogs, toast, openTab])
 
   const handleDownloadGithubHuntJSON = useCallback(async () => {
     if (!projectId) return
@@ -1116,22 +1153,22 @@ export default function GraphPage() {
   }, [projectId])
 
   const handleToggleGithubHuntLogs = useCallback(() => {
-    setActiveLogsDrawer(prev => prev === 'githubHunt' ? null : 'githubHunt')
-  }, [])
+    toggleTab('githubHunt')
+  }, [toggleTab])
 
   const handleStartTrufflehog = useCallback(async () => {
     try {
       clearTrufflehogLogs()
       const result = await startTrufflehog()
       if (result) {
-        setActiveLogsDrawer('trufflehog')
+        openTab('trufflehog')
         toast.info('Trufflehog scan started')
       }
     } catch (err) {
       console.error('Failed to start Trufflehog:', err)
       toast.error('Failed to start Trufflehog')
     }
-  }, [startTrufflehog, clearTrufflehogLogs, toast])
+  }, [startTrufflehog, clearTrufflehogLogs, toast, openTab])
 
   const handleDownloadTrufflehogJSON = useCallback(async () => {
     if (!projectId) return
@@ -1139,8 +1176,8 @@ export default function GraphPage() {
   }, [projectId])
 
   const handleToggleTrufflehogLogs = useCallback(() => {
-    setActiveLogsDrawer(prev => prev === 'trufflehog' ? null : 'trufflehog')
-  }, [])
+    toggleTab('trufflehog')
+  }, [toggleTab])
 
   // Other Scans - partial recon scan helpers
   const getActivePartialRunForTool = useCallback((toolId: string) => {
@@ -1259,6 +1296,105 @@ export default function GraphPage() {
     await Promise.allSettled(tasks)
   }, [reconState?.status, gvmState?.status, githubHuntState?.status, trufflehogState?.status, activePartialRecons, pauseRecon, pauseGvm, pauseGithubHunt, pauseTrufflehog, pausePartialRecon, stopPartialRecon])
 
+  // ── Multi-tab log drawer: build tabs array and dispatch handlers ──
+  const logTabs = useMemo<LogTab[]>(() => {
+    const result: LogTab[] = []
+    if (openLogTabs.includes('recon')) {
+      result.push({
+        id: 'recon',
+        label: 'Reconnaissance',
+        status: reconState?.status || 'idle',
+        logs: reconLogs,
+        currentPhase,
+        currentPhaseNumber,
+        errorMessage: reconState?.error,
+        isConnected: reconLogsConnected,
+      })
+    }
+    if (openLogTabs.includes('gvm')) {
+      result.push({
+        id: 'gvm',
+        label: 'GVM Vulnerability Scan',
+        status: gvmState?.status || 'idle',
+        logs: gvmLogs,
+        currentPhase: gvmCurrentPhase,
+        currentPhaseNumber: gvmCurrentPhaseNumber,
+        errorMessage: gvmState?.error,
+        phases: GVM_PHASES,
+        totalPhases: 4,
+        isConnected: gvmLogsConnected,
+      })
+    }
+    if (openLogTabs.includes('githubHunt')) {
+      result.push({
+        id: 'githubHunt',
+        label: 'GitHub Secret Hunt',
+        status: githubHuntState?.status || 'idle',
+        logs: githubHuntLogs,
+        currentPhase: githubHuntCurrentPhase,
+        currentPhaseNumber: githubHuntCurrentPhaseNumber,
+        errorMessage: githubHuntState?.error,
+        phases: GITHUB_HUNT_PHASES,
+        totalPhases: 3,
+        isConnected: githubHuntLogsConnected,
+      })
+    }
+    if (openLogTabs.includes('trufflehog')) {
+      result.push({
+        id: 'trufflehog',
+        label: 'TruffleHog Secret Scanner',
+        status: trufflehogState?.status || 'idle',
+        logs: trufflehogLogs,
+        currentPhase: trufflehogCurrentPhase,
+        currentPhaseNumber: trufflehogCurrentPhaseNumber,
+        errorMessage: trufflehogState?.error,
+        phases: TRUFFLEHOG_PHASES,
+        totalPhases: 3,
+        isConnected: trufflehogLogsConnected,
+      })
+    }
+    return result
+  }, [openLogTabs, reconState, reconLogs, currentPhase, currentPhaseNumber, reconLogsConnected,
+      gvmState, gvmLogs, gvmCurrentPhase, gvmCurrentPhaseNumber, gvmLogsConnected,
+      githubHuntState, githubHuntLogs, githubHuntCurrentPhase, githubHuntCurrentPhaseNumber, githubHuntLogsConnected,
+      trufflehogState, trufflehogLogs, trufflehogCurrentPhase, trufflehogCurrentPhaseNumber, trufflehogLogsConnected])
+
+  const handleLogClear = useCallback((tabId: string) => {
+    switch (tabId) {
+      case 'recon': clearLogs(); break
+      case 'gvm': clearGvmLogs(); break
+      case 'githubHunt': clearGithubHuntLogs(); break
+      case 'trufflehog': clearTrufflehogLogs(); break
+    }
+  }, [clearLogs, clearGvmLogs, clearGithubHuntLogs, clearTrufflehogLogs])
+
+  const handleLogPause = useCallback((tabId: string) => {
+    switch (tabId) {
+      case 'recon': handlePauseRecon(); break
+      case 'gvm': handlePauseGvm(); break
+      case 'githubHunt': handlePauseGithubHunt(); break
+      case 'trufflehog': handlePauseTrufflehog(); break
+    }
+  }, [handlePauseRecon, handlePauseGvm, handlePauseGithubHunt, handlePauseTrufflehog])
+
+  const handleLogResume = useCallback((tabId: string) => {
+    switch (tabId) {
+      case 'recon': handleResumeRecon(); break
+      case 'gvm': handleResumeGvm(); break
+      case 'githubHunt': handleResumeGithubHunt(); break
+      case 'trufflehog': handleResumeTrufflehog(); break
+    }
+  }, [handleResumeRecon, handleResumeGvm, handleResumeGithubHunt, handleResumeTrufflehog])
+
+  const handleLogStop = useCallback((tabId: string) => {
+    switch (tabId) {
+      case 'recon': handleStopRecon(); break
+      case 'gvm': handleStopGvm(); break
+      case 'githubHunt': handleStopGithubHunt(); break
+      case 'trufflehog': handleStopTrufflehog(); break
+    }
+  }, [handleStopRecon, handleStopGvm, handleStopGithubHunt, handleStopTrufflehog])
+
   // Show message if no project is selected
   if (!projectLoading && !projectId) {
     return (
@@ -1298,7 +1434,7 @@ export default function GraphPage() {
         onToggleLogs={handleToggleLogs}
         reconStatus={reconState?.status || 'idle'}
         hasReconData={hasReconData}
-        isLogsOpen={activeLogsDrawer === 'recon'}
+        isLogsOpen={openLogTabs.includes('recon')}
         // GVM props
         gvmAvailable={gvmAvailable}
         gvmReady={gvmReady}
@@ -1311,7 +1447,7 @@ export default function GraphPage() {
         onToggleGvmLogs={handleToggleGvmLogs}
         gvmStatus={gvmState?.status || 'idle'}
         hasGvmData={hasGvmData}
-        isGvmLogsOpen={activeLogsDrawer === 'gvm'}
+        isGvmLogsOpen={openLogTabs.includes('gvm')}
         // GitHub Hunt props
         onStartGithubHunt={handleStartGithubHunt}
         onPauseGithubHunt={handlePauseGithubHunt}
@@ -1321,7 +1457,7 @@ export default function GraphPage() {
         onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
         githubHuntStatus={githubHuntState?.status || 'idle'}
         hasGithubHuntData={hasGithubHuntData}
-        isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
+        isGithubHuntLogsOpen={openLogTabs.includes('githubHunt')}
         // TruffleHog props
         onStartTrufflehog={handleStartTrufflehog}
         onPauseTrufflehog={handlePauseTrufflehog}
@@ -1331,7 +1467,7 @@ export default function GraphPage() {
         onToggleTrufflehogLogs={handleToggleTrufflehogLogs}
         trufflehogStatus={trufflehogState?.status || 'idle'}
         hasTrufflehogData={hasTrufflehogData}
-        isTrufflehogLogsOpen={activeLogsDrawer === 'trufflehog'}
+        isTrufflehogLogsOpen={openLogTabs.includes('trufflehog')}
         // Partial Recon props (multi-run)
         activePartialRecons={activePartialRecons}
         activePartialReconLogsDrawer={activePartialReconRunId}
@@ -1370,7 +1506,7 @@ export default function GraphPage() {
         gvmStatus={gvmState?.status || 'idle'}
         gvmAvailable={gvmAvailable}
         hasGvmData={hasGvmData}
-        isGvmLogsOpen={activeLogsDrawer === 'gvm'}
+        isGvmLogsOpen={openLogTabs.includes('gvm')}
         // GitHub Hunt
         onStartGithubHunt={handleStartGithubHunt}
         onPauseGithubHunt={handlePauseGithubHunt}
@@ -1380,7 +1516,7 @@ export default function GraphPage() {
         onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
         githubHuntStatus={githubHuntState?.status || 'idle'}
         hasGithubHuntData={hasGithubHuntData}
-        isGithubHuntLogsOpen={activeLogsDrawer === 'githubHunt'}
+        isGithubHuntLogsOpen={openLogTabs.includes('githubHunt')}
         // TruffleHog
         onStartTrufflehog={handleStartTrufflehog}
         onPauseTrufflehog={handlePauseTrufflehog}
@@ -1390,7 +1526,7 @@ export default function GraphPage() {
         onToggleTrufflehogLogs={handleToggleTrufflehogLogs}
         trufflehogStatus={trufflehogState?.status || 'idle'}
         hasTrufflehogData={hasTrufflehogData}
-        isTrufflehogLogsOpen={activeLogsDrawer === 'trufflehog'}
+        isTrufflehogLogsOpen={openLogTabs.includes('trufflehog')}
         // Partial recon scans
         partialReconRuns={allPartialReconRuns}
         activePartialReconRunId={activePartialReconRunId}
@@ -1563,73 +1699,18 @@ export default function GraphPage() {
 
       </div>
 
+      {/* Multi-tab log drawer — shows all open pipeline logs as tabs */}
       <ReconLogsDrawer
-        isOpen={activeLogsDrawer === 'recon'}
-        onClose={() => setActiveLogsDrawer(null)}
-        logs={reconLogs}
-        currentPhase={currentPhase}
-        currentPhaseNumber={currentPhaseNumber}
-        status={reconState?.status || 'idle'}
-        errorMessage={reconState?.error}
-        onClearLogs={clearLogs}
-        onPause={handlePauseRecon}
-        onResume={handleResumeRecon}
-        onStop={handleStopRecon}
-        isConnected={reconLogsConnected}
-      />
-
-      <ReconLogsDrawer
-        isOpen={activeLogsDrawer === 'gvm'}
-        onClose={() => setActiveLogsDrawer(null)}
-        logs={gvmLogs}
-        currentPhase={gvmCurrentPhase}
-        currentPhaseNumber={gvmCurrentPhaseNumber}
-        status={gvmState?.status || 'idle'}
-        errorMessage={gvmState?.error}
-        onClearLogs={clearGvmLogs}
-        onPause={handlePauseGvm}
-        onResume={handleResumeGvm}
-        onStop={handleStopGvm}
-        title="GVM Vulnerability Scan Logs"
-        phases={GVM_PHASES}
-        totalPhases={4}
-        isConnected={gvmLogsConnected}
-      />
-
-      <ReconLogsDrawer
-        isOpen={activeLogsDrawer === 'githubHunt'}
-        onClose={() => setActiveLogsDrawer(null)}
-        logs={githubHuntLogs}
-        currentPhase={githubHuntCurrentPhase}
-        currentPhaseNumber={githubHuntCurrentPhaseNumber}
-        status={githubHuntState?.status || 'idle'}
-        errorMessage={githubHuntState?.error}
-        onClearLogs={clearGithubHuntLogs}
-        onPause={handlePauseGithubHunt}
-        onResume={handleResumeGithubHunt}
-        onStop={handleStopGithubHunt}
-        title="GitHub Secret Hunt Logs"
-        phases={GITHUB_HUNT_PHASES}
-        totalPhases={3}
-        isConnected={githubHuntLogsConnected}
-      />
-
-      <ReconLogsDrawer
-        isOpen={activeLogsDrawer === 'trufflehog'}
-        onClose={() => setActiveLogsDrawer(null)}
-        logs={trufflehogLogs}
-        currentPhase={trufflehogCurrentPhase}
-        currentPhaseNumber={trufflehogCurrentPhaseNumber}
-        status={trufflehogState?.status || 'idle'}
-        errorMessage={trufflehogState?.error}
-        onClearLogs={clearTrufflehogLogs}
-        onPause={handlePauseTrufflehog}
-        onResume={handleResumeTrufflehog}
-        onStop={handleStopTrufflehog}
-        title="TruffleHog Secret Scanner Logs"
-        phases={TRUFFLEHOG_PHASES}
-        totalPhases={3}
-        isConnected={trufflehogLogsConnected}
+        isOpen={openLogTabs.length > 0}
+        onClose={() => { setOpenLogTabs([]); setActiveLogTabId('recon') }}
+        tabs={logTabs}
+        activeTabId={activeLogTabId}
+        onTabChange={setActiveLogTabId}
+        onTabClose={closeTab}
+        onClearLogs={handleLogClear}
+        onPause={handleLogPause}
+        onResume={handleLogResume}
+        onStop={handleLogStop}
       />
 
       <PartialReconLogsDrawer

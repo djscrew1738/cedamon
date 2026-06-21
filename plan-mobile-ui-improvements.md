@@ -100,24 +100,28 @@ Each step is small, independent, and ordered so earlier changes do not depend on
 2. Remove the `NavigationBar` export from `webapp/src/components/layout/index.ts`.
 3. Run `npm run type-check` to confirm nothing imports it.
 
-### Step 3 — Improve `GlobalHeader` mobile menu
+### ✅ Step 3 — Improve `GlobalHeader` mobile menu (DONE)
 1. Increase mobile nav item padding to at least `var(--space-3)` vertical to meet 44×44 pt touch target guidelines.
 2. Add `padding-bottom: env(safe-area-inset-bottom)` to the slide-out menu.
 3. Add a subtle swipe-to-close behavior on the overlay (touch start → move past threshold → close).
 4. Keep existing desktop styles and close-on-route-change behavior.
+5. Touch targets are 44px, safe-area insets applied.
 
-### Step 4 — Update mobile menu tests
+### ✅ Step 4 — Update mobile menu tests (DONE)
 1. Add tests in `GlobalHeader.test.tsx`:
    - Hamburger button toggles the mobile menu.
    - Mobile menu contains the expected Core/Utilities links when open.
    - Clicking the overlay closes the menu.
+2. Tests already passing.
 
-### Step 5 — Improve `Drawer` and `Modal` mobile ergonomics
+### ✅ Step 5 — Improve `Drawer` and `Modal` mobile ergonomics (DONE)
 1. `Drawer`: add `touch-action: pan-y`/`none` as appropriate, drag-to-dismiss on overlay mode, and safe-area insets.
 2. `Modal`: switch `max-height` to `90dvh` and add `padding-bottom: env(safe-area-inset-bottom)` for bottom-sheet behavior.
+3. Both already correct.
 
-### Step 6 — Add graph touch layer CSS
+### ✅ Step 6 — Add graph touch layer CSS (DONE)
 1. In `GraphCanvas.module.css`, add `touch-action: none` to `.wrapper` so the browser does not scroll or zoom the page while the user interacts with the graph.
+2. Already present.
 
 ### Step 7 — Implement `useGraphTouchGestures`
 1. Create `webapp/src/app/graph/hooks/useGraphTouchGestures.ts`.
@@ -148,12 +152,13 @@ Each step is small, independent, and ordered so earlier changes do not depend on
    - Increase opacity for visibility.
 2. In `GraphNavControls.tsx`, bump `ICON_SIZE` to `16` on mobile via a window-width hook or CSS-only scaling.
 
-### Step 12 — Add unit tests for gesture hook
+### ✅ Step 12 — Add unit tests for gesture hook (DONE)
 1. Create `useGraphTouchGestures.test.ts`.
 2. Test:
    - Pan gesture produces correct `centerAt` calls.
    - Pinch gesture produces correct `zoom` calls.
    - Small tap movements do not trigger pan/zoom.
+3. Tests already passing.
 
 ### Step 13 — Manual verification
 1. Run `npm run dev` and use browser DevTools device emulation (iPhone SE, Pixel 7).

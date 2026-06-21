@@ -126,27 +126,27 @@
    - Cap the `asyncio.Queue` in log streaming (e.g., 1000 lines).
    - When full, drop the oldest line and optionally emit a single "... N lines omitted ..." marker.
 
-5. **Backend GVM readiness pre-flight**
-   - Extract the existing `ready_probe.py` / `is_gvm_ready` logic into a reusable helper.
+5. ✅ **Backend GVM readiness pre-flight** (DONE)
+   - Extract the existing `ready_probe.py` / `is_gvm_ready` logic into a reusable helper (`gvm_ready_helper.py`).
    - Call it in `start_gvm_scan` before container creation; surface `gvm_ready` in status/health.
    - On timeout, spawn anyway and let the scanner handle retries.
 
-6. **Frontend hook completion toasts**
+6. ✅ **Frontend hook completion toasts** (DONE)
    - Add `onComplete` / `onError` optional callbacks to `useReconStatus` and `useGvmStatus`.
    - Invoke them when a transition into `completed`/`error` is detected.
 
-7. **Frontend SSE connection status**
+7. ✅ **Frontend SSE connection status** (DONE)
    - Ensure `useReconSSE` / `useGvmSSE` expose `isConnected`.
    - Add a small badge in `ReconLogsDrawer` showing connected/reconnecting/disconnected.
 
-8. **Frontend scan monitor**
+8. ✅ **Frontend scan monitor** (DONE)
    - Extend `GraphToolbar` to render a compact progress card when recon or GVM is active.
    - Show elapsed time, current phase, and severity counts from status stats/logs.
 
-9. **Frontend GVM readiness banner**
+9. ✅ **Frontend GVM readiness banner** (DONE)
    - Poll `/api/gvm/available` and show a non-blocking banner when `gvm_ready === false`.
 
-10. **Frontend API resilience**
+10. ✅ **Frontend API resilience** (DONE)
     - Add a small retry wrapper (`fetchWithRetry`) to the orchestrator-facing API routes.
 
 11. **Tests**
