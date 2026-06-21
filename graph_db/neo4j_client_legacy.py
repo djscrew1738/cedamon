@@ -288,7 +288,6 @@ class Neo4jClient:
                 session.run(stmt)
             except Exception:
                 print(f"[!] _init_schema: session.run(stmt)")
-                pass
 
         # Constraints (tenant-scoped for per-project nodes, global for shared reference nodes)
         constraints = [

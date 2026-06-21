@@ -170,7 +170,6 @@ def init_schema(session):
             session.run(stmt)
         except Exception:
             print(f"[!] init_schema: session.run(stmt)")
-            pass
 
     for query in CONSTRAINTS + TENANT_INDEXES + ADDITIONAL_INDEXES:
         try:

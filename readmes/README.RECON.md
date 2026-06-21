@@ -1595,6 +1595,94 @@ flowchart TB
 
 ---
 
+## 🔄 End-to-End Data Flow
+
+### Pipeline Output → Parsed Findings
+
+The recon pipeline produces a `combined_result` dict per phase. Meanwhile, the
+**agentic orchestrator** runs tools inside the pipeline container and parses their
+output through a registry-dispatched parser system.
+
+```
+Tool execution
+  └─ parse_tool_output(tool_name, raw_stdout)     # output_parsers.py
+      └─ returns structured dict
+          ├─ ports, services, technologies
+          ├─ subdomains, endpoints
+          ├─ vulnerabilities, credentials
+          └─ findings, parameters
+              └─ merged into TargetInfo via merge_from()
+```
+
+### Parsed Findings → Neo4j Graph
+
+After each pipeline phase, the orchestrator submits the phase results to
+Neo4j in a background thread:
+
+```
+main()                                      # main.py
+  └─ run_domain_recon() / run_port_scan()   # each phase → combined_result
+      └─ _graph_update_bg("update_graph_from_*", result)
+          └─ Neo4jClient.<mixin_method>()    # graph_db/mixins/recon/
+              ├─ update_graph_from_domain_discovery()
+              ├─ update_graph_from_port_scan()
+              ├─ update_graph_from_http_probe()
+              ├─ update_graph_from_resource_enum()
+              ├─ update_graph_from_vuln_scan()
+              └─ update_graph_from_js_recon()
+                  └─ MERGE Cypher → nodes + relationships
+```
+
+Each mixin method creates/updates nodes (Domain, Subdomain, IP, Port, Service,
+BaseURL, Endpoint, Technology, Vulnerability) and typed relationships
+(BELONGS_TO, RESOLVES_TO, HAS_PORT, RUNS_SERVICE, HAS_ENDPOINT, etc.).
+
+### Neo4j → UI Canvas
+
+The Next.js API layer queries Neo4j and formats results for the React frontend:
+
+```
+GET /api/graph?projectId=X                  # route.ts
+  └─ session.run(UNION CYPHER query)        # fetches all nodes + rels for project
+      └─ formatGraphRecords()               # format.ts
+          └─ returns { nodes, links }
+```
+
+The frontend polls/completes-driven refetch path:
+
+```
+useGraphData(projectId)                     # useGraphData.ts
+  └─ fetch /api/graph (with ETag)
+  └─ @tanstack/react-query with queryKey: ['graph', projectId]
+
+Refetch triggers:
+  ├─ useReconSSE (onLog → debounced 1.5s refetch)
+  ├─ status-change effects (completed/error → refetchFresh)
+  └─ agent websocket events (onRefetchGraph)
+```
+
+Canvas rendering layers data transformation:
+
+```
+raw { nodes, links }
+  └─ clusterGraphData()  # collapse >30 leaf neighbors
+      └─ useStableGraphData()  # preserve d3-force positions
+          └─ GraphCanvas  # auto-switches 2D/3D at 1500-node threshold
+              └─ DataTable / RedZoneTables  # specialized views
+```
+
+### Key Design Properties
+
+| Property | Mechanism |
+|----------|-----------|
+| **Event-driven refetch** | No timer polling — SSE log events trigger refetch with 1.5s debounce |
+| **Three-layer cache** | Browser, server in-memory (ETag), client-side ETag store |
+| **Fresh data on demand** | `?fresh=1` bypasses all cache layers |
+| **Background persistence** | Graph DB writes run in `ThreadPoolExecutor` to avoid blocking the pipeline |
+| **Position stability** | `useStableGraphData` reuses object references so d3-force preserves layout |
+
+---
+
 ## 🧪 Test Targets
 
 Safe, **legal** targets for security testing:

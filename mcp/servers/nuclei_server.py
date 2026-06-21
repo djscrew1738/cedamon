@@ -57,7 +57,6 @@ def _discover_custom_templates() -> str:
                     dirs_seen.add(rel_dir)
             except Exception:
                 print("[!] nuclei_server: failed to walk template directory")
-                pass
 
     if not templates:
         return ""

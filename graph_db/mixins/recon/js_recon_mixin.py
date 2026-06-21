@@ -52,7 +52,6 @@ class JsReconMixin:
                     return f"{parsed.scheme}://{parsed.netloc}"
             except Exception:
                 print(f"[!] _derive_base_url: parsed = urlparse(source_url)")
-                pass
             return ''
 
         def _filename_from_url(url: str) -> str:

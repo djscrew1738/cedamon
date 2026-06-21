@@ -139,7 +139,6 @@ def check_gvm_ready(
                     connection.disconnect()
                 except Exception:
                     print(f"[!] check_gvm_ready: connection.disconnect()")
-                    pass
 
     return {
         "ready": False,

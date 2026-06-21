@@ -31,6 +31,7 @@ from output_parsers import (  # noqa: E402
     parse_curl,
     parse_playwright,
     parse_searchsploit,
+    parse_masscan,
 )
 
 

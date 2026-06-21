@@ -21,23 +21,25 @@
 - Parser added to `agentic/output_parsers.py`
 - Registered in `PARSER_REGISTRY`
 
-### 🔲 Tier 1.1 — Remaining Non-Recon Silent Excepts
-**Files outside `recon/` still needing attention:**
+### ✅ Tier 1.1 — Remaining Non-Recon Silent Excepts — **DONE** (2026-06-20)
 
-| File | Line | Pattern |
-|------|------|---------|
-| `github_secret_hunt/github_secret_hunt.py` | 579 | `except: pass` |
-| `graph_db/mixins/recon/js_recon_mixin.py` | 53 | `except Exception: pass` |
-| `graph_db/neo4j_client_legacy.py` | 289 | `except Exception: pass` |
-| `graph_db/schema.py` | 171 | `except Exception: pass` |
-| `guinea_pigs/ai_surface_target/...py` | 136 | `except Exception: pass` |
-| `gvm_scan/gvm_scanner.py` | 176, 246 | `except Exception: pass` |
-| `gvm_scan/ready_probe.py` | 140 | `except Exception: pass` |
-| `knowledge_base/curation/data_ingestion.py` | 291, 386 | `except Exception: pass` |
-| `mcp/servers/metasploit_server.py` | 304 | `except: pass` |
-| `mcp/servers/network_recon_server.py` | 683 | `except Exception: pass` |
-| `mcp/servers/nuclei_server.py` | 58 | `except Exception: pass` |
-| `mcp/servers/terminal_server.py` | 173 | `except Exception: pass` |
+All 12 sites across 11 files fixed: removed trailing `pass` after print/log lines, and fixed bare `except:` → `except Exception:`.
+
+| File | What Changed |
+|------|-------------|
+| `github_secret_hunt/github_secret_hunt.py` | `except:` → `except Exception:`, removed trailing `pass` |
+| `graph_db/mixins/recon/js_recon_mixin.py` | Removed trailing `pass` after print |
+| `graph_db/neo4j_client_legacy.py` | Removed trailing `pass` after print |
+| `graph_db/schema.py` | Removed trailing `pass` after print |
+| `gvm_scan/gvm_scanner.py` (×2) | Removed trailing `pass` after `logger.warning()` |
+| `gvm_scan/ready_probe.py` | Removed trailing `pass` after print |
+| `knowledge_base/curation/data_ingestion.py` (×2) | Removed trailing `pass` after `logger.warning()` |
+| `mcp/servers/metasploit_server.py` | `except:` → `except Exception:` (×2), removed trailing `pass` |
+| `mcp/servers/network_recon_server.py` | Removed trailing `pass` after print |
+| `mcp/servers/nuclei_server.py` | Removed trailing `pass` after print |
+| `mcp/servers/terminal_server.py` | Removed trailing `pass` after `logger.warning()` |
+
+**Note:** `guinea_pigs/ai_surface_target/server.py` had no `except: pass` pattern at line 136 — was a false positive in the original scan.
 
 **Action:** Run `_fix_except_pass.py` with extended TARGETS list covering these modules.  
 **Effort:** Low (script already handles the patterns)  

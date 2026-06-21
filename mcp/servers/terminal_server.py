@@ -172,7 +172,6 @@ async def _run_pty_session(ws):
                 loop.remove_reader(master_fd)
             except Exception:
                 logger.warning("on_readable: loop.remove_reader(master_fd)", exc_info=True)
-                pass
 
     async def write_pty():
         """Read from WebSocket and forward to PTY master."""

@@ -789,7 +789,8 @@ class AgentState(TypedDict):
     conversation_objectives: List[dict]  # List of ConversationObjective.model_dump()
     current_objective_index: int
     objective_history: List[dict]  # List of ObjectiveOutcome.model_dump()
-    original_objective: str  # DEPRECATED: kept for backward compatibility
+    # original_objective removed; use conversation_objectives instead.
+    # Migration helper: migrate_legacy_objective() converts old saved state.
 
     # Target intelligence accumulated from queries
     target_info: dict  # TargetInfo.model_dump()
@@ -999,7 +1000,7 @@ def create_initial_state(
         "conversation_objectives": [first_objective],
         "current_objective_index": 0,
         "objective_history": [],
-        "original_objective": objective,  # Kept for backward compatibility
+        # original_objective removed; see migrate_legacy_objective()
         "target_info": TargetInfo().model_dump(),
         "user_id": user_id,
         "project_id": project_id,

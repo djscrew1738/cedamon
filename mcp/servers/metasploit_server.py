@@ -301,15 +301,14 @@ class PersistentMsfConsole:
                 try:
                     self.process.kill()
                     self.process.wait(timeout=5)
-                except:
+                except Exception:
                     print(f"[!] stop: process.kill()")
-                    pass
             else:
                 try:
                     self.process.stdin.write("exit -y\n")
                     self.process.stdin.flush()
                     self.process.wait(timeout=5)
-                except:
+                except Exception:
                     self.process.kill()
             print("[MSF] msfconsole stopped")
         self.process = None

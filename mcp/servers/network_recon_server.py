@@ -682,7 +682,6 @@ def execute_hydra(args: str) -> str:
                     _hydra_output.append(clean_line)
         except Exception:
             print(f"[!] execute_hydra: for line in proc.stdout")
-            pass
 
         # Wait for process to finish (should already be done after stdout EOF)
         try:
