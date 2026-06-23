@@ -28,12 +28,16 @@ from .log_helpers import (
     is_sensitive_key,
 )
 
+# Shared file/process utilities
+from ._file_utils import (
+    get_real_user_ids,
+    fix_file_ownership,
+)
+
 # Docker utilities
 from .docker_helpers import (
     is_docker_installed,
     is_docker_running,
-    get_real_user_ids,
-    fix_file_ownership,
     pull_nuclei_docker_image,
     pull_katana_docker_image,
     ensure_templates_volume,

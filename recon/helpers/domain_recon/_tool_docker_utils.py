@@ -4,10 +4,10 @@ Shared utilities for Docker-based recon helpers.
 import logging
 import os
 import platform
-import shutil
 import subprocess
-import uuid
 from pathlib import Path
+
+from recon.helpers._file_utils import create_temp_dir, cleanup_temp_dir
 
 logger = logging.getLogger(__name__)
 
@@ -16,24 +16,6 @@ def is_arm64_host() -> bool:
     """Return True when running on an ARM64 host."""
     machine = platform.machine().lower()
     return machine in ("arm64", "aarch64")
-
-
-def create_temp_dir(prefix: str) -> Path:
-    """Create a temp directory under REDAMON_TEMP_DIR or /tmp/redamon."""
-    base = Path(os.environ.get("REDAMON_TEMP_DIR", "/tmp/redamon"))
-    temp_dir = base / f".{prefix}_{uuid.uuid4().hex[:8]}"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    return temp_dir
-
-
-def cleanup_temp_dir(temp_dir: Path):
-    """Clean up a temp directory, ignoring errors."""
-    try:
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-    except Exception:
-        logger.warning("cleanup_temp_dir: if temp_dir.exists()", exc_info=True)
-        pass
 
 
 def pull_docker_image(docker_image: str, timeout: int = 300) -> bool:

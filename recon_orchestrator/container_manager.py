@@ -166,6 +166,43 @@ class ContainerManager:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
 
+    async def _exec_with_retry(
+        self, fn, *args, max_retries: int = 3, backoff_base: float = 1.0, **kwargs
+    ):
+        """Run a synchronous Docker call with exponential-backoff retry.
+
+        Retries on any Exception (transient Docker daemon failures, network
+        blips) using exponential backoff: 1s, 4s, 16s, …
+
+        Args:
+            fn: Synchronous callable to invoke via _exec.
+            max_retries: Maximum number of attempts (default 3).
+            backoff_base: Base delay in seconds (doubles each attempt).
+            *args, **kwargs: Forwarded to fn.
+
+        Returns:
+            The return value of fn(*args, **kwargs).
+
+        Raises:
+            RuntimeError: If all retries are exhausted (wraps the last exception).
+        """
+        import asyncio as _asyncio
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                return await self._exec(fn, *args, **kwargs)
+            except Exception as exc:
+                if attempt == max_retries:
+                    raise RuntimeError(
+                        f"{fn.__name__} failed after {max_retries} attempts: {exc}"
+                    ) from exc
+                delay = backoff_base * (2 ** (attempt - 1))
+                logger.warning(
+                    "%s attempt %d/%d failed: %s. Retrying in %.0fs …",
+                    fn.__name__, attempt, max_retries, exc, delay,
+                )
+                await _asyncio.sleep(delay)
+
     async def _ensure_recon_image(self, context: str = "") -> None:
         """Ensure the recon Docker image exists, building it if necessary.
 
@@ -662,7 +699,7 @@ class ContainerManager:
                 )
 
                 # Start container with environment variables
-                container = await self._exec(
+                container = await self._exec_with_retry(
                     self.client.containers.run,
                     self.recon_image,
                     name=container_name,
@@ -1423,7 +1460,7 @@ class ContainerManager:
             )
 
             # Start container with the partial_recon.py entry point
-            container = await self._exec(
+            container = await self._exec_with_retry(
                 self.client.containers.run,
                 self.recon_image,
                 name=container_name,

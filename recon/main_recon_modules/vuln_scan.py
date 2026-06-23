@@ -985,6 +985,7 @@ def run_vuln_scan(recon_data: dict, output_file: Path = None, settings: dict = N
                         ["docker", "run", "--rm", "-v", f"{nuclei_temp_dir}:/cleanup",
                          "alpine", "rm", "-f", f"/cleanup/{Path(path_str).name}"],
                         capture_output=True,
+                        timeout=30,
                     )
 
             try:

@@ -31,6 +31,9 @@ from helpers.iana_services import get_service_name_friendly as get_service_name
 # AI surface recon — port catalogue lookup for AI runtimes / vector DBs / frontends
 from helpers.ai_signal_catalog import lookup_ai_port
 
+# Shared file/process utilities
+from recon.helpers._file_utils import get_real_user_ids, fix_file_ownership
+
 # Settings are passed from main.py to avoid multiple database queries
 
 
@@ -472,30 +475,6 @@ def parse_naabu_output(output_file: str, settings: dict = None) -> Dict:
         "all_ports": all_ports_sorted,
         "summary": summary
     }
-
-
-# =============================================================================
-# File Ownership Handling
-# =============================================================================
-
-def get_real_user_ids() -> tuple:
-    """Get the real user/group IDs (handles sudo)."""
-    sudo_uid = os.environ.get('SUDO_UID')
-    sudo_gid = os.environ.get('SUDO_GID')
-
-    if sudo_uid and sudo_gid:
-        return (int(sudo_uid), int(sudo_gid))
-    return (os.getuid(), os.getgid())
-
-
-def fix_file_ownership(file_path: Path) -> None:
-    """Fix file ownership for files created by Docker (as root)."""
-    try:
-        uid, gid = get_real_user_ids()
-        os.chown(str(file_path), uid, gid)
-    except Exception:
-        print(f"[!] fix_file_ownership: uid, gid = get_real_user_ids()")
-        pass  # Silently ignore if we can't change ownership
 
 
 # =============================================================================

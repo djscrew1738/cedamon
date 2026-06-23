@@ -9,6 +9,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
+# Shared file/process utilities
+from recon.helpers._file_utils import get_real_user_ids, fix_file_ownership
+
 # Volume name for persistent nuclei templates
 NUCLEI_TEMPLATES_VOLUME = "nuclei-templates"
 
@@ -115,44 +118,6 @@ def is_docker_running() -> bool:
         return result.returncode == 0
     except Exception:
         return False
-
-
-def get_real_user_ids() -> tuple:
-    """
-    Get the real user's UID and GID, even when running under sudo.
-    This ensures Docker creates files owned by the actual user, not root.
-    """
-    # Check if running under sudo - use original user's IDs
-    sudo_uid = os.environ.get('SUDO_UID')
-    sudo_gid = os.environ.get('SUDO_GID')
-    
-    if sudo_uid and sudo_gid:
-        return int(sudo_uid), int(sudo_gid)
-    
-    # Not running under sudo, use current user
-    return os.getuid(), os.getgid()
-
-
-def fix_file_ownership(file_path: Path) -> None:
-    """
-    Fix ownership of Docker-created files to match the real user.
-    Docker often creates files as root, which breaks normal user access.
-    """
-    try:
-        uid, gid = get_real_user_ids()
-        
-        # Only change ownership if we're root (can actually do it)
-        if os.getuid() == 0:
-            os.chown(file_path, uid, gid)
-            
-        # Also fix parent directory if needed
-        parent = file_path.parent
-        if parent.exists() and os.getuid() == 0:
-            os.chown(parent, uid, gid)
-            
-    except Exception as e:
-        # Non-fatal - file might still be usable
-        print(f"[!][Docker] Warning: Could not fix file ownership: {e}")
 
 
 # =============================================================================

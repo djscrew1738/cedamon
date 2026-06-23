@@ -45,6 +45,9 @@ from helpers.ai_signal_catalog import (
     match_ai_body_fingerprint,
 )
 
+# Shared file/process utilities
+from recon.helpers._file_utils import get_real_user_ids, fix_file_ownership
+
 # Settings are passed from main.py to avoid multiple database queries
 
 
@@ -1636,30 +1639,6 @@ def enhance_with_wappalyzer(httpx_results: Dict, settings: dict = None) -> Dict:
                   ("..." if len(wappalyzer_data["new_technologies"]) > 10 else ""))
     
     return httpx_results
-
-
-# =============================================================================
-# File Ownership Handling
-# =============================================================================
-
-def get_real_user_ids() -> tuple:
-    """Get the real user/group IDs (handles sudo)."""
-    sudo_uid = os.environ.get('SUDO_UID')
-    sudo_gid = os.environ.get('SUDO_GID')
-
-    if sudo_uid and sudo_gid:
-        return (int(sudo_uid), int(sudo_gid))
-    return (os.getuid(), os.getgid())
-
-
-def fix_file_ownership(file_path: Path) -> None:
-    """Fix file ownership for files created by Docker (as root)."""
-    try:
-        uid, gid = get_real_user_ids()
-        os.chown(str(file_path), uid, gid)
-    except Exception:
-        print(f"[!] fix_file_ownership: uid, gid = get_real_user_ids()")
-        pass
 
 
 # =============================================================================

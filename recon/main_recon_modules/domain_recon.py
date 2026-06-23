@@ -760,7 +760,8 @@ def run_puredns_resolve(subdomains: list, domain: str, settings: dict = None) ->
                 subprocess.run(
                     ["docker", "run", "--rm", "-v", f"{data_dir}:/cleanup",
                      "alpine", "rm", "-f", f"/cleanup/{tmp.name}"],
-                    capture_output=True
+                    capture_output=True,
+                    timeout=30,
                 )
 
 
