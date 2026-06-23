@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { GraphToolbar } from './components/GraphToolbar'
+import { GraphToolbarProvider } from './components/GraphToolbar/GraphToolbarContext'
 import { FileSystemDrawer } from './components/FileSystemDrawer'
 import { GraphCanvas, AUTO_2D_THRESHOLD } from './components/GraphCanvas'
 import { NodeDrawer } from './components/NodeDrawer'
@@ -1427,84 +1428,74 @@ export default function GraphPage() {
 
   return (
     <div className={styles.page}>
-      <GraphToolbar
-        projectId={projectId || ''}
-        is3D={is3D}
-        showLabels={showLabels}
-        onToggle3D={setIs3D}
-        onToggleLabels={setShowLabels}
-        onToggleAI={handleToggleAI}
-        isAIOpen={isAIOpen}
-        onOpenFileSystem={toggleFileSystemDrawer}
-        isFileSystemOpen={isFileSystemOpen}
-        // Target info
-        targetDomain={currentProject?.targetDomain}
-        subdomainList={currentProject?.subdomainList}
-        // Recon props
-        onStartRecon={handleStartRecon}
-        onPauseRecon={handlePauseRecon}
-        onResumeRecon={handleResumeRecon}
-        onStopRecon={handleStopRecon}
-        onDownloadJSON={handleDownloadJSON}
-        onToggleLogs={handleToggleLogs}
-        reconStatus={reconState?.status || 'idle'}
-        hasReconData={hasReconData}
-        isLogsOpen={openLogTabs.includes('recon')}
-        // GVM props
-        gvmAvailable={gvmAvailable}
-        gvmReady={gvmReady}
-        gvmReadinessMessage={gvmReadinessMessage}
-        onStartGvm={handleStartGvm}
-        onPauseGvm={handlePauseGvm}
-        onResumeGvm={handleResumeGvm}
-        onStopGvm={handleStopGvm}
-        onDownloadGvmJSON={handleDownloadGvmJSON}
-        onToggleGvmLogs={handleToggleGvmLogs}
-        gvmStatus={gvmState?.status || 'idle'}
-        hasGvmData={hasGvmData}
-        isGvmLogsOpen={openLogTabs.includes('gvm')}
-        // GitHub Hunt props
-        onStartGithubHunt={handleStartGithubHunt}
-        onPauseGithubHunt={handlePauseGithubHunt}
-        onResumeGithubHunt={handleResumeGithubHunt}
-        onStopGithubHunt={handleStopGithubHunt}
-        onDownloadGithubHuntJSON={handleDownloadGithubHuntJSON}
-        onToggleGithubHuntLogs={handleToggleGithubHuntLogs}
-        githubHuntStatus={githubHuntState?.status || 'idle'}
-        hasGithubHuntData={hasGithubHuntData}
-        isGithubHuntLogsOpen={openLogTabs.includes('githubHunt')}
-        // TruffleHog props
-        onStartTrufflehog={handleStartTrufflehog}
-        onPauseTrufflehog={handlePauseTrufflehog}
-        onResumeTrufflehog={handleResumeTrufflehog}
-        onStopTrufflehog={handleStopTrufflehog}
-        onDownloadTrufflehogJSON={handleDownloadTrufflehogJSON}
-        onToggleTrufflehogLogs={handleToggleTrufflehogLogs}
-        trufflehogStatus={trufflehogState?.status || 'idle'}
-        hasTrufflehogData={hasTrufflehogData}
-        isTrufflehogLogsOpen={openLogTabs.includes('trufflehog')}
-        // Partial Recon props (multi-run)
-        activePartialRecons={activePartialRecons}
-        activePartialReconLogsDrawer={activePartialReconRunId}
-        onStopPartialRecon={handleStopPartialRecon}
-        onTogglePartialReconLogs={handleTogglePartialReconLogs}
-        // Other Scans modal
-        onToggleOtherScansModal={() => setIsOtherScansModalOpen(prev => !prev)}
-        // Stealth mode
-        stealthMode={currentProject?.stealthMode}
-        // RoE
-        roeEnabled={currentProject?.roeEnabled}
-        // Emergency Pause All
-        onEmergencyPauseAll={handleEmergencyPauseAll}
-        isAnyPipelineRunning={isAnyPipelineRunning}
-        isEmergencyPausing={isEmergencyPausing}
-        tunnelStatus={tunnelStatus}
-        // Live scan progress
-        activeScans={activeScans}
-        // Agent status
-        agentActiveCount={agentSummary.activeCount}
-        agentConversations={agentSummary.conversations}
-      />
+      <GraphToolbarProvider value={{
+        projectId: projectId || '',
+        is3D,
+        showLabels,
+        onToggle3D: setIs3D,
+        onToggleLabels: setShowLabels,
+        onToggleAI: handleToggleAI,
+        isAIOpen,
+        onOpenFileSystem: toggleFileSystemDrawer,
+        isFileSystemOpen,
+        targetDomain: currentProject?.targetDomain,
+        subdomainList: currentProject?.subdomainList,
+        onStartRecon: handleStartRecon,
+        onPauseRecon: handlePauseRecon,
+        onResumeRecon: handleResumeRecon,
+        onStopRecon: handleStopRecon,
+        onDownloadJSON: handleDownloadJSON,
+        onToggleLogs: handleToggleLogs,
+        reconStatus: reconState?.status || 'idle',
+        hasReconData,
+        isLogsOpen: openLogTabs.includes('recon'),
+        gvmAvailable,
+        gvmReady,
+        gvmReadinessMessage,
+        onStartGvm: handleStartGvm,
+        onPauseGvm: handlePauseGvm,
+        onResumeGvm: handleResumeGvm,
+        onStopGvm: handleStopGvm,
+        onDownloadGvmJSON: handleDownloadGvmJSON,
+        onToggleGvmLogs: handleToggleGvmLogs,
+        gvmStatus: gvmState?.status || 'idle',
+        hasGvmData,
+        isGvmLogsOpen: openLogTabs.includes('gvm'),
+        onStartGithubHunt: handleStartGithubHunt,
+        onPauseGithubHunt: handlePauseGithubHunt,
+        onResumeGithubHunt: handleResumeGithubHunt,
+        onStopGithubHunt: handleStopGithubHunt,
+        onDownloadGithubHuntJSON: handleDownloadGithubHuntJSON,
+        onToggleGithubHuntLogs: handleToggleGithubHuntLogs,
+        githubHuntStatus: githubHuntState?.status || 'idle',
+        hasGithubHuntData,
+        isGithubHuntLogsOpen: openLogTabs.includes('githubHunt'),
+        onStartTrufflehog: handleStartTrufflehog,
+        onPauseTrufflehog: handlePauseTrufflehog,
+        onResumeTrufflehog: handleResumeTrufflehog,
+        onStopTrufflehog: handleStopTrufflehog,
+        onDownloadTrufflehogJSON: handleDownloadTrufflehogJSON,
+        onToggleTrufflehogLogs: handleToggleTrufflehogLogs,
+        trufflehogStatus: trufflehogState?.status || 'idle',
+        hasTrufflehogData,
+        isTrufflehogLogsOpen: openLogTabs.includes('trufflehog'),
+        activePartialRecons,
+        activePartialReconLogsDrawer: activePartialReconRunId,
+        onStopPartialRecon: handleStopPartialRecon,
+        onTogglePartialReconLogs: handleTogglePartialReconLogs,
+        onToggleOtherScansModal: () => setIsOtherScansModalOpen(prev => !prev),
+        stealthMode: currentProject?.stealthMode,
+        roeEnabled: currentProject?.roeEnabled,
+        onEmergencyPauseAll: handleEmergencyPauseAll,
+        isAnyPipelineRunning,
+        isEmergencyPausing,
+        tunnelStatus,
+        activeScans,
+        agentActiveCount: agentSummary.activeCount,
+        agentConversations: agentSummary.conversations,
+      }}>
+        <GraphToolbar />
+      </GraphToolbarProvider>
 
       <OtherScansModal
         isOpen={isOtherScansModalOpen}

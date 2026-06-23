@@ -3,177 +3,81 @@
 import { Bot, Play, Download, Loader2, Terminal, Shield, Github, Target, Zap, MessageSquare, Pause, Square, ShieldAlert, FolderOpen } from 'lucide-react'
 import { StealthIcon } from '@/components/icons/StealthIcon'
 import { Toggle, WikiInfoButton } from '@/components/ui'
-import type { ReconStatus, GvmStatus, GithubHuntStatus, TrufflehogStatus, PartialReconState } from '@/lib/recon-types'
 import { PartialReconBadges } from '@/components/PartialReconBadges'
-import { ScanProgressMonitor, type ActiveScan } from '@/app/graph/components/ScanProgressMonitor'
+import { ScanProgressMonitor } from '@/app/graph/components/ScanProgressMonitor'
 import { GvmReadinessBanner } from '@/app/graph/components/GvmReadinessBanner'
+import { useGraphToolbar } from './GraphToolbarContext'
 import styles from './GraphToolbar.module.css'
 
-interface GraphToolbarProps {
-  projectId: string
-  is3D: boolean
-  showLabels: boolean
-  onToggle3D: (value: boolean) => void
-  onToggleLabels: (value: boolean) => void
-  onToggleAI?: () => void
-  isAIOpen?: boolean
-  onOpenFileSystem?: () => void
-  isFileSystemOpen?: boolean
-  // Target info
-  targetDomain?: string
-  subdomainList?: string[]
-  // Recon props
-  onStartRecon?: () => void
-  onPauseRecon?: () => void
-  onResumeRecon?: () => void
-  onStopRecon?: () => void
-  onDownloadJSON?: () => void
-  onToggleLogs?: () => void
-  reconStatus?: ReconStatus
-  hasReconData?: boolean
-  isLogsOpen?: boolean
-  // GVM props
-  gvmAvailable?: boolean
-  gvmReady?: boolean
-  gvmReadinessMessage?: string
-  onStartGvm?: () => void
-  onPauseGvm?: () => void
-  onResumeGvm?: () => void
-  onStopGvm?: () => void
-  onDownloadGvmJSON?: () => void
-  onToggleGvmLogs?: () => void
-  gvmStatus?: GvmStatus
-  hasGvmData?: boolean
-  isGvmLogsOpen?: boolean
-  // GitHub Hunt props
-  onStartGithubHunt?: () => void
-  onPauseGithubHunt?: () => void
-  onResumeGithubHunt?: () => void
-  onStopGithubHunt?: () => void
-  onDownloadGithubHuntJSON?: () => void
-  onToggleGithubHuntLogs?: () => void
-  githubHuntStatus?: GithubHuntStatus
-  hasGithubHuntData?: boolean
-  isGithubHuntLogsOpen?: boolean
-  // TruffleHog props
-  onStartTrufflehog?: () => void
-  onPauseTrufflehog?: () => void
-  onResumeTrufflehog?: () => void
-  onStopTrufflehog?: () => void
-  onDownloadTrufflehogJSON?: () => void
-  onToggleTrufflehogLogs?: () => void
-  trufflehogStatus?: TrufflehogStatus
-  hasTrufflehogData?: boolean
-  isTrufflehogLogsOpen?: boolean
-  // Partial Recon props (multi-run)
-  activePartialRecons?: PartialReconState[]
-  activePartialReconLogsDrawer?: string | null  // run_id of currently open logs drawer
-  onStopPartialRecon?: (runId: string) => void
-  onTogglePartialReconLogs?: (runId: string) => void
-  // Other Scans modal
-  onToggleOtherScansModal?: () => void
-  // Stealth mode
-  stealthMode?: boolean
-  // RoE
-  roeEnabled?: boolean
-  // Emergency Pause All
-  onEmergencyPauseAll?: () => void
-  isAnyPipelineRunning?: boolean
-  isEmergencyPausing?: boolean
-  // Live scan progress
-  activeScans?: ActiveScan[]
-  // Tunnel status (displayed next to Pause All)
-  tunnelStatus?: { ngrok?: { active: boolean; host?: string; port?: number }; chisel?: { active: boolean; host?: string; port?: number; srvPort?: number } }
-  // Agent status
-  agentActiveCount?: number
-  agentConversations?: Array<{
-    id: string
-    title: string
-    currentPhase: string
-    iterationCount: number
-    agentRunning: boolean
-    sessionId: string
-  }>
-}
+interface GraphToolbarProps {}
 
-export function GraphToolbar({
-  projectId,
-  is3D,
-  showLabels,
-  onToggle3D,
-  onToggleLabels,
-  onToggleAI,
-  isAIOpen = false,
-  onOpenFileSystem,
-  isFileSystemOpen = false,
-  // Target info
-  targetDomain,
-  subdomainList = [],
-  // Recon props
-  onStartRecon,
-  onPauseRecon,
-  onResumeRecon,
-  onStopRecon,
-  onDownloadJSON,
-  onToggleLogs,
-  reconStatus = 'idle',
-  hasReconData = false,
-  isLogsOpen = false,
-  // GVM props
-  gvmAvailable = true,
-  gvmReady = true,
-  gvmReadinessMessage,
-  onStartGvm,
-  onPauseGvm,
-  onResumeGvm,
-  onStopGvm,
-  onDownloadGvmJSON,
-  onToggleGvmLogs,
-  gvmStatus = 'idle',
-  hasGvmData = false,
-  isGvmLogsOpen = false,
-  // GitHub Hunt props
-  onStartGithubHunt,
-  onPauseGithubHunt,
-  onResumeGithubHunt,
-  onStopGithubHunt,
-  onDownloadGithubHuntJSON,
-  onToggleGithubHuntLogs,
-  githubHuntStatus = 'idle',
-  hasGithubHuntData = false,
-  isGithubHuntLogsOpen = false,
-  // TruffleHog props
-  onStartTrufflehog,
-  onPauseTrufflehog,
-  onResumeTrufflehog,
-  onStopTrufflehog,
-  onDownloadTrufflehogJSON,
-  onToggleTrufflehogLogs,
-  trufflehogStatus = 'idle',
-  hasTrufflehogData = false,
-  isTrufflehogLogsOpen = false,
-  // Partial Recon props (multi-run)
-  activePartialRecons = [],
-  activePartialReconLogsDrawer = null,
-  onStopPartialRecon,
-  onTogglePartialReconLogs,
-  // Other Scans modal
-  onToggleOtherScansModal,
-  // Stealth mode
-  stealthMode = false,
-  // RoE
-  roeEnabled = false,
-  // Emergency Pause All
-  onEmergencyPauseAll,
-  isAnyPipelineRunning = false,
-  isEmergencyPausing = false,
-  tunnelStatus,
-  // Live scan progress
-  activeScans = [],
-  // Agent status
-  agentActiveCount = 0,
-  agentConversations = [],
-}: GraphToolbarProps) {
+export function GraphToolbar({}: GraphToolbarProps) {
+  const {
+    projectId,
+    is3D,
+    showLabels,
+    onToggle3D,
+    onToggleLabels,
+    onToggleAI,
+    isAIOpen = false,
+    onOpenFileSystem,
+    isFileSystemOpen = false,
+    targetDomain,
+    subdomainList = [],
+    onStartRecon,
+    onPauseRecon,
+    onResumeRecon,
+    onStopRecon,
+    onDownloadJSON,
+    onToggleLogs,
+    reconStatus = 'idle',
+    hasReconData = false,
+    isLogsOpen = false,
+    gvmAvailable = true,
+    gvmReady = true,
+    gvmReadinessMessage,
+    onStartGvm,
+    onPauseGvm,
+    onResumeGvm,
+    onStopGvm,
+    onDownloadGvmJSON,
+    onToggleGvmLogs,
+    gvmStatus = 'idle',
+    hasGvmData = false,
+    isGvmLogsOpen = false,
+    onStartGithubHunt,
+    onPauseGithubHunt,
+    onResumeGithubHunt,
+    onStopGithubHunt,
+    onDownloadGithubHuntJSON,
+    onToggleGithubHuntLogs,
+    githubHuntStatus = 'idle',
+    hasGithubHuntData = false,
+    isGithubHuntLogsOpen = false,
+    onStartTrufflehog,
+    onPauseTrufflehog,
+    onResumeTrufflehog,
+    onStopTrufflehog,
+    onDownloadTrufflehogJSON,
+    onToggleTrufflehogLogs,
+    trufflehogStatus = 'idle',
+    hasTrufflehogData = false,
+    isTrufflehogLogsOpen = false,
+    activePartialRecons = [],
+    activePartialReconLogsDrawer = null,
+    onStopPartialRecon,
+    onTogglePartialReconLogs,
+    onToggleOtherScansModal,
+    stealthMode = false,
+    roeEnabled = false,
+    onEmergencyPauseAll,
+    isAnyPipelineRunning = false,
+    isEmergencyPausing = false,
+    tunnelStatus,
+    activeScans = [],
+    agentActiveCount = 0,
+    agentConversations = [],
+  } = useGraphToolbar()
   const isReconBusy = reconStatus === 'running' || reconStatus === 'starting'
   const isReconStopping = reconStatus === 'stopping'
   const isReconRunning = isReconBusy || isReconStopping

@@ -12,14 +12,52 @@ import { useAuth } from '@/providers/AuthProvider'
 import { useProject } from '@/providers/ProjectProvider'
 import styles from './GlobalHeader.module.css'
 
+interface PipelineStatus {
+  recon?: { status: string }
+  gvm?: { status: string }
+  githubHunt?: { status: string }
+}
+
 const SWIPE_CLOSE_THRESHOLD = 40
 
-export function GlobalHeader() {
+const STATUS_COLORS: Record<string, string> = {
+  running: '#22c55e',
+  starting: '#eab308',
+  paused: '#f97316',
+  error: '#ef4444',
+  stopping: '#ef4444',
+  completed: '#22c55e',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  running: 'Running',
+  starting: 'Starting',
+  paused: 'Paused',
+  error: 'Error',
+  stopping: 'Stopping',
+}
+
+function getStatusColor(status: string): string {
+  return STATUS_COLORS[status] || '#6b7280'
+}
+
+function getStatusLabel(pipeline: string, status: string): string {
+  const label = STATUS_LABELS[status] || status.charAt(0).toUpperCase() + status.slice(1)
+  const names: Record<string, string> = {
+    recon: 'Recon',
+    gvm: 'GVM Scan',
+    githubHunt: 'GitHub Hunt',
+  }
+  return `${names[pipeline] || pipeline}: ${label}`
+}
+
+export function GlobalHeader({ reconStatus: reconStatusProp, gvmStatus: gvmStatusProp }: { reconStatus?: string; gvmStatus?: string } = {}) {
   const pathname = usePathname()
   const { isAdmin } = useAuth()
   const { projectId } = useProject()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const touchStartXRef = useRef<number | null>(null)
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null)
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -35,6 +73,34 @@ export function GlobalHeader() {
     }
     return () => { document.body.style.overflow = '' }
   }, [mobileMenuOpen])
+
+  // Poll pipeline status when projectId is available and no prop overrides given
+  useEffect(() => {
+    if (!projectId || reconStatusProp || gvmStatusProp) return
+    let cancelled = false
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`/api/analytics/pipeline-status?projectId=${projectId}`)
+        if (res.ok && !cancelled) setPipelineStatus(await res.json())
+      } catch { /* ignore */ }
+    }
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 10000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [projectId, reconStatusProp, gvmStatusProp])
+
+  // Resolve effective status for each pipeline (prop override > polled data)
+  const effectiveReconStatus = reconStatusProp || pipelineStatus?.recon?.status
+  const effectiveGvmStatus = gvmStatusProp || pipelineStatus?.gvm?.status
+  const effectiveGithubHuntStatus = pipelineStatus?.githubHunt?.status
+
+  const activePipelines = [
+    { key: 'recon', status: effectiveReconStatus },
+    { key: 'gvm', status: effectiveGvmStatus },
+    { key: 'githubHunt', status: effectiveGithubHuntStatus },
+  ].filter((p): p is { key: string; status: string } =>
+    !!p.status && !['idle', 'completed'].includes(p.status)
+  )
 
   const coreNav = [
     { label: 'Red Zone', href: '/graph', icon: <Crosshair size={16} /> },
@@ -66,6 +132,23 @@ export function GlobalHeader() {
       </Link>
 
       <div className={styles.spacer} />
+
+      {/* Pipeline status pills */}
+      {activePipelines.length > 0 && (
+        <div className={styles.pipelinePills}>
+          {activePipelines.map(p => (
+            <Link
+              key={p.key}
+              href="/graph"
+              className={styles.pipelinePill}
+              title={getStatusLabel(p.key, p.status)}
+            >
+              <span className={styles.pipelineDot} style={{ backgroundColor: getStatusColor(p.status) }} />
+              <span>{getStatusLabel(p.key, p.status)}</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Desktop navigation */}
       <div className={styles.actions}>
