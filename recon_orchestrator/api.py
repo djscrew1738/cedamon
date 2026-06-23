@@ -193,6 +193,16 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_prebuild_gvm_image())
 
+    # Pre-build the recon image in the background so the first recon
+    # doesn't have to wait for a synchronous Docker build.
+    async def _prebuild_recon_image():
+        try:
+            await container_manager._ensure_recon_image(context="(background pre-build)")
+        except Exception as e:
+            logger.warning(f"Background recon image pre-build failed: {e}")
+
+    asyncio.create_task(_prebuild_recon_image())
+
     yield
     logger.info("Shutting down Recon Orchestrator...")
     await container_manager.shutdown()

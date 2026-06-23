@@ -7,6 +7,7 @@ interface UseGithubHuntStatusOptions {
   projectId: string | null
   enabled?: boolean
   pollingInterval?: number
+  staggerMs?: number // stagger the initial poll to spread out requests
   onStatusChange?: (status: GithubHuntStatus) => void
   onComplete?: () => void
   onError?: (error: string) => void
@@ -30,6 +31,7 @@ export function useGithubHuntStatus({
   projectId,
   enabled = true,
   pollingInterval = DEFAULT_POLLING_INTERVAL,
+  staggerMs = 0,
   onStatusChange,
   onComplete,
   onError,
@@ -213,7 +215,7 @@ export function useGithubHuntStatus({
     fetchStatus()
   }, [projectId, enabled, fetchStatus])
 
-  // Smart polling
+  // Smart polling - uses staggerMs to offset the initial poll
   useEffect(() => {
     if (!projectId || !enabled) return
 
@@ -225,15 +227,18 @@ export function useGithubHuntStatus({
     const isRunning = state?.status === 'running' || state?.status === 'starting' || state?.status === 'paused'
     const interval = isRunning ? pollingInterval : IDLE_POLLING_INTERVAL
 
-    pollingRef.current = setInterval(fetchStatus, interval)
+    const timerId = setTimeout(() => {
+      pollingRef.current = setInterval(fetchStatus, interval)
+    }, staggerMs)
 
     return () => {
+      clearTimeout(timerId)
       if (pollingRef.current) {
         clearInterval(pollingRef.current)
         pollingRef.current = null
       }
     }
-  }, [projectId, enabled, pollingInterval, fetchStatus, state?.status])
+  }, [projectId, enabled, pollingInterval, staggerMs, fetchStatus, state?.status])
 
   return {
     state,

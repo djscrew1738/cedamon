@@ -99,6 +99,10 @@ class ContainerManager:
         self.gvm_states: dict[str, GvmState] = {}
         self.github_hunt_states: dict[str, GithubHuntState] = {}
         self.trufflehog_states: dict[str, TrufflehogState] = {}
+        # Track webapp API URLs per project for mid-run RoE re-validation
+        self._project_webapp_urls: dict[str, str] = {}
+        # Track last RoE check time per project (throttle to every 5 min)
+        self._last_roe_check: dict[str, datetime] = {}
         self._start_locks: dict[str, asyncio.Lock] = {}
         # Track sub-containers per run for selective cleanup.
         # Key: project_id or partial run_id, Value: set of container IDs.
@@ -425,6 +429,8 @@ class ContainerManager:
             self._save_state()
 
             try:
+                # Store webapp API URL for mid-run RoE re-validation
+                self._project_webapp_urls[project_id] = webapp_api_url
                 # Ensure recon image exists (with retry)
                 await self._ensure_recon_image(context=f"for project {project_id}")
 
@@ -710,6 +716,77 @@ class ContainerManager:
             level=level,
         )
 
+    async def _check_roe_mid_run(self, project_id: str) -> bool:
+        """Re-validate the RoE time window mid-run.
+
+        Returns True if the recon should continue, False if it should stop
+        (i.e., the current time is outside the allowed window).
+        """
+        webapp_api_url = self._project_webapp_urls.get(project_id)
+        if not webapp_api_url:
+            return True  # No URL stored — can't check, proceed
+
+        # Throttle checks to at most once every 5 minutes
+        now = datetime.now(timezone.utc)
+        last_check = self._last_roe_check.get(project_id)
+        if last_check and (now - last_check) < timedelta(minutes=5):
+            return True
+        self._last_roe_check[project_id] = now
+
+        try:
+            from api import _fetch_project_json
+            project = await _fetch_project_json(webapp_api_url, project_id)
+            if not project:
+                return True  # Can't fetch — proceed
+
+            if not (project.get('roeEnabled') and project.get('roeTimeWindowEnabled')):
+                return True  # RoE not enabled — proceed
+
+            try:
+                import zoneinfo
+            except ImportError:
+                from backports import zoneinfo
+
+            tz_name = project.get('roeTimeWindowTimezone', 'UTC')
+            tz = zoneinfo.ZoneInfo(tz_name)
+            now_local = datetime.now(tz)
+            day_name = now_local.strftime('%A').lower()
+            allowed_days = project.get('roeTimeWindowDays', [])
+            start_time = project.get('roeTimeWindowStartTime', '09:00')
+            end_time = project.get('roeTimeWindowEndTime', '18:00')
+            current_time = now_local.strftime('%H:%M')
+
+            if day_name not in allowed_days:
+                logger.warning(
+                    f"RoE mid-run blocked project_id={project_id}: "
+                    f"day={day_name} not in {allowed_days}"
+                )
+                return False
+
+            if start_time <= end_time:
+                outside = current_time < start_time or current_time > end_time
+            else:
+                outside = current_time < start_time and current_time > end_time
+            if outside:
+                logger.warning(
+                    f"RoE mid-run blocked project_id={project_id}: "
+                    f"time={current_time} outside window {start_time}-{end_time} {tz_name}"
+                )
+                return False
+
+            logger.info(
+                f"RoE mid-run passed project_id={project_id} "
+                f"day={day_name} time={current_time}"
+            )
+            return True
+
+        except Exception as e:
+            logger.warning(
+                f"RoE mid-run check failed for project_id={project_id} "
+                f"(proceeding): {e}"
+            )
+            return True  # Error — proceed to be safe
+
     async def stream_logs(self, project_id: str) -> AsyncGenerator[ReconLogEvent, None]:
         """Stream logs from a recon container"""
         state = await self.get_status(project_id)
@@ -836,6 +913,24 @@ class ContainerManager:
                                 self.running_states[project_id].current_phase = current_phase
                                 self.running_states[project_id].phase_number = current_phase_num
 
+                            # Re-validate RoE time window on phase transitions
+                            if not await self._check_roe_mid_run(project_id):
+                                logger.warning(
+                                    f"RoE window closed during phase transition "
+                                    f"for project_id={project_id}; stopping recon"
+                                )
+                                yield ReconLogEvent(
+                                    log="[RoE] Time window has closed — stopping recon per Rules of Engagement",
+                                    timestamp=datetime.now(timezone.utc),
+                                    level="warning",
+                                )
+                                # Gracefully stop the container
+                                try:
+                                    await self.stop_recon(project_id)
+                                except Exception:
+                                    pass
+                                return
+
                         # Track the high-water mark so a reconnecting SSE client
                         # resumes after this line instead of replaying history.
                         if docker_ts is not None:
@@ -860,6 +955,18 @@ class ContainerManager:
                         if container.status not in ("running", "paused"):
                             break
                     except Exception:
+                        break
+
+                    # Periodic RoE mid-run check (throttled to every 5 min internally)
+                    if not await self._check_roe_mid_run(project_id):
+                        logger.warning(
+                            f"RoE window closed mid-run for project_id={project_id}; "
+                            f"stopping recon"
+                        )
+                        try:
+                            await self.stop_recon(project_id)
+                        except Exception:
+                            pass
                         break
 
         except (NotFound, APIError):

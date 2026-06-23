@@ -8,6 +8,7 @@ interface UseReconStatusOptions {
   projectId: string | null
   enabled?: boolean
   pollingInterval?: number // in milliseconds
+  staggerMs?: number // stagger the initial poll to spread out requests
   onStatusChange?: (status: ReconStatus) => void
   onComplete?: () => void
   onError?: (error: string) => void
@@ -32,6 +33,7 @@ export function useReconStatus({
   projectId,
   enabled = true,
   pollingInterval = DEFAULT_POLLING_INTERVAL,
+  staggerMs = 0,
   onStatusChange,
   onComplete,
   onError,
@@ -242,6 +244,7 @@ export function useReconStatus({
   }, [projectId, enabled, fetchStatus])
 
   // Smart polling - only poll frequently when recon is running
+  // Uses staggerMs to offset the initial poll and spread out requests
   useEffect(() => {
     if (!projectId || !enabled) return
 
@@ -256,15 +259,18 @@ export function useReconStatus({
     // Use shorter interval when running, longer when idle
     const interval = isRunning ? pollingInterval : IDLE_POLLING_INTERVAL
 
-    pollingRef.current = setInterval(fetchStatus, interval)
+    const timerId = setTimeout(() => {
+      pollingRef.current = setInterval(fetchStatus, interval)
+    }, staggerMs)
 
     return () => {
+      clearTimeout(timerId)
       if (pollingRef.current) {
         clearInterval(pollingRef.current)
         pollingRef.current = null
       }
     }
-  }, [projectId, enabled, pollingInterval, fetchStatus, state?.status])
+  }, [projectId, enabled, pollingInterval, staggerMs, fetchStatus, state?.status])
 
   return {
     state,
