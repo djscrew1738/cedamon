@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { GraphToolbar } from './components/GraphToolbar'
 import { GraphToolbarProvider } from './components/GraphToolbar/GraphToolbarContext'
 import { FileSystemDrawer } from './components/FileSystemDrawer'
@@ -37,9 +38,11 @@ import {
 } from './components/RedZoneTables'
 import { ActiveSessions } from './components/ActiveSessions'
 import { RoeViewer } from './components/RoeViewer'
-import { KaliTerminal } from './components/KaliTerminal'
 import { GraphViews } from './components/GraphViews'
-import { AttackPanel } from './components/AttackPanel/AttackPanel'
+
+// Dynamic imports for heavy components (xterm, large panels)
+const KaliTerminal = dynamic(() => import('./components/KaliTerminal').then(m => m.KaliTerminal), { ssr: false })
+const AttackPanel = dynamic(() => import('./components/AttackPanel/AttackPanel').then(m => m.AttackPanel), { ssr: false })
 import { GitHubStarBanner } from './components/GitHubStarBanner'
 import { useGraphData, useDimensions, useNodeSelection, useTableData, useGraphViews } from './hooks'
 import { useStableGraphData } from './hooks/useStableGraphData'

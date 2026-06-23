@@ -9,6 +9,8 @@ interface ErrorBoundaryProps {
   children: ReactNode
   /** Optional callback fired when an error is caught */
   onError?: (error: Error, errorInfo: ErrorInfo) => void
+  /** Optional callback fired when the user clicks retry — use to re-trigger failed queries */
+  onRetry?: () => void
 }
 
 interface ErrorBoundaryState {
@@ -39,6 +41,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   handleReset = () => {
     this.setState({ hasError: false, error: null })
+    this.props.onRetry?.()
   }
 
   render(): ReactNode {

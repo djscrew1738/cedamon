@@ -57,6 +57,35 @@
 
 /* ─── Mobile responsive ─── */
 
+/* 767px breakpoint — narrow mobile panels */
+@media (max-width: 767px) {
+  .body {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .content {
+    min-height: 280px;
+    touch-action: manipulation;
+  }
+
+  .noProject {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .noProject h2 {
+    font-size: var(--text-base);
+    margin: 0;
+  }
+
+  .noProject p {
+    font-size: var(--text-xs);
+    max-width: 260px;
+    margin: 0;
+  }
+}
+
 @media (max-width: 768px) {
   .body {
     flex-direction: column;
@@ -81,7 +110,6 @@
   }
 }
 
-/* ─── Small phones ─── */
 @media (max-width: 480px) {
   .content {
     min-height: 250px;

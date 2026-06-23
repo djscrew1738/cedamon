@@ -110,8 +110,35 @@ export function GraphToolbar({}: GraphToolbarProps) {
     post_exploitation: { color: 'var(--status-error)', bg: 'rgba(239, 68, 68, 0.1)', icon: Zap },
   }
 
+  // Aggregate scan progress for the global progress bar
+  const totalActiveScans = activeScans.filter(
+    s => s.status === 'running' || s.status === 'starting' || s.status === 'paused'
+  )
+  const globalProgress = (() => {
+    if (totalActiveScans.length === 0) return null
+    let totalCurrent = 0
+    let totalMax = 0
+    for (const s of totalActiveScans) {
+      const t = s.totalPhases ?? 1
+      const c = Math.max(0, Math.min(s.phaseNumber ?? 0, t))
+      totalCurrent += c
+      totalMax += t
+    }
+    return { current: totalCurrent, total: totalMax, percent: Math.round((totalCurrent / totalMax) * 100) }
+  })()
+
   return (
     <>
+      {/* Global recon progress bar — thin bar spanning the toolbar */}
+      {globalProgress && (
+        <div className={styles.globalProgress} role="progressbar" aria-valuenow={globalProgress.current} aria-valuemin={0} aria-valuemax={globalProgress.total}>
+          <div className={styles.globalProgressFill} style={{ width: `${globalProgress.percent}%` }} />
+          <span className={styles.globalProgressLabel}>
+            Phase {globalProgress.current}/{globalProgress.total}
+          </span>
+        </div>
+      )}
+
       {gvmAvailable && !gvmReady && (
         <GvmReadinessBanner
           available={gvmAvailable}
