@@ -164,6 +164,7 @@ class GithubHuntLogEvent(BaseModel):
     is_phase_start: bool = False
     is_phase_end: bool = False
     level: str = "info"
+    seq: int = 0  # Monotonic sequence number for reliable dedup
 
 
 # =============================================================================
@@ -214,6 +215,7 @@ class TrufflehogLogEvent(BaseModel):
     is_phase_start: bool = False
     is_phase_end: bool = False
     level: str = "info"
+    seq: int = 0  # Monotonic sequence number for reliable dedup
 
 
 # =============================================================================

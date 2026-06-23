@@ -41,6 +41,7 @@ export function useGvmSSE({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttempts = useRef(0)
   const maxReconnectAttempts = 5
+  const lastSeqRef = useRef(0)
 
   const clearLogs = useCallback(() => {
     setLogs([])
@@ -72,6 +73,11 @@ export function useGvmSSE({
 
         const data = JSON.parse(eventData)
 
+        // Dedup using monotonic sequence numbers
+        if (data.seq != null && data.seq <= lastSeqRef.current) {
+          return
+        }
+
         const logEvent: ReconLogEvent = {
           log: data.log,
           timestamp: data.timestamp,
@@ -79,6 +85,11 @@ export function useGvmSSE({
           phaseNumber: data.phaseNumber,
           isPhaseStart: data.isPhaseStart,
           level: data.level || 'info',
+          seq: data.seq,
+        }
+
+        if (data.seq != null) {
+          lastSeqRef.current = data.seq
         }
 
         setLogs(prev => [...prev, logEvent])
@@ -140,6 +151,11 @@ export function useGvmSSE({
         }
 
         if (data.log) {
+          // Dedup using monotonic sequence numbers
+          if (data.seq != null && data.seq <= lastSeqRef.current) {
+            return
+          }
+
           const logEvent: ReconLogEvent = {
             log: data.log,
             timestamp: data.timestamp,
@@ -147,6 +163,11 @@ export function useGvmSSE({
             phaseNumber: data.phaseNumber,
             isPhaseStart: data.isPhaseStart,
             level: data.level || 'info',
+            seq: data.seq,
+          }
+
+          if (data.seq != null) {
+            lastSeqRef.current = data.seq
           }
 
           setLogs(prev => [...prev, logEvent])

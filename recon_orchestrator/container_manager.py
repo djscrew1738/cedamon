@@ -1737,6 +1737,7 @@ class ContainerManager:
 
             self._log_executor.submit(read_logs)
 
+            seq = 0
             while True:
                 try:
                     line = await asyncio.wait_for(log_queue.get(), timeout=1.0)
@@ -1765,6 +1766,8 @@ class ContainerManager:
                                     pass
 
                         event = self._parse_gvm_log_line(log_text, current_phase, current_phase_num, timestamp=docker_ts)
+                        seq += 1
+                        event.seq = seq
 
                         if event.is_phase_start:
                             current_phase = event.phase
@@ -2286,6 +2289,7 @@ class ContainerManager:
 
             self._log_executor.submit(read_logs)
 
+            seq = 0
             while True:
                 try:
                     line = await asyncio.wait_for(log_queue.get(), timeout=1.0)
@@ -2314,6 +2318,8 @@ class ContainerManager:
                                     pass
 
                         event = self._parse_github_hunt_log_line(log_text, current_phase, current_phase_num, timestamp=docker_ts)
+                        seq += 1
+                        event.seq = seq
 
                         if event.is_phase_start:
                             current_phase = event.phase
@@ -2704,6 +2710,7 @@ class ContainerManager:
 
             self._log_executor.submit(read_logs)
 
+            seq = 0
             while True:
                 try:
                     line = await asyncio.wait_for(log_queue.get(), timeout=1.0)
@@ -2732,6 +2739,8 @@ class ContainerManager:
                                     pass
 
                         event = self._parse_trufflehog_log_line(log_text, current_phase, current_phase_num, timestamp=docker_ts)
+                        seq += 1
+                        event.seq = seq
 
                         if event.is_phase_start:
                             current_phase = event.phase
