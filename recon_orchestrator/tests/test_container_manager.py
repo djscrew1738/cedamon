@@ -525,6 +525,63 @@ class TestUtilities:
 
 
 # ===========================================================================
+# Bounded Queue
+# ===========================================================================
+
+
+class TestBoundedQueue:
+    """Tests for _bounded_queue_put behavior."""
+
+    async def test_put_on_non_full_queue(self):
+        """Items should be added normally when the queue is not full."""
+        q: asyncio.Queue[int] = asyncio.Queue(maxsize=3)
+        await ContainerManager._bounded_queue_put(q, 1)
+        await ContainerManager._bounded_queue_put(q, 2)
+        assert q.qsize() == 2
+        assert q.get_nowait() == 1
+        assert q.get_nowait() == 2
+
+    async def test_drops_oldest_when_full(self):
+        """When the queue is full, the oldest item should be dropped."""
+        q: asyncio.Queue[int] = asyncio.Queue(maxsize=3)
+        await ContainerManager._bounded_queue_put(q, 1)
+        await ContainerManager._bounded_queue_put(q, 2)
+        await ContainerManager._bounded_queue_put(q, 3)
+        assert q.qsize() == 3
+        assert q.full() is True
+
+        # This should drop item 1 and add item 4
+        await ContainerManager._bounded_queue_put(q, 4)
+        assert q.qsize() == 3
+        # The oldest (1) should have been dropped, so the next item is 2
+        assert q.get_nowait() == 2
+        assert q.get_nowait() == 3
+        assert q.get_nowait() == 4
+
+    async def test_drops_multiple_when_full_under_load(self):
+        """Multiple full-queue puts should keep dropping oldest."""
+        q: asyncio.Queue[int] = asyncio.Queue(maxsize=3)
+        for i in range(10):
+            await ContainerManager._bounded_queue_put(q, i)
+        assert q.qsize() == 3
+        # Only the last 3 items should remain
+        items = []
+        while not q.empty():
+            items.append(q.get_nowait())
+        assert items == [7, 8, 9]
+
+    async def test_put_with_none_sentinel(self):
+        """None sentinel values should also be addable when full."""
+        q: asyncio.Queue[int | None] = asyncio.Queue(maxsize=2)
+        await ContainerManager._bounded_queue_put(q, 1)
+        await ContainerManager._bounded_queue_put(q, 2)
+        await ContainerManager._bounded_queue_put(q, None)  # drops 1
+        assert q.qsize() == 2
+        assert q.get_nowait() == 2
+        assert q.get_nowait() is None
+
+
+# ===========================================================================
 # GVM Lifecycle
 # ===========================================================================
 
@@ -611,6 +668,65 @@ class TestGvmLifecycle:
 
     def test_available_defaults_false(self, manager):
         assert manager.is_gvm_available() is False
+
+
+# ===========================================================================
+# GVM Log Replay & Seq
+# ===========================================================================
+
+
+class TestGvmLogReplay:
+    """Tests for GVM log replay and sequence-number tracking."""
+
+    async def test_parse_gvm_log_line_sets_seq(self, manager):
+        """_parse_gvm_log_line should return events with seq=0 by default."""
+        event = manager._parse_gvm_log_line("test line", None, None)
+        assert event.seq == 0
+        assert event.log == "test line"
+
+    async def test_parse_gvm_log_line_detects_phase(self, manager):
+        """Phase patterns in GVM logs should be detected."""
+        event = manager._parse_gvm_log_line(
+            "PHASE 1: Scanning 10 targets — 10 IP addresses", None, None
+        )
+        assert event.is_phase_start is True
+        assert event.phase == "Scanning IPs"
+        assert event.phase_number == 4
+
+        event = manager._parse_gvm_log_line(
+            "Phase 2 of scanning: Scanning 5 hostnames", None, None
+        )
+        assert event.is_phase_start is True
+        assert event.phase == "Scanning Hostnames"
+        assert event.phase_number == 5
+
+    async def test_parse_gvm_log_line_levels(self, manager):
+        """Log level should be inferred from markers."""
+        assert manager._parse_gvm_log_line("[!] error", None, None).level == "error"
+        assert manager._parse_gvm_log_line("[+] success", None, None).level == "success"
+        assert manager._parse_gvm_log_line("[*] action", None, None).level == "action"
+        assert manager._parse_gvm_log_line("normal", None, None).level == "info"
+
+    async def test_update_last_log_timestamp_gvm(self, manager):
+        """_update_last_log_timestamp should update the GVM state watermark."""
+        ts = datetime.now(timezone.utc)
+        state = GvmState(project_id="p1", status=GvmStatus.RUNNING, container_id="c1")
+        manager.gvm_states["p1"] = state
+        manager._update_last_log_timestamp(manager.gvm_states.get("p1"), ts)
+        assert manager.gvm_states["p1"].last_log_timestamp == ts
+
+    async def test_last_log_timestamp_only_advances(self, manager):
+        """Watermark should never go backwards."""
+        later = datetime.now(timezone.utc)
+        earlier = later - timedelta(seconds=10)
+        state = GvmState(project_id="p1", status=GvmStatus.RUNNING, container_id="c1")
+        manager.gvm_states["p1"] = state
+        # Set to later first
+        manager._update_last_log_timestamp(manager.gvm_states.get("p1"), later)
+        assert manager.gvm_states["p1"].last_log_timestamp == later
+        # Try to set to earlier — should be ignored
+        manager._update_last_log_timestamp(manager.gvm_states.get("p1"), earlier)
+        assert manager.gvm_states["p1"].last_log_timestamp == later
 
 
 # ===========================================================================
@@ -1459,3 +1575,75 @@ class TestRecoverContainers:
         )
         manager._recover_containers()
         assert manager.partial_recon_states["p1"]["run-1"].status == PartialReconStatus.RUNNING
+
+    def test_recover_gvm_running(self, manager):
+        """A GVM container still running should keep RUNNING."""
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.RUNNING, container_id="g-1"
+        )
+        manager.client.containers.get = MagicMock(
+            return_value=_cm(status="running", container_id="g-1")
+        )
+        manager._recover_containers()
+        assert manager.gvm_states["p1"].status == GvmStatus.RUNNING
+
+    def test_recover_gvm_paused(self, manager):
+        """A paused GVM container should transition to PAUSED."""
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.RUNNING, container_id="g-1"
+        )
+        manager.client.containers.get = MagicMock(
+            return_value=_cm(status="paused", container_id="g-1")
+        )
+        manager._recover_containers()
+        assert manager.gvm_states["p1"].status == GvmStatus.PAUSED
+
+    def test_recover_gvm_exited_success(self, manager):
+        """An exited GVM container with exit code 0 should become COMPLETED."""
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.RUNNING, container_id="g-1"
+        )
+        manager.client.containers.get = MagicMock(
+            return_value=_cm(status="exited", exit_code=0, container_id="g-1")
+        )
+        manager._recover_containers()
+        assert manager.gvm_states["p1"].status == GvmStatus.COMPLETED
+
+    def test_recover_gvm_exited_failure(self, manager):
+        """An exited GVM container with non-zero code should become ERROR."""
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.RUNNING, container_id="g-1"
+        )
+        manager.client.containers.get = MagicMock(
+            return_value=_cm(status="exited", exit_code=1, container_id="g-1")
+        )
+        manager._recover_containers()
+        assert manager.gvm_states["p1"].status == GvmStatus.ERROR
+
+    def test_recover_gvm_container_not_found(self, manager):
+        """A missing GVM container should transition to ERROR."""
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.RUNNING, container_id="g-1"
+        )
+        manager.client.containers.get = MagicMock(side_effect=_NOT_FOUND("missing"))
+        manager._recover_containers()
+        assert manager.gvm_states["p1"].status == GvmStatus.ERROR
+
+    def test_recover_gvm_missing_container_id(self, manager):
+        """A GVM state with no container_id should become ERROR."""
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.RUNNING, container_id=None
+        )
+        manager._recover_containers()
+        assert manager.gvm_states["p1"].status == GvmStatus.ERROR
+        assert "Container ID missing" in manager.gvm_states["p1"].error
+
+    def test_recover_gvm_removes_old_terminal(self, manager):
+        """Terminal GVM states older than 60s should be removed."""
+        old_ts = datetime.now(timezone.utc) - timedelta(seconds=120)
+        manager.gvm_states["p1"] = GvmState(
+            project_id="p1", status=GvmStatus.COMPLETED,
+            container_id="g-1", completed_at=old_ts,
+        )
+        manager._recover_containers()
+        assert "p1" not in manager.gvm_states
