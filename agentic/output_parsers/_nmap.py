@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ._base import (
@@ -76,5 +77,46 @@ def parse_naabu(raw: str) -> dict[str, Any]:
 
 
 def parse_masscan(raw: str) -> dict[str, Any]:
-    """Dedicated masscan parser (same output shape as naabu)."""
-    return parse_naabu(raw)
+    """Parse masscan output into ports & findings.
+
+    Handles multiple masscan output formats:
+    - ``-oL`` (list format):  ``open tcp <port> <ip> <timestamp>``
+    - JSON lines (``-oJ``):   ``{"ip": ..., "ports": [{"port": <n>, ...}]}``
+    - Default text:           ``discovered port <port>/tcp on <ip> at ...``
+    """
+    ports: list[int] = []
+
+    # -oL format: open tcp PORT IP TIMESTAMP
+    for m in re.finditer(r"^open\s+tcp\s+(\d+)", raw, re.MULTILINE):
+        try:
+            ports.append(int(m.group(1)))
+        except ValueError:
+            pass
+
+    # default text format: discovered port PORT/protocol on ...
+    for m in MASSCAN_PORT.finditer(raw):
+        try:
+            ports.append(int(m.group(1)))
+        except ValueError:
+            pass
+
+    # JSON lines format (-oJ)
+    for obj in _iter_json_lines(raw):
+        p = obj.get("port")
+        if isinstance(p, (int, str)):
+            try:
+                ports.append(int(p))
+            except (ValueError, TypeError):
+                pass
+        ports_list = obj.get("ports")
+        if isinstance(ports_list, list):
+            for entry in ports_list:
+                if isinstance(entry, dict):
+                    ep = entry.get("port")
+                    if isinstance(ep, (int, str)):
+                        try:
+                            ports.append(int(ep))
+                        except (ValueError, TypeError):
+                            pass
+
+    return {"ports": sorted(set(ports)), "findings": []}
