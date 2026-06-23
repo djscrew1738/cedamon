@@ -39,6 +39,7 @@ import {
 import { ActiveSessions } from './components/ActiveSessions'
 import { RoeViewer } from './components/RoeViewer'
 import { GraphViews } from './components/GraphViews'
+import { CommandPalette, useGraphPaletteActions } from './components/CommandPalette/CommandPalette'
 
 // Dynamic imports for heavy components (xterm, large panels)
 const KaliTerminal = dynamic(() => import('./components/KaliTerminal').then(m => m.KaliTerminal), { ssr: false })
@@ -139,6 +140,21 @@ export default function GraphPage() {
 
   // Track .body position for fixed-position log drawers
   useDrawerPosition(bodyRef)
+  // Command palette (Cmd+K) state
+  const [isCmdPaletteOpen, setIsCmdPaletteOpen] = useState(false)
+
+  // Global keyboard shortcut: Cmd+K / Ctrl+K
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setIsCmdPaletteOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   // Check if GVM stack is installed and whether feed sync is complete.
   // Poll every 30s so the UI catches transitions (e.g. feed sync finishing).
   useEffect(() => {
@@ -161,7 +177,7 @@ export default function GraphPage() {
     return () => clearInterval(interval)
   }, [])
 
-  const { isDark } = useTheme()
+  const { isDark, toggleTheme, theme } = useTheme()
   const { sessionId, resetSession, switchSession } = useSession()
 
   // Data filters (formerly graph views) -- used in tab selector, Graph Map, Data Table, AI drawer
@@ -274,6 +290,23 @@ export default function GraphPage() {
   //  - agent tool-completion websocket events (via AIAssistantDrawer onRefetchGraph)
   //  - pipeline completion (refetchAfterCompletion)
   const { data, isLoading, error, refetch: refetchGraph, refetchFresh } = useGraphData(projectId)
+
+  // Node names for command palette search
+  const graphNodeNames = useMemo(
+    () => data?.nodes?.map((n) => n.name).filter(Boolean) as string[] | undefined,
+    [data],
+  )
+
+  const paletteActions = useGraphPaletteActions(
+    router,
+    toggleTheme,
+    theme,
+    graphNodeNames,
+    (name) => {
+      const node = data?.nodes?.find((n) => n.name === name)
+      if (node) handleNodeClick(node)
+    },
+  )
 
   // Debounced refetch: SSE log events fire rapidly during a scan; we only need
   // to re-pull the graph at most once per ~1.5s to pick up newly written nodes.
@@ -1805,6 +1838,12 @@ export default function GraphPage() {
         onToggleSession={handleToggleSession}
         onShowAllSessions={handleShowAllSessions}
         onHideAllSessions={handleHideAllSessions}
+      />
+
+      <CommandPalette
+        actions={paletteActions}
+        isOpen={isCmdPaletteOpen}
+        onClose={() => setIsCmdPaletteOpen(false)}
       />
     </div>
   )

@@ -128,7 +128,7 @@ function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
   }
 
   return createPortal(
-    <div className={styles.container}>
+    <div className={styles.container} role="status" aria-live="polite" aria-atomic="false">
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
       ))}
