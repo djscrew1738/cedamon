@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Save, X, Loader2, Download, ShieldAlert, Zap, Bookmark, FolderOpen, List, GitBranch, Play } from 'lucide-react'
+import { Save, X, Loader2, Download, ShieldAlert, Zap, Bookmark, FolderOpen, List, GitBranch, Play, ChevronDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { Project } from '@prisma/client'
@@ -18,7 +18,7 @@ import type { ReconStatus } from '@/lib/recon-types'
 import { WORKFLOW_TOOLS } from './WorkflowView/workflowDefinition'
 import { ReconLogsDrawer } from '@/app/graph/components/ReconLogsDrawer'
 import { PartialReconBadges } from '@/components/PartialReconBadges'
-import { useDrawerPosition } from '@/hooks'
+import { useDrawerPosition, useIsMobile } from '@/hooks'
 import styles from './ProjectForm.module.css'
 
 // Import sections
@@ -180,8 +180,10 @@ export function ProjectForm({
   const { alertError, alertWarning } = useAlertModal()
   const toast = useToast()
   const router = useRouter()
+  const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState<TabId>('target')
   const [viewMode, setViewMode] = useState<'tabs' | 'workflow'>('workflow')
+  const [mobileAccordionOpen, setMobileAccordionOpen] = useState<Record<string, boolean>>({})
   const [isLoadingDefaults, setIsLoadingDefaults] = useState(mode === 'create')
   const [formData, setFormData] = useState<ProjectFormData>(() => ({
     ...MINIMAL_DEFAULTS,
@@ -677,6 +679,7 @@ export function ProjectForm({
         </div>
       ) : (
         <>
+          {!isMobile && (
           <div className={styles.tabsWrapper}>
           <div className={styles.tabs}>
             {TAB_GROUPS.map((group, gi) => (
@@ -759,10 +762,57 @@ export function ProjectForm({
             ))}
           </div>
           </div>
+          )}
 
-          <div className={viewMode === 'workflow' && RECON_TAB_IDS.has(activeTab) ? styles.contentWorkflow : styles.content}>
+          {/* Mobile accordion: replace tab bar with collapsible sections */}
+          {isMobile && (
+            <div className={styles.mobileAccordion}>
+              {TAB_GROUPS.map((group, gi) => {
+                const groupKey = `group-${gi}`
+                const isGroupOpen = mobileAccordionOpen[groupKey] ?? false
+                return (
+                  <div key={groupKey} className={styles.mobileAccordionGroup}>
+                    <button
+                      type="button"
+                      className={styles.mobileAccordionHeader}
+                      onClick={() => setMobileAccordionOpen(prev => ({ ...prev, [groupKey]: !isGroupOpen }))}
+                      aria-expanded={isGroupOpen}
+                    >
+                      <span>{group.label}</span>
+                      <ChevronDown size={14} className={`${styles.mobileAccordionChevron} ${isGroupOpen ? styles.mobileAccordionChevronOpen : ''}`} />
+                    </button>
+                    {isGroupOpen && (
+                      <div className={styles.mobileAccordionTabs}>
+                        {group.tabs.map(tab => {
+                          const isActive = activeTab === tab.id
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              className={`${styles.mobileAccordionTab} ${isActive ? styles.mobileAccordionTabActive : ''}`}
+                              onClick={() => {
+                                if ((tab.id as string) === 'preset') {
+                                  setIsPresetModalOpen(true)
+                                } else {
+                                  setActiveTab(tab.id)
+                                }
+                              }}
+                            >
+                              {tab.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div className={isMobile ? styles.contentMobile : (viewMode === 'workflow' && RECON_TAB_IDS.has(activeTab) ? styles.contentWorkflow : styles.content)}>
             {/* Workflow view -- replaces recon tab content when in workflow mode */}
-            {viewMode === 'workflow' && RECON_TAB_IDS.has(activeTab) && (
+            {!isMobile && viewMode === 'workflow' && RECON_TAB_IDS.has(activeTab) && (
               <WorkflowView
                 formData={formData}
                 updateField={updateField}
@@ -776,7 +826,7 @@ export function ProjectForm({
             )}
 
             {/* Tab-based views */}
-            {activeTab === 'roe' && (
+            {(isMobile || activeTab === 'roe') && (
           <RoeSection
             data={formData}
             updateField={updateField}
@@ -786,14 +836,14 @@ export function ProjectForm({
           />
         )}
 
-        {activeTab === 'target' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'target' && viewMode === 'tabs')) && (
           <>
             <TargetSection data={formData} updateField={updateField} mode={mode} />
             <ScanModulesSection data={formData} updateField={updateField} />
           </>
         )}
 
-        {activeTab === 'discovery' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'discovery' && viewMode === 'tabs')) && (
           <>
             <SubdomainDiscoverySection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('SubdomainDiscovery') : undefined} />
             <ShodanSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Shodan') : undefined} />
@@ -802,7 +852,7 @@ export function ProjectForm({
           </>
         )}
 
-        {activeTab === 'port' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'port' && viewMode === 'tabs')) && (
           <>
             {!formData.naabuEnabled && !formData.masscanEnabled && (
               <div className={styles.shodanWarning}>
@@ -816,11 +866,11 @@ export function ProjectForm({
           </>
         )}
 
-        {activeTab === 'http' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'http' && viewMode === 'tabs')) && (
           <HttpxSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Httpx') : undefined} />
         )}
 
-        {activeTab === 'resource' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'resource' && viewMode === 'tabs')) && (
           <>
             <KatanaSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Katana') : undefined} />
             <ZapAjaxSpiderSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('ZapAjaxSpider') : undefined} />
@@ -836,11 +886,11 @@ export function ProjectForm({
           </>
         )}
 
-        {activeTab === 'jsrecon' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'jsrecon' && viewMode === 'tabs')) && (
           <JsReconSection data={formData} updateField={updateField} projectId={projectId} mode={mode} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('JsRecon') : undefined} />
         )}
 
-        {activeTab === 'vuln' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'vuln' && viewMode === 'tabs')) && (
           <>
             <NucleiSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('Nuclei') : undefined} />
             <TakeoverSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('SubdomainTakeover') : undefined} />
@@ -849,18 +899,18 @@ export function ProjectForm({
           </>
         )}
 
-        {activeTab === 'cve' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'cve' && viewMode === 'tabs')) && (
           <>
             <CveLookupSection data={formData} updateField={updateField} />
             <MitreSection data={formData} updateField={updateField} />
           </>
         )}
 
-        {activeTab === 'security' && viewMode === 'tabs' && (
+        {(isMobile || (activeTab === 'security' && viewMode === 'tabs')) && (
           <SecurityChecksSection data={formData} updateField={updateField} onRun={mode === 'edit' && projectId ? () => setPartialReconToolId('SecurityChecks') : undefined} />
         )}
 
-        {activeTab === 'integrations' && (
+        {(isMobile || activeTab === 'integrations') && (
           <>
             <GvmScanSection data={formData} updateField={updateField} />
             <GithubSection data={formData} updateField={updateField} hasGithubToken={hasGithubToken} />
@@ -868,19 +918,19 @@ export function ProjectForm({
           </>
         )}
 
-        {activeTab === 'agent' && (
+        {(isMobile || activeTab === 'agent') && (
           <AgentBehaviourSection data={formData} updateField={updateField} />
         )}
 
-        {activeTab === 'toolmatrix' && (
+        {(isMobile || activeTab === 'toolmatrix') && (
           <ToolMatrixSection data={formData} updateField={updateField} />
         )}
 
-        {activeTab === 'attack' && (
+        {(isMobile || activeTab === 'attack') && (
           <AttackSkillsSection data={formData} updateField={updateField} />
         )}
 
-        {activeTab === 'cypherfix' && (
+        {(isMobile || activeTab === 'cypherfix') && (
           <CypherFixSettingsSection data={formData} updateField={updateField} />
         )}
           </div>

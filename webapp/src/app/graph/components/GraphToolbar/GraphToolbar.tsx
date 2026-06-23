@@ -194,6 +194,7 @@ export function GraphToolbar({}: GraphToolbarProps) {
         onClick={onEmergencyPauseAll}
         disabled={!isAnyPipelineRunning && !isEmergencyPausing}
         title="EMERGENCY PAUSE — Freeze all running containers immediately. Use if scanning or exploiting unwanted targets."
+        aria-label="Emergency pause all running containers"
       >
         {isEmergencyPausing ? (
           <Loader2 size={14} className={styles.spinner} />

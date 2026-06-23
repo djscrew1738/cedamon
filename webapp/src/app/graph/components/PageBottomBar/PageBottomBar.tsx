@@ -107,12 +107,12 @@ export function PageBottomBar({
         <span className={styles.sectionTitle}>Filter:</span>
         {onToggleNodeType && (
           <div className={styles.chipActions}>
-            <button className={styles.chipAction} onClick={onSelectAllTypes}>All</button>
-            <button className={styles.chipAction} onClick={onClearAllTypes}>None</button>
+            <button className={styles.chipAction} onClick={onSelectAllTypes} aria-label="Select all node types">All</button>
+            <button className={styles.chipAction} onClick={onClearAllTypes} aria-label="Clear all node types">None</button>
           </div>
         )}
         {canScrollLeft && (
-          <button className={styles.scrollBtn} onClick={() => scroll('left')}>
+          <button className={styles.scrollBtn} onClick={() => scroll('left')} aria-label="Scroll legend left">
             ‹
           </button>
         )}
@@ -120,6 +120,8 @@ export function PageBottomBar({
           ref={scrollRef}
           className={styles.legendItems}
           onScroll={checkScroll}
+          role="listbox"
+          aria-label="Node type filters"
         >
           {sortedTypes.map(type => {
             const color = NODE_COLORS[type] || NODE_COLORS.Default
@@ -130,7 +132,9 @@ export function PageBottomBar({
                 className={`${styles.typeChip} ${isActive ? styles.typeChipActive : ''}`}
                 onClick={() => onToggleNodeType?.(type)}
                 style={{ '--chip-color': color } as React.CSSProperties}
+                role="option"
                 aria-pressed={isActive}
+                aria-label={`${type} nodes (${nodeTypeCounts?.[type] ?? 0})`}
               >
                 <span className={styles.chipDot} />
                 <span className={styles.chipLabel}>{type}</span>
@@ -140,7 +144,7 @@ export function PageBottomBar({
           })}
         </div>
         {canScrollRight && (
-          <button className={styles.scrollBtn} onClick={() => scroll('right')}>
+          <button className={styles.scrollBtn} onClick={() => scroll('right')} aria-label="Scroll legend right">
             ›
           </button>
         )}
@@ -163,6 +167,8 @@ export function PageBottomBar({
                 }
                 setSessionMenuOpen((prev: boolean) => !prev)
               }}
+              aria-label={`Toggle session visibility, ${visibleSessionCount} of ${sessionChainIds.length} visible`}
+              aria-expanded={sessionMenuOpen}
             >
               <Link2 size={12} />
               <span>Sessions</span>
@@ -185,11 +191,11 @@ export function PageBottomBar({
                 <div className={styles.sessionMenuHeader}>
                   <span>Attack Chain Sessions</span>
                   <div className={styles.sessionMenuActions}>
-                    <button className={styles.chipAction} onClick={onShowAllSessions}>All</button>
-                    <button className={styles.chipAction} onClick={onHideAllSessions}>None</button>
+                    <button className={styles.chipAction} onClick={onShowAllSessions} aria-label="Show all sessions">All</button>
+                    <button className={styles.chipAction} onClick={onHideAllSessions} aria-label="Hide all sessions">None</button>
                   </div>
                 </div>
-                <div className={styles.sessionMenuList}>
+                <div className={styles.sessionMenuList} role="listbox" aria-label="Attack chain sessions">
                   {sessionChainIds.map(chainId => {
                     const isVisible = !hiddenSessions?.has(chainId)
                     return (
@@ -197,6 +203,9 @@ export function PageBottomBar({
                         key={chainId}
                         className={`${styles.sessionItem} ${isVisible ? styles.sessionItemActive : ''}`}
                         onClick={() => onToggleSession?.(chainId)}
+                        role="option"
+                        aria-selected={isVisible}
+                        aria-label={`${sessionTitles[chainId] || chainId.slice(-8)} — ${isVisible ? 'visible' : 'hidden'}`}
                       >
                         <span className={styles.sessionDot} />
                         <span className={styles.sessionCode} title={sessionTitles[chainId] || chainId}>

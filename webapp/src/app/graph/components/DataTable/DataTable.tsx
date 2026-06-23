@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, memo, Fragment } from 'react'
+import { useState, useMemo, useRef, memo, Fragment, useCallback } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,6 +13,7 @@ import {
   type SortingState,
   type ExpandedState,
 } from '@tanstack/react-table'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   ChevronDown,
   ChevronRight,
@@ -202,6 +203,18 @@ export const DataTable = memo(function DataTable({
 
   const filteredRowCount = table.getFilteredRowModel().rows.length
 
+  // ── Virtualizer ──────────────────────────────────────────────────────────
+  const tableRows = table.getRowModel().rows
+  const tableWrapperRef = useRef<HTMLDivElement>(null)
+
+  const rowVirtualizer = useVirtualizer({
+    count: tableRows.length,
+    getScrollElement: useCallback(() => tableWrapperRef.current, []),
+    estimateSize: useCallback(() => 37, []),
+    overscan: 10,
+    paddingEnd: tableRows.some(r => r.getIsExpanded()) ? 200 : 0,
+  })
+
   // Loading state
   if (isLoading) {
     return (
@@ -234,9 +247,12 @@ export const DataTable = memo(function DataTable({
     )
   }
 
+  const virtualRows = rowVirtualizer.getVirtualItems()
+  const totalSize = rowVirtualizer.getTotalSize()
+
   return (
     <div className={styles.container}>
-      <div className={styles.tableWrapper}>
+      <div ref={tableWrapperRef} className={styles.tableWrapper}>
         <table className={styles.table}>
           <thead>
             {table.getHeaderGroups().map(headerGroup => (
@@ -276,27 +292,46 @@ export const DataTable = memo(function DataTable({
               </tr>
             ))}
           </thead>
-          <tbody>
-            {table.getRowModel().rows.map(row => (
-              <Fragment key={row.id}>
-                <tr
-                  className={`${styles.tr} ${row.getIsExpanded() ? styles.trExpanded : ''}`}
-                >
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id} className={styles.td}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-                {row.getIsExpanded() && (
-                  <tr className={styles.trExpandedDetail}>
-                    <td colSpan={columns.length} className={styles.tdExpanded}>
-                      <ExpandedRowDetail row={row.original} />
-                    </td>
+          <tbody style={{ position: 'relative', height: `${totalSize}px`, minHeight: '100%' }}>
+            {virtualRows.map(virtualRow => {
+              const row = tableRows[virtualRow.index]
+              return (
+                <Fragment key={row.id}>
+                  <tr
+                    className={`${styles.tr} ${row.getIsExpanded() ? styles.trExpanded : ''}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id} className={styles.td}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
                   </tr>
-                )}
-              </Fragment>
-            ))}
+                  {row.getIsExpanded() && (
+                    <tr className={styles.trExpandedDetail}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <td colSpan={columns.length} className={styles.tdExpanded}>
+                        <ExpandedRowDetail row={row.original} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
           </tbody>
         </table>
       </div>

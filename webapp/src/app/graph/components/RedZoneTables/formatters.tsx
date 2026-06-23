@@ -3,6 +3,14 @@
 import type { ReactNode } from 'react'
 import { ExternalLink } from '@/components/ui'
 import {
+  AlertTriangle,
+  ArrowUp,
+  Diamond,
+  ArrowDown,
+  Info,
+  HelpCircle,
+} from 'lucide-react'
+import {
   capecToUrl,
   cveToUrl,
   cweToUrl,
@@ -26,8 +34,23 @@ const SEV_CLASS: Record<Severity, string> = {
   unknown: styles.sevInfo,
 }
 
+const SEV_ICON: Record<Severity, ReactNode> = {
+  critical: <AlertTriangle size={11} aria-hidden="true" />,
+  high: <ArrowUp size={11} aria-hidden="true" />,
+  medium: <Diamond size={11} aria-hidden="true" />,
+  low: <ArrowDown size={11} aria-hidden="true" />,
+  info: <Info size={11} aria-hidden="true" />,
+  unknown: <HelpCircle size={11} aria-hidden="true" />,
+}
+
 export function SeverityBadge({ severity }: { severity: Severity }) {
-  return <span className={`${styles.sevBadge} ${SEV_CLASS[severity] || styles.sevInfo}`}>{severity}</span>
+  const icon = SEV_ICON[severity] || SEV_ICON.unknown
+  return (
+    <span className={`${styles.sevBadge} ${SEV_CLASS[severity] || styles.sevInfo}`}>
+      <span className={styles.sevIcon}>{icon}</span>
+      {severity}
+    </span>
+  )
 }
 
 export function Mono({ children }: { children: ReactNode }) {
@@ -60,10 +83,16 @@ export function NumCell({ value, zero = '-' }: { value: number | null | undefine
 export function CvssCell({ score }: { score: number | null | undefined }) {
   if (score == null) return <span className={styles.nullCell}>-</span>
   let cls = styles.cvssLow
-  if (score >= 9) cls = styles.cvssCritical
-  else if (score >= 7) cls = styles.cvssHigh
-  else if (score >= 4) cls = styles.cvssMedium
-  return <span className={`${styles.cvssBadge} ${cls}`}>{score.toFixed(1)}</span>
+  let icon: ReactNode = <ArrowDown size={10} aria-hidden="true" />
+  if (score >= 9) { cls = styles.cvssCritical; icon = <AlertTriangle size={10} aria-hidden="true" /> }
+  else if (score >= 7) { cls = styles.cvssHigh; icon = <ArrowUp size={10} aria-hidden="true" /> }
+  else if (score >= 4) { cls = styles.cvssMedium; icon = <Diamond size={10} aria-hidden="true" /> }
+  return (
+    <span className={`${styles.cvssBadge} ${cls}`}>
+      <span className={styles.sevIcon}>{icon}</span>
+      {score.toFixed(1)}
+    </span>
+  )
 }
 
 export function BoolChip({ value, trueLabel = 'yes', falseLabel = 'no' }: { value: boolean | null | undefined; trueLabel?: string; falseLabel?: string }) {

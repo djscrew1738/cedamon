@@ -328,6 +328,15 @@
   width: 100%;
 }
 
+.contentMobile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0;
+  overflow-y: auto;
+}
+
 .loadingContainer {
   flex: 1;
   display: flex;
@@ -1258,6 +1267,88 @@
 .fileImportTooltipFooter {
   color: var(--color-gray-400);
   font-size: 10px;
+}
+
+/* ─── Mobile Accordion ─── */
+
+.mobileAccordion {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobileAccordion {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--border-default);
+    background: var(--bg-primary);
+  }
+
+  .mobileAccordionGroup {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .mobileAccordionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--space-3) var(--space-3);
+    background: var(--bg-secondary);
+    border: none;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+
+  .mobileAccordionHeader:hover {
+    background: var(--bg-hover);
+  }
+
+  .mobileAccordionChevron {
+    transition: transform 0.2s ease;
+    color: var(--text-tertiary);
+  }
+
+  .mobileAccordionChevronOpen {
+    transform: rotate(180deg);
+  }
+
+  .mobileAccordionTabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-primary);
+  }
+
+  .mobileAccordionTab {
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--text-xs);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .mobileAccordionTab:active {
+    transform: scale(0.96);
+  }
+
+  .mobileAccordionTabActive {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: var(--status-success-text);
+  }
+
+  .contentMobile {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
 }
 
 /* ─── Responsive ─── */
