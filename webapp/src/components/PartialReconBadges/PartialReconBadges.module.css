@@ -138,7 +138,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .badgeGroup {
     font-size: 10px;
     padding: 4px 6px;

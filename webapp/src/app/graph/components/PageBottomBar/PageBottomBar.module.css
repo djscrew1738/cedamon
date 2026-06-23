@@ -337,7 +337,7 @@
 
 /* ─── Responsive: Tablet (≤768px) ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .bottomBar {
     gap: var(--space-2);
     padding: var(--space-1-5) var(--space-2);

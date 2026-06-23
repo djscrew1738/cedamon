@@ -28,3 +28,38 @@
   border: 1px solid var(--border-default);
   color: var(--text-primary);
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 767px) {
+  .container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .columnLabel {
+    font-size: 11px;
+  }
+  .nodeLabel {
+    font-size: 10px;
+  }
+  .tooltip {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .columnLabel {
+    font-size: 10px;
+    letter-spacing: 0.03em;
+  }
+  .nodeLabel {
+    font-size: 9px;
+  }
+  .tooltip {
+    font-size: 9px;
+    padding: 3px 6px;
+    max-width: 200px;
+    white-space: normal;
+  }
+}

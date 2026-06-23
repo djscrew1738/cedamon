@@ -56,3 +56,42 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 767px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+  }
+  .info {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .title {
+    font-size: var(--text-lg);
+  }
+  .project {
+    font-size: var(--text-xs);
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-2) 0;
+    gap: var(--space-2);
+  }
+  .info {
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .title {
+    font-size: var(--text-base);
+    gap: var(--space-1);
+  }
+  .project {
+    flex-wrap: wrap;
+  }
+}

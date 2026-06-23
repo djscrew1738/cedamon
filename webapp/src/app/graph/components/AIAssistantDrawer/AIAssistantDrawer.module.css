@@ -2299,7 +2299,7 @@ td:hover .tableCellCopyButton {
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .drawer {
     width: 100vw !important;
     border-left: none;

@@ -233,7 +233,7 @@ a.nameCell:hover {
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .tableWrapper {
     /* keep horizontal scroll but avoid vertical page bounce */
     overscroll-behavior-x: contain;

@@ -320,7 +320,7 @@
 
 /* ─── Responsive breakpoints ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .header {
     height: 48px;
     padding: var(--space-1) var(--space-3);

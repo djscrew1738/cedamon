@@ -58,3 +58,48 @@
 .cell:hover {
   opacity: 0.8;
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 767px) {
+  .headerRow {
+    padding-left: 70px;
+  }
+  .rowLabel {
+    width: 66px;
+    font-size: 9px;
+  }
+  .headerCell {
+    width: 30px;
+    height: 30px;
+    font-size: 8px;
+  }
+  .cell {
+    width: 30px;
+    height: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .headerRow {
+    padding-left: 56px;
+    gap: 1px;
+  }
+  .rowLabel {
+    width: 52px;
+    font-size: 8px;
+    padding-right: 2px;
+  }
+  .headerCell {
+    width: 24px;
+    height: 24px;
+    font-size: 7px;
+  }
+  .cell {
+    width: 24px;
+    height: 16px;
+  }
+  .row {
+    gap: 1px;
+  }
+}

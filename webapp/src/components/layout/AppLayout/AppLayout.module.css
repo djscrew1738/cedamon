@@ -16,7 +16,7 @@
 }
 
 /* Mobile: leave space for the fixed bottom nav bar */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .main {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }

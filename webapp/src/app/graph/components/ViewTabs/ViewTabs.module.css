@@ -492,7 +492,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .tabBar {
     height: auto;
     min-height: 40px;
@@ -557,7 +557,7 @@
   .tab {
     padding: var(--space-1) var(--space-1-5);
     font-size: 9px;
-    min-height: 36px;
+    min-height: 44px;
   }
 
   .searchWrapper {
@@ -575,6 +575,7 @@
 
   .exportBtn {
     padding: 2px var(--space-1-5);
+    min-height: 44px;
   }
 
   .exportBtn span {
@@ -584,7 +585,7 @@
 
 /* ─── Mobile table-view dropdown ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .tableDropdownMenu {
     position: fixed;
     top: auto;

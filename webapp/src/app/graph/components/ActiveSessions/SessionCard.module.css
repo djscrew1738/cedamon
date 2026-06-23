@@ -186,7 +186,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .card {
     padding: 10px;
   }

@@ -700,7 +700,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .toolbar {
     flex-wrap: wrap;
     gap: var(--space-1-5);
@@ -764,16 +764,16 @@
   .aiButton {
     padding: var(--space-1);
     gap: 0;
-    min-height: 32px;
-    min-width: 32px;
+    min-height: 44px;
+    min-width: 44px;
   }
 
   .logsButton,
   .downloadButton,
   .pauseButton,
   .stopButton {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
   }
 
   .emergencyPauseButton span {
@@ -783,8 +783,8 @@
   .emergencyPauseButton {
     padding: var(--space-1);
     gap: 0;
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .agentPhaseBadge span:first-of-type {

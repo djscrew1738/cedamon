@@ -828,7 +828,7 @@
 
 /* ===== Responsive: Tablet / Mobile (≤768px) ===== */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .header {
     flex-wrap: wrap;
     gap: 8px;
@@ -1016,10 +1016,25 @@
   .shellBtn {
     font-size: 11px;
     padding: 4px 8px;
+    min-height: 44px;
   }
 
   .refreshBtn {
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .runAllBtn {
+    min-height: 44px;
+  }
+
+  .resultsClear {
+    min-height: 44px;
+  }
+
+  .cardActions .runBtn,
+  .cardActions .stopBtn,
+  .cardActions .ghostBtn {
+    min-height: 44px;
   }
 }

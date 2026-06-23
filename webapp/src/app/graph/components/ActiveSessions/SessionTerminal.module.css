@@ -259,7 +259,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .terminal {
     border-radius: var(--radius-md);
   }

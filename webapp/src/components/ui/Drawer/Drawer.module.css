@@ -196,7 +196,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .drawerOverlay {
     width: min(var(--drawer-width), 100vw) !important;
     touch-action: pan-y;

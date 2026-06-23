@@ -23,3 +23,17 @@
   text-align: center;
   color: var(--text-secondary);
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 767px) {
+  .container {
+    padding: var(--space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: var(--space-2);
+  }
+}

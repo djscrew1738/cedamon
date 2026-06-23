@@ -29,3 +29,39 @@
   padding: 1px 8px;
   border-radius: 10px;
 }
+
+/* ─── Responsive ─── */
+
+@media (max-width: 767px) {
+  .tableWrap {
+    max-height: 260px;
+  }
+  .sevBadge {
+    font-size: 10px;
+  }
+  .sourceBadge {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+  .cveBadge {
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tableWrap {
+    max-height: 200px;
+  }
+  .sevBadge {
+    font-size: 9px;
+  }
+  .sourceBadge {
+    font-size: 8px;
+    padding: 0 3px;
+  }
+  .cveBadge {
+    font-size: 9px;
+    padding: 0 4px;
+  }
+}

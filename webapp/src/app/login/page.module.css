@@ -27,7 +27,7 @@
 }
 
 /* Smaller watermark on mobile - save bandwidth */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .watermark {
     width: 240px !important;
     height: 240px !important;

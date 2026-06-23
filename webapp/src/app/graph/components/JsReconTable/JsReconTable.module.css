@@ -277,7 +277,7 @@
 
 /* ─── Mobile responsive ─── */
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .container {
     min-height: 0;
   }
