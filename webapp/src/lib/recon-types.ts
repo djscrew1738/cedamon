@@ -125,7 +125,7 @@ export type TrufflehogPhase = typeof TRUFFLEHOG_PHASES[number]
 // Partial Recon Types
 // =============================================================================
 
-export type PartialReconStatus = 'idle' | 'starting' | 'running' | 'completed' | 'error' | 'stopping'
+export type PartialReconStatus = 'idle' | 'starting' | 'running' | 'paused' | 'completed' | 'error' | 'stopping'
 
 export interface PartialReconState {
   project_id: string

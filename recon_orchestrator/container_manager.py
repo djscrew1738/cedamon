@@ -654,6 +654,16 @@ class ContainerManager:
         if cleaned > 0:
             logger.info(f"Cleaned up {cleaned} sub-container(s) for project {project_id}")
 
+        # Clear any stale partial-recon ancestry entries for this project.
+        # Key format: run_id (UUID) — we check by iterating all keys and
+        # dropping those whose partial-recon state no longer exists.
+        project_run_ids = set(self.partial_recon_states.get(project_id, {}).keys())
+        for rid in list(self._sub_container_ancestry.keys()):
+            if rid not in project_run_ids:
+                stale = self._sub_container_ancestry.pop(rid, set())
+                if stale:
+                    logger.debug(f"Cleared stale ancestry for {rid} ({len(stale)} container(s))")
+
         # Clean up state
         if project_id in self.running_states:
             del self.running_states[project_id]
@@ -919,7 +929,7 @@ class ContainerManager:
         """Refresh a partial recon state by checking its Docker container"""
         if not state.container_id:
             return
-        if state.status in (PartialReconStatus.COMPLETED, PartialReconStatus.ERROR, PartialReconStatus.IDLE):
+        if state.status in (PartialReconStatus.COMPLETED, PartialReconStatus.ERROR, PartialReconStatus.IDLE, PartialReconStatus.PAUSED):
             return
 
         try:
@@ -1090,6 +1100,8 @@ class ContainerManager:
 
             state.container_id = container.id
             state.status = PartialReconStatus.RUNNING
+            # Track this container in ancestry for precise sub-container cleanup
+            self._sub_container_ancestry.setdefault(run_id, set()).add(container.id)
             logger.info(
                 f"Started partial recon container {container.id[:12]} for project {project_id}, "
                 f"tool {tool_id}, run {run_id}"
@@ -1114,13 +1126,10 @@ class ContainerManager:
         """Stop a specific partial recon run"""
         state = await self.get_partial_recon_status(project_id, run_id)
 
-        if state.status not in (PartialReconStatus.RUNNING, PartialReconStatus.STARTING):
+        if state.status not in (PartialReconStatus.RUNNING, PartialReconStatus.STARTING, PartialReconStatus.PAUSED):
             return state
 
         state.status = PartialReconStatus.STOPPING
-
-        # Capture start time before container stop for selective sub-container cleanup
-        since_ts = state.started_at
 
         if state.container_id:
             try:
@@ -1138,12 +1147,29 @@ class ContainerManager:
                 state.status = PartialReconStatus.ERROR
                 state.error = f"Failed to stop: {e}"
 
-        # Selective sub-container cleanup: only kill tool containers spawned
-        # after this partial run started (avoids killing parallel runs).
-        if since_ts is not None:
-            cleaned = await self._exec(self._cleanup_sub_containers, since=since_ts)
-            if cleaned > 0:
-                logger.info(f"Cleaned up {cleaned} sub-container(s) for partial recon {run_id}")
+        # Container-level ancestry cleanup: kill only sub-containers known to
+        # belong to this run, avoiding the imprecise since=timestamp filter
+        # that could orphan or over-kill sibling containers from parallel runs.
+        container_ids = self._sub_container_ancestry.pop(run_id, set())
+        # Exclude the main container (already stopped above) to avoid redundant
+        # stop/remove calls that would hit NotFound.
+        if state.container_id in container_ids:
+            container_ids.discard(state.container_id)
+        cleaned = 0
+        for cid in container_ids:
+            try:
+                container = self.client.containers.get(cid)
+                if container.status == "paused":
+                    container.unpause()
+                container.stop(timeout=5)
+                container.remove(force=True)
+                cleaned += 1
+            except NotFound:
+                pass  # already gone
+            except Exception as e:
+                logger.warning(f"Error cleaning up sub-container {cid}: {e}")
+        if cleaned > 0:
+            logger.info(f"Cleaned up {cleaned} sub-container(s) for partial recon {run_id}")
 
         # Remove from state dict
         runs = self.partial_recon_states.get(project_id, {})

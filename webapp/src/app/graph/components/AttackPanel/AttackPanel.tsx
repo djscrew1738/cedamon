@@ -89,6 +89,7 @@ const STATUS_LABELS: Record<PartialReconStatus, string> = {
   idle: 'Idle',
   starting: 'Starting…',
   running: 'Running…',
+  paused: 'Paused',
   completed: 'Completed',
   error: 'Failed',
   stopping: 'Stopping…',

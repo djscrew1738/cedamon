@@ -292,7 +292,7 @@ describe('PartialReconState type shape', () => {
 
 describe('PartialReconStatus values', () => {
   test.each<PartialReconStatus>([
-    'idle', 'starting', 'running', 'completed', 'error', 'stopping',
+    'idle', 'starting', 'running', 'paused', 'completed', 'error', 'stopping',
   ])('accepts valid status: %s', (status) => {
     const state: PartialReconState = {
       project_id: 'p', run_id: 'r', tool_id: 't', status,
