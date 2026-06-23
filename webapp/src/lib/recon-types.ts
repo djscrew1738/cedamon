@@ -215,3 +215,63 @@ export const PARTIAL_RECON_PHASE_MAP: Record<string, readonly string[]> = {
 export const PARTIAL_RECON_PHASES = PARTIAL_RECON_PHASE_MAP['SubdomainDiscovery']
 
 export type PartialReconPhase = typeof PARTIAL_RECON_PHASES[number]
+
+// =============================================================================
+// P3: Scheduling Types
+// =============================================================================
+
+export interface ScheduledReconEntry {
+  project_id: string
+  user_id: string
+  pipeline_type: 'full' | 'partial'
+  tool_id: string
+  scheduled_at: string
+  created_at: string
+}
+
+export interface ScheduledReconListResponse {
+  scheduled: ScheduledReconEntry[]
+}
+
+// =============================================================================
+// P3: Audit Trail Types
+// =============================================================================
+
+export interface ReconAuditEntry {
+  run_id: string
+  project_id: string
+  pipeline_type: 'full' | 'partial' | 'gvm' | 'github_hunt' | 'trufflehog'
+  tool_id: string
+  status: 'completed' | 'error'
+  started_at: string | null
+  completed_at: string | null
+  duration_seconds: number | null
+  phases_completed: number
+  total_phases: number
+  error: string | null
+  user_id: string
+}
+
+export interface AuditLogResponse {
+  entries: ReconAuditEntry[]
+}
+
+// =============================================================================
+// P3: Rate Limiting / Queue Types
+// =============================================================================
+
+export interface QueuedReconEntry {
+  project_id: string
+  user_id: string
+  pipeline_type: 'full' | 'partial'
+  tool_id: string
+  queued_at: string
+  position: number
+}
+
+export interface QueueStatusResponse {
+  user_id: string
+  active_count: number
+  max_concurrent: number
+  queued: QueuedReconEntry[]
+}

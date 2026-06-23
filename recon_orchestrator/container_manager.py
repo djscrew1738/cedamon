@@ -24,6 +24,7 @@ from models import (
     GithubHuntState, GithubHuntStatus, GithubHuntLogEvent,
     TrufflehogState, TrufflehogStatus, TrufflehogLogEvent,
     PartialReconState, PartialReconStatus,
+    ReconAuditEntry, ScheduledReconEntry, QueuedReconEntry,
 )
 from state_store import OrchestratorStateStore
 
@@ -34,6 +35,12 @@ ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m|\033\[[0-9;]*m')
 
 # Maximum number of concurrent partial recon runs per project
 MAX_PARALLEL_PARTIAL_RECONS = 12
+
+# Maximum number of concurrent recons per user (P3 rate limiting)
+USER_MAX_CONCURRENT_RECONS = int(os.environ.get("USER_MAX_CONCURRENT_RECONS", "3"))
+
+# How often to check for scheduled recons (P3 scheduling)
+SCHEDULED_RECON_CHECK_INTERVAL = int(os.environ.get("SCHEDULED_RECON_CHECK_INTERVAL", "10"))
 
 # Sub-container images spawned by recon (Docker-in-Docker sibling containers)
 SUB_CONTAINER_IMAGES = [
@@ -118,6 +125,28 @@ class ContainerManager:
         self._state_store = state_store or OrchestratorStateStore()
         self._load_state()
         self._recover_containers()
+
+        # P3: Scheduling — dict of project_id -> ScheduledReconEntry
+        self._scheduled_recons: dict[str, ScheduledReconEntry] = {}
+        self._scheduled_lock = asyncio.Lock()
+
+        # P3: Audit trail — in-memory list of completed recon records
+        self._audit_log: list[ReconAuditEntry] = []
+        self._max_audit_entries = 200
+
+        # P3: Per-user rate limiting queue
+        # user_id -> deque of (pipeline_type, params_dict, future)
+        self._user_queues: dict[str, list[dict]] = {}
+        # user_id -> count of currently active recons
+        self._user_active_counts: dict[str, int] = {}
+        self._user_queue_lock = asyncio.Lock()
+
+        # Background task for scheduled recons
+        self._scheduler_task: asyncio.Task | None = None
+        try:
+            self._scheduler_task = asyncio.create_task(self._scheduled_recon_loop())
+        except RuntimeError:
+            pass
 
         # Background task that periodically flushes state to disk so that a
         # crash or ungraceful container restart loses at most a few seconds of
@@ -205,6 +234,13 @@ class ContainerManager:
         """Stop the background persistence task, clean up all containers,
         and perform a final state flush."""
         await self.cleanup()
+        if self._scheduler_task is not None:
+            self._scheduler_task.cancel()
+            try:
+                await self._scheduler_task
+            except asyncio.CancelledError:
+                pass
+            self._scheduler_task = None
         if self._persist_task is not None:
             self._persist_task.cancel()
             try:
@@ -292,6 +328,172 @@ class ContainerManager:
 
         self._save_state()
 
+    # =========================================================================
+    # P3: Recon Scheduling — background loop that starts scheduled recons
+    # =========================================================================
+
+    async def _scheduled_recon_loop(self) -> None:
+        """Background loop that checks for due scheduled recons every N seconds."""
+        while True:
+            try:
+                await asyncio.sleep(SCHEDULED_RECON_CHECK_INTERVAL)
+                await self._check_scheduled_recons()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"Scheduled recon check failed: {e}")
+
+    async def _check_scheduled_recons(self) -> None:
+        """Start any scheduled recons whose time has arrived."""
+        now = datetime.now(timezone.utc)
+        async with self._scheduled_lock:
+            due = [
+                (pid, entry) for pid, entry in self._scheduled_recons.items()
+                if entry.scheduled_at <= now
+            ]
+            for pid, entry in due:
+                try:
+                    logger.info(
+                        f"Starting scheduled recon project_id={pid} "
+                        f"type={entry.pipeline_type} scheduled_at={entry.scheduled_at.isoformat()}"
+                    )
+                    if entry.pipeline_type == "full":
+                        await self.start_recon(
+                            project_id=pid,
+                            user_id=entry.user_id,
+                            webapp_api_url=entry.params.get("webapp_api_url", ""),
+                            recon_path=entry.params.get("recon_path", ""),
+                            custom_templates_path=entry.params.get("custom_templates_path", ""),
+                        )
+                    elif entry.pipeline_type == "partial":
+                        await self.start_partial_recon(
+                            project_id=pid,
+                            user_id=entry.user_id,
+                            webapp_api_url=entry.params.get("webapp_api_url", ""),
+                            tool_id=entry.tool_id,
+                            graph_inputs=entry.params.get("graph_inputs", {}),
+                            user_inputs=entry.params.get("user_inputs", []),
+                            user_targets=entry.params.get("user_targets"),
+                            include_graph_targets=entry.params.get("include_graph_targets", True),
+                            settings_overrides=entry.params.get("settings_overrides", {}),
+                        )
+                    del self._scheduled_recons[pid]
+                except Exception as e:
+                    logger.error(f"Failed to start scheduled recon {pid}: {e}")
+                    # Remove failed scheduled entries to avoid retry loops
+                    self._scheduled_recons.pop(pid, None)
+
+    def schedule_recon(self, pid: str, entry: ScheduledReconEntry) -> None:
+        """Register a scheduled recon entry."""
+        self._scheduled_recons[pid] = entry
+        logger.info(
+            f"Scheduled {entry.pipeline_type} recon for project {pid} "
+            f"at {entry.scheduled_at.isoformat()}"
+        )
+
+    def cancel_scheduled_recon(self, project_id: str) -> bool:
+        """Cancel a previously scheduled recon. Returns True if found and removed."""
+        entry = self._scheduled_recons.pop(project_id, None)
+        if entry:
+            logger.info(f"Cancelled scheduled recon for project {project_id}")
+            return True
+        return False
+
+    def get_scheduled_recons(self) -> list[ScheduledReconEntry]:
+        """Return all currently scheduled recons."""
+        return list(self._scheduled_recons.values())
+
+    # =========================================================================
+    # P3: Audit Trail — record completed recon runs
+    # =========================================================================
+
+    def _add_audit_entry(self, entry: ReconAuditEntry) -> None:
+        """Add an audit entry, trimming the log if it exceeds max size."""
+        self._audit_log.append(entry)
+        if len(self._audit_log) > self._max_audit_entries:
+            self._audit_log.pop(0)
+
+    def get_audit_log(self, project_id: str | None = None) -> list[ReconAuditEntry]:
+        """Return audit entries, optionally filtered by project_id."""
+        if project_id is None:
+            return list(self._audit_log)
+        return [e for e in self._audit_log if e.project_id == project_id]
+
+    # =========================================================================
+    # P3: Per-user rate limiting / queue
+    # =========================================================================
+
+    async def _try_acquire_user_slot(self, user_id: str) -> bool:
+        """Check if a user has capacity for another recon. Non-blocking."""
+        async with self._user_queue_lock:
+            current = self._user_active_counts.get(user_id, 0)
+            if current < USER_MAX_CONCURRENT_RECONS:
+                self._user_active_counts[user_id] = current + 1
+                return True
+            return False
+
+    async def _release_user_slot(self, user_id: str) -> None:
+        """Release a user slot and try to start the next queued recon."""
+        async with self._user_queue_lock:
+            current = self._user_active_counts.get(user_id, 0)
+            if current > 0:
+                self._user_active_counts[user_id] = current - 1
+            # If user has queued items, start the next one
+            if user_id in self._user_queues and self._user_queues[user_id]:
+                next_entry = self._user_queues[user_id].pop(0)
+                # This will re-enter the lock via _try_acquire_user_slot
+                asyncio.create_task(self._process_queued_recon(user_id, next_entry))
+
+    async def _process_queued_recon(self, user_id: str, entry: dict) -> None:
+        """Process a queued recon entry (called after a slot frees up)."""
+        if not await self._try_acquire_user_slot(user_id):
+            # Still no slot — put it back at the front
+            async with self._user_queue_lock:
+                self._user_queues.setdefault(user_id, []).insert(0, entry)
+            return
+        # Execute the stored start coroutine
+        coro = entry.get("coro")
+        if coro:
+            try:
+                await coro
+            except Exception as e:
+                logger.warning(f"Queued recon failed for user {user_id}: {e}")
+        self._release_user_slot(user_id)
+
+    def get_user_queue_status(self, user_id: str) -> tuple[int, int, int]:
+        """Return (active_count, queued_count, max_concurrent) for a user."""
+        active = self._user_active_counts.get(user_id, 0)
+        queued = len(self._user_queues.get(user_id, []))
+        return active, queued, USER_MAX_CONCURRENT_RECONS
+
+    async def enqueue_user_recon(self, user_id: str, coro, entry_meta: dict) -> bool:
+        """Try to start a recon immediately, or queue it if user is at capacity.
+        
+        Returns True if started immediately, False if queued.
+        """
+        if await self._try_acquire_user_slot(user_id):
+            # Start immediately
+            try:
+                await coro
+            except Exception as e:
+                logger.warning(f"Recon failed for user {user_id}: {e}")
+                raise
+            finally:
+                await self._release_user_slot(user_id)
+            return True
+        else:
+            # Queue it
+            async with self._user_queue_lock:
+                self._user_queues.setdefault(user_id, []).append({
+                    "coro": coro,
+                    **entry_meta,
+                })
+            logger.info(
+                f"User {user_id} at capacity ({USER_MAX_CONCURRENT_RECONS}), "
+                f"recon queued (position {len(self._user_queues[user_id])})"
+            )
+            return False
+
     @staticmethod
     async def _bounded_queue_put(queue: asyncio.Queue, item, timeout: float = 5.0) -> None:
         """Put an item into a bounded queue, dropping oldest entries when full.
@@ -336,13 +538,33 @@ class ContainerManager:
                     elif container.status != "running":
                         # Container stopped - check exit code
                         exit_code = container.attrs.get("State", {}).get("ExitCode", -1)
+                        was_completed = False
                         if exit_code == 0:
                             state.status = ReconStatus.COMPLETED
                             state.completed_at = datetime.now(timezone.utc)
+                            was_completed = True
                         else:
                             state.status = ReconStatus.ERROR
                             state.error = f"Container exited with code {exit_code}"
                             state.completed_at = datetime.now(timezone.utc)
+
+                        # Record audit trail entry
+                        started = state.started_at or state.completed_at
+                        duration = None
+                        if started and state.completed_at:
+                            duration = (state.completed_at - started).total_seconds()
+                        self._add_audit_entry(ReconAuditEntry(
+                            run_id=project_id,
+                            project_id=project_id,
+                            pipeline_type="full",
+                            status="completed" if was_completed else "error",
+                            started_at=state.started_at,
+                            completed_at=state.completed_at,
+                            duration_seconds=duration,
+                            phases_completed=state.phase_number or 0,
+                            total_phases=state.total_phases,
+                            error=state.error,
+                        ))
 
                         # Auto-cleanup: remove finished container
                         try:
@@ -654,6 +876,24 @@ class ContainerManager:
             except Exception as e:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to stop: {e}"
+
+        # Record audit entry for manual stop
+        started = state.started_at or state.completed_at
+        duration = None
+        if started and state.completed_at:
+            duration = (state.completed_at - started).total_seconds()
+        self._add_audit_entry(ReconAuditEntry(
+            run_id=project_id,
+            project_id=project_id,
+            pipeline_type="full",
+            status="completed",
+            started_at=state.started_at,
+            completed_at=state.completed_at,
+            duration_seconds=duration,
+            phases_completed=state.phase_number or 0,
+            total_phases=state.total_phases,
+            error=state.error if state.status == ReconStatus.ERROR else None,
+        ))
 
         # Clean up sub-containers created after this recon started
         cleaned = await self._exec(self._cleanup_sub_containers, since=state.started_at)
@@ -1043,13 +1283,33 @@ class ContainerManager:
             container = self.client.containers.get(state.container_id)
             if container.status != "running":
                 exit_code = container.attrs.get("State", {}).get("ExitCode", -1)
+                was_completed = False
                 if exit_code == 0:
                     state.status = PartialReconStatus.COMPLETED
                     state.completed_at = datetime.now(timezone.utc)
+                    was_completed = True
                 else:
                     state.status = PartialReconStatus.ERROR
                     state.error = f"Container exited with code {exit_code}"
                     state.completed_at = datetime.now(timezone.utc)
+
+                # Record audit trail entry for partial recon
+                started = state.started_at or state.completed_at
+                duration = None
+                if started and state.completed_at:
+                    duration = (state.completed_at - started).total_seconds()
+                self._add_audit_entry(ReconAuditEntry(
+                    run_id=state.run_id,
+                    project_id=state.project_id,
+                    pipeline_type="partial",
+                    tool_id=state.tool_id,
+                    status="completed" if was_completed else "error",
+                    started_at=state.started_at,
+                    completed_at=state.completed_at,
+                    duration_seconds=duration,
+                    error=state.error,
+                ))
+
                 try:
                     container.remove()
                     logger.info(f"Auto-removed partial recon container for {state.project_id}/{state.run_id}")

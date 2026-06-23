@@ -23,6 +23,7 @@ class ReconStartRequest(BaseModel):
     project_id: str
     user_id: str
     webapp_api_url: str
+    scheduled_at: Optional[datetime] = None  # P3: future scheduling
 
 
 class ReconState(BaseModel):
@@ -245,6 +246,7 @@ class PartialReconStartRequest(BaseModel):
     user_targets: dict | None = None          # structured inputs (Naabu: {subdomains, ips, ip_attach_to})
     include_graph_targets: bool = True        # whether to include existing graph data in scan
     settings_overrides: dict = {}             # optional per-tool settings
+    scheduled_at: Optional[datetime] = None   # P3: future scheduling
 
 
 class PartialReconState(BaseModel):
@@ -267,3 +269,73 @@ class PartialReconListResponse(BaseModel):
     """Response listing all partial recon runs for a project"""
     project_id: str
     runs: list[PartialReconState]
+
+
+# =============================================================================
+# Audit Trail Models (P3)
+# =============================================================================
+
+
+class ReconAuditEntry(BaseModel):
+    """Persistent record of a completed recon run"""
+    run_id: str
+    project_id: str
+    pipeline_type: str  # "full", "partial", "gvm", "github_hunt", "trufflehog"
+    tool_id: str = ""   # for partial recons
+    status: str         # "completed" or "error"
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    phases_completed: int = 0
+    total_phases: int = 0
+    error: Optional[str] = None
+    user_id: str = ""
+
+
+class AuditLogResponse(BaseModel):
+    """Response containing audit log entries"""
+    entries: list[ReconAuditEntry]
+
+
+# =============================================================================
+# Scheduling Models (P3)
+# =============================================================================
+
+
+class ScheduledReconEntry(BaseModel):
+    """A recon scheduled to start at a future time"""
+    project_id: str
+    user_id: str
+    pipeline_type: str  # "full" or "partial"
+    tool_id: str = ""   # for partial recons
+    scheduled_at: datetime
+    created_at: datetime
+    params: dict = {}   # stored start parameters
+
+
+class ScheduledReconListResponse(BaseModel):
+    """Response listing all scheduled recons"""
+    scheduled: list[ScheduledReconEntry]
+
+
+# =============================================================================
+# Rate Limiting / Queue Models (P3)
+# =============================================================================
+
+
+class QueuedReconEntry(BaseModel):
+    """A recon request queued due to per-user rate limiting"""
+    project_id: str
+    user_id: str
+    pipeline_type: str  # "full" or "partial"
+    tool_id: str = ""   # for partial recons
+    queued_at: datetime
+    position: int = 0
+
+
+class QueueStatusResponse(BaseModel):
+    """Response showing queue status for a user"""
+    user_id: str
+    active_count: int
+    max_concurrent: int
+    queued: list[QueuedReconEntry]

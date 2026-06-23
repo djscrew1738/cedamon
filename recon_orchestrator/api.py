@@ -7,6 +7,7 @@ import logging
 import os
 import socket
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import docker
 from docker.errors import NotFound
@@ -33,6 +34,12 @@ from models import (
     PartialReconState,
     PartialReconStatus,
     PartialReconListResponse,
+    ReconAuditEntry,
+    AuditLogResponse,
+    ScheduledReconEntry,
+    ScheduledReconListResponse,
+    QueuedReconEntry,
+    QueueStatusResponse,
 )
 
 # Configure logging
@@ -553,6 +560,139 @@ async def stream_logs(project_id: str):
         }
 
     return EventSourceResponse(event_generator())
+
+
+# =============================================================================
+# P3: Scheduling Endpoints
+# =============================================================================
+
+
+@app.post("/recon/{project_id}/schedule", response_model=ScheduledReconEntry)
+async def schedule_recon(project_id: str, request: ReconStartRequest):
+    """
+    Schedule a recon to start at a future time.
+
+    Body includes the standard ReconStartRequest fields plus an optional
+    `scheduled_at` field (ISO 8601 datetime). If `scheduled_at` is in the
+    past or not provided, the recon starts immediately instead.
+    """
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+
+    scheduled_at = request.scheduled_at
+    now = datetime.now(timezone.utc)
+
+    if scheduled_at is None or scheduled_at <= now:
+        # Start immediately instead
+        try:
+            state = await container_manager.start_recon(
+                project_id=project_id,
+                user_id=request.user_id,
+                webapp_api_url=request.webapp_api_url,
+                recon_path=RECON_PATH,
+                custom_templates_path=CUSTOM_TEMPLATES_PATH,
+            )
+            return ScheduledReconEntry(
+                project_id=project_id,
+                user_id=request.user_id,
+                pipeline_type="full",
+                scheduled_at=now,
+                created_at=now,
+                params={"webapp_api_url": request.webapp_api_url, "recon_path": RECON_PATH, "custom_templates_path": CUSTOM_TEMPLATES_PATH},
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    entry = ScheduledReconEntry(
+        project_id=project_id,
+        user_id=request.user_id,
+        pipeline_type="full",
+        scheduled_at=scheduled_at,
+        created_at=now,
+        params={
+            "webapp_api_url": request.webapp_api_url,
+            "recon_path": RECON_PATH,
+            "custom_templates_path": CUSTOM_TEMPLATES_PATH,
+        },
+    )
+    container_manager.schedule_recon(project_id, entry)
+    return entry
+
+
+@app.get("/recon/scheduled", response_model=ScheduledReconListResponse)
+async def list_scheduled_recons():
+    """List all currently scheduled recons."""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return ScheduledReconListResponse(
+        scheduled=container_manager.get_scheduled_recons()
+    )
+
+
+@app.delete("/recon/{project_id}/schedule", response_model=dict)
+async def cancel_scheduled_recon(project_id: str):
+    """Cancel a previously scheduled recon."""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    cancelled = container_manager.cancel_scheduled_recon(project_id)
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="No scheduled recon found for this project")
+    return {"cancelled": True, "project_id": project_id}
+
+
+# =============================================================================
+# P3: Audit Trail / History Endpoints
+# =============================================================================
+
+
+@app.get("/recon/{project_id}/history", response_model=AuditLogResponse)
+async def get_recon_history(project_id: str):
+    """Return historical recon records for a project."""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    entries = container_manager.get_audit_log(project_id=project_id)
+    return AuditLogResponse(entries=entries)
+
+
+@app.get("/recon/history", response_model=AuditLogResponse)
+async def get_all_recon_history():
+    """Return all historical recon records across all projects."""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    entries = container_manager.get_audit_log()
+    return AuditLogResponse(entries=entries)
+
+
+# =============================================================================
+# P3: Rate Limiting / Queue Status Endpoints
+# =============================================================================
+
+
+@app.get("/recon/queue/{user_id}", response_model=QueueStatusResponse)
+async def get_user_queue_status(user_id: str):
+    """Return queue status (active + queued count) for a user."""
+    if not container_manager:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    active, queued, max_conc = container_manager.get_user_queue_status(user_id)
+    now = datetime.now(timezone.utc)
+    queued_entries = [
+        QueuedReconEntry(
+            project_id="(pending)",
+            user_id=user_id,
+            pipeline_type="full",
+            queued_at=now,
+            position=i + 1,
+        )
+        for i in range(queued)
+    ]
+    return QueueStatusResponse(
+        user_id=user_id,
+        active_count=active,
+        max_concurrent=max_conc,
+        queued=queued_entries,
+    )
 
 
 # =============================================================================
