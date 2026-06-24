@@ -1932,6 +1932,390 @@ COMBO_RULES: list[tuple[set[str], list[HeuristicRule]]] = [
             ),
         ],
     ),
+    # --- New COMBO_RULES for infrastructure additions ---
+    (
+        {"java", "tomcat"},
+        [
+            HeuristicRule(
+                id="combo-java-tomcat-fuzz",
+                name="Java + Tomcat",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="Tomcat apps expose /manager, /host-manager, /examples, and /docs paths.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.4,
+                suggested_args={"extensions": [".jsp", ".do", ".action"], "wordlist": "/usr/share/wordlists/tomcat.txt"},
+            ),
+            HeuristicRule(
+                id="combo-java-tomcat-nuclei",
+                name="Java + Tomcat vulnerability scan",
+                category="combo",
+                priority=2,
+                tool_name="execute_nuclei",
+                rationale="Tomcat has known CVEs for manager default creds, ghostcat, and file read.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["tomcat/"]},
+            ),
+        ],
+    ),
+    (
+        {"node", "express"},
+        [
+            HeuristicRule(
+                id="combo-node-express-fuzz",
+                name="Node.js + Express",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="Express apps commonly use RESTful routes; fuzz for hidden endpoints.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"extensions": [".json", ".js"], "wordlist": "/usr/share/wordlists/api.txt"},
+            ),
+            HeuristicRule(
+                id="combo-node-express-crawl",
+                name="Node.js + Express crawl",
+                category="combo",
+                priority=2,
+                tool_name="execute_katana",
+                rationale="Crawl Express SPAs for client-side routes and API calls.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.2,
+            ),
+        ],
+    ),
+    (
+        {"ruby", "rails"},
+        [
+            HeuristicRule(
+                id="combo-ruby-rails-fuzz",
+                name="Ruby + Rails",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="Rails apps expose /rails/info, /assets, /sidekiq, and API routes.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"extensions": [".json", ".xml", ".rss"], "wordlist": "/usr/share/wordlists/rails.txt"},
+            ),
+            HeuristicRule(
+                id="combo-ruby-rails-nuclei",
+                name="Ruby + Rails vulnerability scan",
+                category="combo",
+                priority=2,
+                tool_name="execute_nuclei",
+                rationale="Rails has known CVEs for RCE, path traversal, and secret leakage.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["rails/"]},
+            ),
+        ],
+    ),
+    (
+        {"python", "django"},
+        [
+            HeuristicRule(
+                id="combo-python-django-fuzz",
+                name="Python + Django",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="Django apps expose /admin, /api, /static, and common CBV URLs.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"extensions": [""], "wordlist": "/usr/share/wordlists/django.txt"},
+            ),
+            HeuristicRule(
+                id="combo-python-django-arjun",
+                name="Python + Django parameter discovery",
+                category="combo",
+                priority=2,
+                tool_name="execute_arjun",
+                rationale="Django views rely on GET/POST parameters; brute-force CSRF and query params.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+            ),
+        ],
+    ),
+    (
+        {"python", "flask"},
+        [
+            HeuristicRule(
+                id="combo-python-flask-fuzz",
+                name="Python + Flask",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="Flask apps expose /api, /static, /templates, and custom routes.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"extensions": [".json", ".xml"]},
+            ),
+            HeuristicRule(
+                id="combo-python-flask-nuclei",
+                name="Python + Flask debug check",
+                category="combo",
+                priority=2,
+                tool_name="execute_nuclei",
+                rationale="Flask debug mode enabled in production leaks the Werkzeug debugger.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.2,
+                suggested_args={"templates": ["flask/", "werkzeug/"]},
+            ),
+        ],
+    ),
+    (
+        {"vault", "consul"},
+        [
+            HeuristicRule(
+                id="combo-vault-consul-api",
+                name="Vault + Consul",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="HashiCorp Vault+Consul stack — probe Vault API health and Consul KV.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"path": "/v1/sys/health"},
+            ),
+            HeuristicRule(
+                id="combo-vault-consul-nuclei",
+                name="Vault + Consul vulnerability scan",
+                category="combo",
+                priority=2,
+                tool_name="execute_nuclei",
+                rationale="Vault and Consul have known CVEs for access bypass and secret leakage.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["vault/", "consul/"]},
+            ),
+        ],
+    ),
+    (
+        {"consul", "nomad"},
+        [
+            HeuristicRule(
+                id="combo-consul-nomad-nuclei",
+                name="Consul + Nomad",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="HashiCorp orchestration stack; check for misconfigured Consul and Nomad APIs.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["consul/", "nomad/"]},
+            ),
+        ],
+    ),
+    (
+        {"kafka", "zookeeper"},
+        [
+            HeuristicRule(
+                id="combo-kafka-zookeeper-nmap",
+                name="Kafka + Zookeeper",
+                category="combo",
+                priority=1,
+                tool_name="execute_nmap",
+                rationale="Kafka/ZooKeeper exposed ports may leak broker metadata and topics.",
+                phase="informational",
+                task_cluster="enum",
+                cost_score=0.3,
+                suggested_args={"script": "kafka-enum,zookeeper-info"},
+            ),
+        ],
+    ),
+    (
+        {"rabbitmq", "erlang"},
+        [
+            HeuristicRule(
+                id="combo-rabbitmq-erlang-nuclei",
+                name="RabbitMQ + Erlang",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="RabbitMQ management interface and Erlang distribution ports may be exposed.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["rabbitmq/"]},
+            ),
+        ],
+    ),
+    (
+        {"grafana", "prometheus"},
+        [
+            HeuristicRule(
+                id="combo-grafana-prometheus-nuclei",
+                name="Grafana + Prometheus",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="Observability stack exposes dashboards, TSDB APIs, and alertmanager.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["grafana/", "prometheus/"]},
+            ),
+        ],
+    ),
+    (
+        {"minio", "s3"},
+        [
+            HeuristicRule(
+                id="combo-minio-s3-curl",
+                name="MinIO + S3",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="MinIO exposes S3-compatible API; check for bucket listing and object access.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"method": "GET", "path": "/minio/admin/v1/info"},
+            ),
+        ],
+    ),
+    (
+        {"kibana", "elasticsearch"},
+        [
+            HeuristicRule(
+                id="combo-kibana-elasticsearch-nuclei",
+                name="Kibana + Elasticsearch",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="ELK stack exposure can leak indices, dashboards, and cluster health.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["elasticsearch/", "kibana/"]},
+            ),
+        ],
+    ),
+    (
+        {"traefik", "docker"},
+        [
+            HeuristicRule(
+                id="combo-traefik-docker-nuclei",
+                name="Traefik + Docker",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="Traefik as Docker reverse proxy may expose dashboard and container metadata.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["traefik/", "docker/"]},
+            ),
+        ],
+    ),
+    (
+        {"keycloak", "ldap"},
+        [
+            HeuristicRule(
+                id="combo-keycloak-ldap-nuclei",
+                name="Keycloak + LDAP",
+                category="combo",
+                priority=1,
+                tool_name="execute_nuclei",
+                rationale="Keycloak with LDAP backend has known CVEs for auth bypass and user enumeration.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["keycloak/"]},
+            ),
+        ],
+    ),
+    (
+        {"php", "nginx"},
+        [
+            HeuristicRule(
+                id="combo-php-nginx-fuzz",
+                name="PHP + nginx",
+                category="combo",
+                priority=1,
+                tool_name="execute_ffuf",
+                rationale="PHP-FPM behind nginx commonly exposes .php, /info.php, and installers.",
+                phase="informational",
+                task_cluster="fuzz",
+                cost_score=0.3,
+                suggested_args={"extensions": [".php"]},
+            ),
+            HeuristicRule(
+                id="combo-php-nginx-nuclei",
+                name="PHP + nginx vulnerability scan",
+                category="combo",
+                priority=2,
+                tool_name="execute_nuclei",
+                rationale="PHP-FPM and nginx misconfigurations can lead to RCE and path traversal.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["php/", "nginx/"]},
+            ),
+        ],
+    ),
+    (
+        {"jupyter", "python"},
+        [
+            HeuristicRule(
+                id="combo-jupyter-python-curl",
+                name="Jupyter + Python",
+                category="combo",
+                priority=1,
+                tool_name="execute_curl",
+                rationale="Jupyter servers may have token-based auth or no auth; probe /api/status.",
+                phase="informational",
+                task_cluster="recon",
+                cost_score=0.05,
+                suggested_args={"path": "/api/status"},
+            ),
+            HeuristicRule(
+                id="combo-jupyter-python-nuclei",
+                name="Jupyter + Python vulnerability scan",
+                category="combo",
+                priority=2,
+                tool_name="execute_nuclei",
+                rationale="Jupyter has known CVEs for RCE, config leakage, and authentication bypass.",
+                phase="informational",
+                task_cluster="vuln_scan",
+                cost_score=0.3,
+                suggested_args={"templates": ["jupyter/"]},
+            ),
+        ],
+    ),
+    (
+        {"cassandra", "java"},
+        [
+            HeuristicRule(
+                id="combo-cassandra-java-nmap",
+                name="Cassandra + Java",
+                category="combo",
+                priority=1,
+                tool_name="execute_nmap",
+                rationale="Cassandra's JMX and native transport ports are exposed; enumerate keyspaces.",
+                phase="informational",
+                task_cluster="enum",
+                cost_score=0.3,
+                suggested_args={"script": "cassandra-info"},
+            ),
+        ],
+    ),
 ]
 
 
@@ -2502,12 +2886,64 @@ COVERAGE_RULES: list[Callable[[RuleContext], list[HeuristicRule]]] = [
             phase="exploitation",
             task_cluster="exploit",
             cost_score=0.7,
-            suggested_args={"target_ip": "{{target}"},
+            suggested_args={"target_ip": "{{target}}"},
         )
     ] if (ctx.target_info.get("vulnerabilities")
           and ctx.phase in ("exploitation", "post_exploitation")
           and "execute_exploit" not in ctx.already_run
           and "metasploit_console" not in ctx.already_run) else [],
+    # 29. Database ports open but no database-specific enumeration
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-database-ports",
+            name="Database ports without enumeration",
+            category="coverage",
+            priority=2,
+            tool_name="execute_nmap",
+            rationale="Database ports detected but no database-specific enumeration performed.",
+            phase="informational",
+            task_cluster="enum",
+            cost_score=0.3,
+            suggested_args={"script": "mysql-info,ms-sql-info,oracle-sid-brute,redis-info,mongodb-info,cassandra-info"},
+        )
+    ] if (ctx.has_any_port({3306, 5432, 1433, 1521, 6379, 27017, 9042, 9200, 11211, 5984, 5430, 3307, 50000, 50001})
+          and "execute_nmap" not in ctx.already_run
+          and ctx.phase == "informational") else [],
+    # 30. Message broker ports open but no broker enumeration
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-message-broker-ports",
+            name="Message broker ports without enumeration",
+            category="coverage",
+            priority=2,
+            tool_name="execute_nmap",
+            rationale="Message broker ports detected but no broker-specific enumeration performed.",
+            phase="informational",
+            task_cluster="enum",
+            cost_score=0.3,
+            suggested_args={"script": "kafka-enum,rabbitmq-info,activemq-info"},
+        )
+    ] if (ctx.has_any_port({5672, 5671, 15672, 25672, 9092, 9093, 61613, 61614, 1883, 8883})
+          and "execute_nmap" not in ctx.already_run
+          and ctx.phase == "informational") else [],
+    # 31. HashiCorp infrastructure discovered but no API probe
+    lambda ctx: [
+        HeuristicRule(
+            id="gap-hashicorp-infra",
+            name="HashiCorp infrastructure without API probe",
+            category="coverage",
+            priority=2,
+            tool_name="execute_curl",
+            rationale="HashiCorp tools (Vault/Consul/Nomad) detected but no API health/liveness probe performed.",
+            phase="informational",
+            task_cluster="recon",
+            cost_score=0.05,
+            suggested_args={"path": "/v1/sys/health"},
+        )
+    ] if (ctx.has_any_tech({"vault", "consul", "nomad"})
+          and ctx.has_any_port({8200, 8300, 8301, 8500, 4646, 4647})
+          and "execute_curl" not in ctx.already_run
+          and ctx.phase == "informational") else [],
 ]
 
 
