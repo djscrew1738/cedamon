@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 # ─── Retry configuration ──────────────────────────────────────────────────
 # Tools whose failures are often transient and worth retrying.
 _RETRYABLE_TOOLS: set[str] = {
-    "execute_nmap", "execute_naabu", "execute_httpx", "execute_nuclei",
+    "execute_nmap", "execute_naabu", "execute_masscan", "execute_httpx",
+    "execute_nuclei", "execute_searchsploit",
     "execute_subfinder", "execute_amass", "execute_gau", "execute_katana",
     "execute_ffuf", "execute_arjun", "execute_jsluice", "execute_wpscan",
     "execute_hydra", "execute_curl",
@@ -413,10 +414,14 @@ async def execute_tool_node(
             logger.info(
                 f"PARSED [{tool_name}]: "
                 f"{len(parsed.get('ports', []))} ports, "
+                f"{len(parsed.get('services', []))} services, "
                 f"{len(parsed.get('technologies', []))} techs, "
                 f"{len(parsed.get('vulnerabilities', []))} vulns, "
                 f"{len(parsed.get('credentials', []))} creds, "
-                f"{len(parsed.get('findings', []))} findings"
+                f"{len(parsed.get('findings', []))} findings, "
+                f"{len(parsed.get('subdomains', []))} subdomains, "
+                f"{len(parsed.get('endpoints', []))} endpoints, "
+                f"{len(parsed.get('exploits', []))} exploits"
             )
 
     updates = {
