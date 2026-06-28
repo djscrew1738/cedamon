@@ -168,7 +168,7 @@
   width: 300px;
   max-width: 85vw;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-default);
   display: flex;

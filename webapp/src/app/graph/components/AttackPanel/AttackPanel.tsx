@@ -7,6 +7,7 @@ import {
   Loader2,
   AlertCircle,
   Play,
+  Square,
   Bug,
   Package,
   ListChecks,
@@ -249,20 +250,44 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
     async (suggestion: AttackSuggestion) => {
       if (!projectId) return
 
-      const result = await startPartialRecon({
-        tool_id: suggestion.toolId,
-        graph_inputs: suggestion.graphInputs,
-        user_inputs: [],
-        include_graph_targets: true,
-      })
+      try {
+        const result = await startPartialRecon({
+          tool_id: suggestion.toolId,
+          graph_inputs: suggestion.graphInputs,
+          user_inputs: [],
+          include_graph_targets: true,
+        })
 
-      if (!result) return
+        if (!result) {
+          toast.error('Failed to start attack', suggestion.title)
+          return
+        }
 
-      setRunIdBySuggestion(prev => ({ ...prev, [suggestion.id]: result.run_id }))
-      setRanAttacks(prev => new Set(prev).add(suggestion.id))
-      toast.info(`${suggestion.toolId} started`, suggestion.title)
+        setRunIdBySuggestion(prev => ({ ...prev, [suggestion.id]: result.run_id }))
+        setRanAttacks(prev => new Set(prev).add(suggestion.id))
+        toast.info(`${suggestion.toolId} started`, suggestion.title)
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Unknown error starting attack',
+          suggestion.title,
+        )
+      }
     },
     [projectId, startPartialRecon, toast],
+  )
+
+  // Re-run a previously-completed suggestion
+  const handleReRunAttack = useCallback(
+    (suggestion: AttackSuggestion) => {
+      // Clear the completed status so the card transitions to "run" state
+      setRanAttacks(prev => {
+        const next = new Set(prev)
+        next.delete(suggestion.id)
+        return next
+      })
+      handleRunAttack(suggestion)
+    },
+    [handleRunAttack],
   )
 
   // Stop an attack
@@ -270,11 +295,40 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
     async (suggestion: AttackSuggestion) => {
       const runId = runIdBySuggestion[suggestion.id]
       if (!runId) return
-      await stopPartialRecon(runId)
-      toast.info(`${suggestion.toolId} stopped`, suggestion.title)
+
+      try {
+        await stopPartialRecon(runId)
+        toast.info(`${suggestion.toolId} stopped`, suggestion.title)
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to stop attack',
+          suggestion.title,
+        )
+      }
     },
     [runIdBySuggestion, stopPartialRecon, toast],
   )
+
+  // Stop all running attacks
+  const handleStopAll = useCallback(async () => {
+    const toStop = activeRuns.filter(r => r.run_id)
+    if (toStop.length === 0) return
+
+    toast.info(`Stopping ${toStop.length} attack${toStop.length === 1 ? '' : 's'}…`, 'Stop all')
+
+    let errors = 0
+    for (const run of toStop) {
+      try {
+        await stopPartialRecon(run.run_id)
+      } catch {
+        errors++
+      }
+    }
+
+    if (errors > 0) {
+      toast.error(`${errors} of ${toStop.length} attacks failed to stop`, 'Stop all')
+    }
+  }, [activeRuns, stopPartialRecon, toast])
 
   // Run all pending suggestions sequentially
   const handleRunAllPending = useCallback(async () => {
@@ -285,18 +339,27 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
     setIsRunningAll(true)
     toast.info(`Starting ${pending.length} pending attack${pending.length === 1 ? '' : 's'}`, 'Run all')
 
+    let launched = 0
+    let failed = 0
     try {
       for (const suggestion of pending) {
-        // eslint-disable-next-line no-await-in-loop
-        const result = await startPartialRecon({
-          tool_id: suggestion.toolId,
-          graph_inputs: suggestion.graphInputs,
-          user_inputs: [],
-          include_graph_targets: true,
-        })
-        if (result) {
-          setRunIdBySuggestion(prev => ({ ...prev, [suggestion.id]: result.run_id }))
-          setRanAttacks(prev => new Set(prev).add(suggestion.id))
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const result = await startPartialRecon({
+            tool_id: suggestion.toolId,
+            graph_inputs: suggestion.graphInputs,
+            user_inputs: [],
+            include_graph_targets: true,
+          })
+          if (result) {
+            setRunIdBySuggestion(prev => ({ ...prev, [suggestion.id]: result.run_id }))
+            setRanAttacks(prev => new Set(prev).add(suggestion.id))
+            launched++
+          } else {
+            failed++
+          }
+        } catch {
+          failed++
         }
         // Small delay between launches to avoid slamming the orchestrator
         // eslint-disable-next-line no-await-in-loop
@@ -304,8 +367,31 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
       }
     } finally {
       setIsRunningAll(false)
+      if (failed > 0) {
+        toast.error(`${failed} of ${pending.length} attacks failed to start`, 'Run all')
+      }
     }
   }, [projectId, isAnyRunning, isRunningAll, suggestions, runIdBySuggestion, startPartialRecon, toast])
+
+  // Retry a failed result by re-running its original suggestion
+  const handleRetryResult = useCallback(
+    (run: PartialReconState) => {
+      // Find the suggestion that matches this run's tool_id
+      const suggestion = suggestions.find(s => s.toolId === run.tool_id)
+      if (!suggestion) {
+        toast.error('Could not find matching attack suggestion for retry', run.tool_id)
+        return
+      }
+      // Clear any prior state so the card shows as ready
+      setDismissedRunIds(prev => {
+        const next = new Set(prev)
+        next.delete(run.run_id)
+        return next
+      })
+      handleRunAttack(suggestion)
+    },
+    [suggestions, handleRunAttack, toast],
+  )
 
   // Filter suggestions
   const filtered = useMemo(() => {
@@ -437,6 +523,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
             onClick={handleRefresh}
             disabled={isLoading || surfaceLoading || isReconStatusLoading}
             title="Refresh suggestions"
+            aria-label="Refresh attack suggestions and surface summary"
           >
             <RefreshCw size={14} className={isLoading || surfaceLoading || isReconStatusLoading ? styles.spin : ''} />
           </button>
@@ -491,6 +578,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
                 run={run}
                 onShowLogs={onTogglePartialReconLogs}
                 onCompleteReverseShell={onRequestReverseShell}
+                onRetry={handleRetryResult}
                 onDismiss={handleDismissResult}
               />
             ))}
@@ -516,6 +604,17 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
             {isRunningAll ? <Loader2 size={14} className={styles.spin} /> : <Play size={14} />}
             <span>{isRunningAll ? 'Starting…' : `Run All Pending (${pendingCount})`}</span>
           </button>
+          {activeRuns.length > 0 && (
+            <button
+              className={`${styles.stopAllBtn}`}
+              onClick={handleStopAll}
+              title={`Stop all ${activeRuns.length} running attack${activeRuns.length === 1 ? '' : 's'}`}
+              aria-label={`Stop all ${activeRuns.length} running attacks`}
+            >
+              <Square size={14} fill="currentColor" />
+              <span>Stop All ({activeRuns.length})</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -541,7 +640,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
         <div className={styles.errorBanner} role="alert">
           <AlertCircle size={14} />
           <span>{reconStatusError}</span>
-          <button onClick={() => refetchReconStatuses()} className={styles.errorDismiss} title="Retry">
+          <button onClick={() => refetchReconStatuses()} className={styles.errorDismiss} title="Retry" aria-label="Retry fetching recon status">
             <RefreshCw size={12} />
           </button>
         </div>
@@ -593,6 +692,7 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
                   isRunningAll={isRunningAll}
                   onRun={() => handleRunAttack(suggestion)}
                   onStop={() => handleStopAttack(suggestion)}
+                  onReRun={() => handleReRunAttack(suggestion)}
                   onShowLogs={onTogglePartialReconLogs}
                 />
               )

@@ -264,14 +264,6 @@ class TestAxisFfufDirect(unittest.TestCase):
 
 
 class TestAxisSqlmap(unittest.TestCase):
-    def test_execute_sqlmap_extracts_target(self):
-        ax = extract_axis("execute_sqlmap", {
-            "args": "-u 'http://target/login.php?id=1' --batch --level 3"
-        })
-        self.assertIsNotNone(ax)
-        self.assertEqual(ax["family"], "automated_sqli")
-        self.assertIn("target/login.php", ax["target"])
-
     def test_kali_shell_sqlmap_wrapper(self):
         ax = extract_axis("kali_shell", {
             "command": "sqlmap -u 'http://x/page?id=1' --dump"

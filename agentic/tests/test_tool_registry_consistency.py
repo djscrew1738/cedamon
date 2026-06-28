@@ -43,22 +43,22 @@ CANONICAL_MCP_TOOLS: set[str] = {
     "execute_nuclei",
     "execute_searchsploit",
     "kali_shell",
+    "kali_ssh",
     "execute_playwright",
     "execute_hydra",
     "metasploit_console",
     "msf_restart",
     "execute_code",
-    "cve_intel",
-    "kali_ssh",
     "execute_exploit",
-    "tradecraft_lookup",
     "run_test_sequence",
+    "cve_intel",
 }
 
 from output_parsers import PARSER_REGISTRY  # noqa: E402
 from tool_cost_model import TOOL_COST_MODEL  # noqa: E402
 from project_settings import DANGEROUS_TOOLS, DEFAULT_AGENT_SETTINGS  # noqa: E402
 from heuristics.engine import _FALLBACK_TOOLS, TOOL_CLUSTERS  # noqa: E402
+from prompts.tool_registry import TOOL_REGISTRY  # noqa: E402
 
 # TOOL_PHASE_MAP lives inside DEFAULT_AGENT_SETTINGS.
 TOOL_PHASE_MAP: dict[str, list[str]] = DEFAULT_AGENT_SETTINGS["TOOL_PHASE_MAP"]
@@ -73,6 +73,8 @@ _KNOWN_MISSING: dict[str, dict[str, str]] = {
     "TOOL_PHASE_MAP": {},
     "TOOL_CLUSTERS": {},
     "_FALLBACK_TOOLS": {},
+    # TOOL_REGISTRY includes fs_* and job_* tools not in the MCP canonical list.
+    "TOOL_REGISTRY": {},
 }
 
 
@@ -107,6 +109,11 @@ class TestToolRegistryConsistency(unittest.TestCase):
 
     def test_fallback_tools(self):
         self._check_registry(_FALLBACK_TOOLS, "_FALLBACK_TOOLS")
+
+    def test_tool_registry(self):
+        """Every canonical MCP tool (except dynamically-injected) must have a
+        TOOL_REGISTRY entry so the LLM sees it in the available-tools prompt."""
+        self._check_registry(TOOL_REGISTRY, "TOOL_REGISTRY")
 
     def test_parser_registry(self):
         """Parser registry is a subset — only tools with structured output."""

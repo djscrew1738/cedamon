@@ -19,30 +19,25 @@ interface TargetSectionProps {
   mode?: 'create' | 'edit'
 }
 
-// Helper to convert stored format (with dots) to display format (without dots)
 function toDisplayPrefixes(subdomainList: string[]): string {
   return subdomainList
-    .filter(s => s !== '.')  // Exclude root domain marker
-    .map(s => s.endsWith('.') ? s.slice(0, -1) : s)  // Remove trailing dot
+    .filter(s => s !== '.')
+    .map(s => s.endsWith('.') ? s.slice(0, -1) : s)
     .join(', ')
 }
 
-// Helper to convert display format to stored format (with trailing dots)
 function toStoredPrefixes(displayValue: string, includeRoot: boolean): string[] {
   const prefixes = displayValue
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
-    .map(s => s.endsWith('.') ? s : s + '.')  // Add trailing dot if missing
-
+    .map(s => s.endsWith('.') ? s : s + '.')
   if (includeRoot) {
     prefixes.push('.')
   }
-
   return prefixes
 }
 
-// Helper to parse IP textarea into array
 function parseIpList(text: string): string[] {
   return text
     .split(/[,\n]/)
@@ -54,19 +49,11 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
   const isLocked = mode === 'edit'
   const [isOpen, setIsOpen] = useState(true)
   const { userId } = useProject()
-
   const ipMode = data.ipMode || false
-
-  // Check if root domain is included in the list
   const includesRootDomain = useMemo(() => data.subdomainList.includes('.'), [data.subdomainList])
-
-  // Display value without dots
   const displayPrefixes = useMemo(() => toDisplayPrefixes(data.subdomainList), [data.subdomainList])
-
-  // Display value for IP textarea
   const displayIps = useMemo(() => (data.targetIps || []).join('\n'), [data.targetIps])
 
-  // Hard guardrail: deterministic check for government/public domains (non-disableable)
   const hardBlockResult = useMemo(
     () => (!ipMode && data.targetDomain ? isHardBlockedDomain(data.targetDomain) : { blocked: false, reason: '' }),
     [ipMode, data.targetDomain]
@@ -81,33 +68,22 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
     updateField('subdomainList', toStoredPrefixes(currentPrefixes, checked))
   }
 
-  // When subdomain discovery is OFF and no prefixes are set, the only valid
-  // target is the root domain. Force-enable "Include Root Domain" and lock it
-  // so the pipeline cannot be started with zero targets (which would silently
-  // produce empty results). Runs in edit mode too — it's a system-driven
-  // safety net, not user editing of scope.
   const forceIncludeRootDomain = !ipMode
     && !data.subdomainDiscoveryEnabled
     && displayPrefixes.trim().length === 0
 
-  // When the user supplies explicit Subdomain Prefixes, the pipeline runs in
-  // FILTERED mode and the entire Subdomain Discovery group (Subfinder, Amass,
-  // crt.sh, HackerTarget, Knockpy, puredns) is silently skipped. Force the
-  // master toggle OFF so the UI matches what the backend actually does.
   const prefixesPresent = !ipMode && !isLocked && displayPrefixes.trim().length > 0
 
   useEffect(() => {
     if (forceIncludeRootDomain && !includesRootDomain) {
       handleRootDomainToggle(true)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forceIncludeRootDomain, includesRootDomain])
 
   useEffect(() => {
     if (prefixesPresent && data.subdomainDiscoveryEnabled) {
       updateField('subdomainDiscoveryEnabled', false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefixesPresent, data.subdomainDiscoveryEnabled])
 
   const handleIpModeToggle = (checked: boolean) => {
@@ -145,7 +121,6 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
             or IP-based targeting mode.
           </p>
 
-          {/* IP Mode Toggle - locked in edit mode */}
           <div className={styles.toggleRow}>
             <div>
               <span className={styles.toggleLabel}>Start from IP</span>
@@ -193,10 +168,9 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
             )}
           </div>
 
-          {/* Hard guardrail warning for government/public domains */}
           {hardBlockResult.blocked && (
-            <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
-              <ShieldAlert size={14} style={{ color: '#ef4444' }} />
+            <div className={styles.hardBlockBanner}>
+              <ShieldAlert size={14} className={styles.warningIcon} style={{ color: '#ef4444' }} />
               <span>
                 <strong>Target permanently blocked:</strong> Government, military, educational, and international
                 organization websites (.gov, .mil, .edu, .int, etc.) are always blocked and cannot be used as targets,
@@ -205,7 +179,6 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
             </div>
           )}
 
-          {/* IP Mode: Target IPs textarea */}
           {ipMode && (
             <div className={styles.fieldGroup}>
               <label className={`${styles.fieldLabel} ${styles.fieldLabelRequired}`}>
@@ -248,7 +221,6 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
             />
           </div>
 
-          {/* Domain-mode only fields */}
           {!ipMode && (
             <>
               <div className={styles.fieldGroup}>
@@ -276,20 +248,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                     : 'Leave empty to discover all subdomains. Enter prefixes without dots (e.g., "www, api, admin").'}
                 </span>
                 {!isLocked && displayPrefixes.trim().length === 0 && (
-                  <div
-                    className={styles.shodanWarning}
-                    style={{
-                      marginTop: 'var(--space-2)',
-                      marginBottom: 0,
-                      padding: 'var(--space-3) var(--space-4)',
-                      fontSize: 'var(--text-sm)',
-                      borderWidth: '2px',
-                      borderColor: 'rgba(251, 146, 60, 0.5)',
-                      background: 'rgba(251, 146, 60, 0.12)',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <AlertTriangle size={22} style={{ color: '#fb923c' }} />
+                  <div className={styles.warningBannerOrange}>
+                    <AlertTriangle size={22} className={styles.warningIcon} style={{ color: '#fb923c' }} />
                     <span>
                       <strong>Heads up:</strong> Leaving Subdomain Prefixes empty starts full
                       subdomain enumeration across the entire domain. This will take
@@ -299,20 +259,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                   </div>
                 )}
                 {prefixesPresent && (
-                  <div
-                    className={styles.shodanWarning}
-                    style={{
-                      marginTop: 'var(--space-2)',
-                      marginBottom: 0,
-                      padding: 'var(--space-3) var(--space-4)',
-                      fontSize: 'var(--text-sm)',
-                      borderWidth: '2px',
-                      borderColor: 'rgba(96, 165, 250, 0.5)',
-                      background: 'rgba(96, 165, 250, 0.12)',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <AlertTriangle size={22} style={{ color: '#60a5fa' }} />
+                  <div className={styles.warningBannerBlue}>
+                    <AlertTriangle size={22} className={styles.warningIcon} style={{ color: '#60a5fa' }} />
                     <span>
                       <strong>Filtered mode:</strong> with explicit prefixes the pipeline scans
                       only the subdomains you listed. <strong>Subdomain Discovery has been
@@ -344,9 +292,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                 />
               </div>
 
-              {/* AI in Pipeline (master toggle, model picker, per-tool toggles) */}
               <div className={styles.subSection}>
-                <div className={styles.toggleRow} style={{ gap: 'var(--space-4)', alignItems: 'center' }}>
+                <div className={`${styles.toggleRow} ${styles.aiToggleRowWide}`}>
                   <AiToggleLabel
                     label="Enable AI in Pipeline"
                     tooltip={
@@ -362,8 +309,6 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                     checked={data.aiInPipeline}
                     onChange={(checked) => {
                       updateField('aiInPipeline', checked)
-                      // When master flips, cascade to every per-tool flag so the
-                      // form state matches the backend defense-in-depth contract.
                       updateField('ffufAiExtensions', checked)
                       updateField('nucleiAiTags', checked)
                       updateField('wafAiClassifier', checked)
@@ -374,7 +319,7 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                 </div>
                 {data.aiInPipeline && (
                   <>
-                    <div className={styles.fieldRow} style={{ marginTop: 'var(--space-3)' }}>
+                    <div className={`${styles.fieldRow} ${styles.fieldRowSpaced}`}>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>AI Model</label>
                         <ModelPicker
@@ -390,15 +335,6 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                       </div>
                     </div>
 
-                    {/* Per-tool AI toggles. Each one mirrors the toggle in its tool
-                        section, sharing the same form field, so flipping either
-                        place updates both. The list lives inside a fixed-height
-                        scroll container so adding more hooks doesn't push the
-                        rest of the form down. Descriptions are rendered as
-                        native title-attribute tooltips on the info icon to
-                        keep each row compact. Add new entries to the
-                        `aiPipelineHooks` array below as more tools gain AI
-                        hooks -- no JSX changes needed. */}
                     {(() => {
                       const aiPipelineHooks: Array<{
                         field: 'ffufAiExtensions' | 'nucleiAiTags' | 'wafAiClassifier' | 'nucleiAiResponseFilter' | 'takeoverAiClassifier'
@@ -432,28 +368,12 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
                         },
                       ]
                       return (
-                        <div
-                          style={{
-                            marginTop: 'var(--space-4)',
-                            maxHeight: 240,
-                            overflowY: 'auto',
-                            border: '1px solid var(--border-subtle, #2a2a2a)',
-                            borderRadius: 'var(--radius-2, 6px)',
-                            padding: 'var(--space-2, 8px) var(--space-3, 12px)',
-                            background: 'var(--surface-1, transparent)',
-                          }}
-                        >
+                        <div className={styles.aiHooksContainer}>
                           {aiPipelineHooks.map((hook, idx) => (
                             <div
                               key={hook.field}
-                              className={styles.toggleRow}
-                              style={{
-                                gap: 'var(--space-3)',
-                                paddingTop: idx === 0 ? 0 : 'var(--space-2, 8px)',
-                                paddingBottom: 'var(--space-2, 8px)',
-                                borderTop: idx === 0 ? 'none' : '1px solid var(--border-subtle, #222)',
-                                alignItems: 'center',
-                              }}
+                              className={`${styles.toggleRow} ${styles.aiHookRow}`}
+                              style={idx === 0 ? { paddingTop: 0, borderTop: 'none' } : undefined}
                             >
                               <AiToggleLabel
                                 label={hook.label}
@@ -515,8 +435,8 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
 
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Stealth Mode</h3>
-            <div className={styles.toggleRow} style={{ gap: 'var(--space-4)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+            <div className={`${styles.toggleRow} ${styles.aiToggleRowWide}`}>
+              <div className={styles.aiToggleInfo}>
                 <span className={styles.toggleLabel}>Enable Stealth Mode</span>
                 <p className={styles.toggleDescription}>
                   Force the entire pipeline to use only passive and low-noise techniques.
@@ -533,11 +453,10 @@ export function TargetSection({ data, updateField, mode = 'create' }: TargetSect
             </div>
           </div>
 
-          {/* Target Guardrail */}
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Target Guardrail</h3>
-            <div className={styles.toggleRow} style={{ gap: 'var(--space-4)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+            <div className={`${styles.toggleRow} ${styles.aiToggleRowWide}`}>
+              <div className={styles.aiToggleInfo}>
                 <span className={styles.toggleLabel}>Enable Target Guardrail</span>
                 <p className={styles.toggleDescription}>
                   Block well-known public targets (major tech companies,

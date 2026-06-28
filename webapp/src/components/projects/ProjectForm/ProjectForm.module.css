@@ -469,6 +469,30 @@
   margin-top: var(--space-0-5);
 }
 
+.toggleRowIndent1 {
+  padding-left: 1.25rem;
+}
+
+.toggleRowIndent2 {
+  padding-left: 2.5rem;
+}
+
+.toggleRowIndent3 {
+  padding-left: 3.75rem;
+}
+
+.toggleRowMuted {
+  opacity: 0.5;
+}
+
+.toggleRowDisabled {
+  opacity: 0.7;
+}
+
+.fieldHintSpaced {
+  margin-bottom: 0.75rem;
+}
+
 .toggleRowCompact {
   display: flex;
   align-items: center;
@@ -496,6 +520,67 @@
 .toggleRowCompactInput {
   width: 80px;
   flex-shrink: 0;
+}
+
+/* Scan intensity selector */
+.intensitySelector {
+  margin-bottom: var(--space-3);
+}
+
+.intensityLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: var(--space-1-5);
+}
+
+.intensityOptions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.intensityOption {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-2-5) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.intensityOption:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.intensityOptionActive {
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 10%, var(--bg-tertiary));
+  color: var(--accent-primary);
+}
+
+.intensityOptionLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.intensityOptionDesc {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+.intensityOptionActive .intensityOptionDesc {
+  color: var(--text-secondary);
 }
 
 .toggleLabelLg {
@@ -663,8 +748,530 @@
   margin-top: 2px;
 }
 
-.apiKeyToggle:hover {
+/* Warning banner variants */
+.hardBlockBanner {
+  composes: shodanWarning;
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.warningBanner {
+  composes: shodanWarning;
+  margin-top: var(--space-2);
+  margin-bottom: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  border-width: 2px;
+  align-items: center;
+}
+
+.warningBannerOrange {
+  composes: warningBanner;
+  border-color: rgba(251, 146, 60, 0.5);
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.warningBannerBlue {
+  composes: warningBanner;
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.warningIcon {
+  flex-shrink: 0;
+}
+
+/* AI pipeline hooks */
+.aiHooksContainer {
+  margin-top: var(--space-4);
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle, #2a2a2a);
+  border-radius: var(--radius-2, 6px);
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  background: var(--surface-1, transparent);
+}
+
+.aiHookRow {
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.aiHookRow + .aiHookRow {
+  padding-top: var(--space-2, 8px);
+  padding-bottom: var(--space-2, 8px);
+  border-top: 1px solid var(--border-subtle, #222);
+}
+
+.aiToggleRowWide {
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.aiToggleInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.fieldRowSpaced {
+  margin-top: var(--space-3);
+}
+
+/* Agent behaviour specific */
+.tunnelInfoBox {
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-1);
+}
+
+.rangeFullWidth {
+  width: 100%;
+}
+
+.propensityLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted, #888);
+  margin-top: 2px;
+}
+
+.phaseCheckboxGroup {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.phaseCheckboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.phaseCheckboxText {
+  font-size: 0.85rem;
+}
+
+/* RoE section */
+.hiddenFileInput {
+  display: none;
+}
+
+.fitWidth {
+  width: fit-content;
+}
+
+.parseErrorText {
+  color: var(--color-error);
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+.excludedHostRow {
+  align-items: flex-end;
+}
+
+.flexFieldGroup {
+  flex: 1;
+}
+
+.mbButton {
+  margin-bottom: 4px;
+}
+
+.mtButton {
+  margin-top: 4px;
+}
+
+.chipsWrap {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chipLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chipLabelClickable {
+  cursor: pointer;
+}
+
+.chipLabelReadOnly {
+  cursor: default;
+}
+
+.permissionsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sectionHintText {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 0 0 8px 0;
+}
+
+.monospaceTextarea {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+/* Pipeline summary */
+.pipelineSummary {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.pipelineModules {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+  padding-bottom: var(--space-3);
+}
+
+.pipelineStep {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pipelineDot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.pipelineDotActive {
+  background: var(--bg-primary);
+  border: 2px solid var(--status-success);
+}
+
+.pipelineDotInactive {
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-default);
+  opacity: 0.4;
+  font-size: 12px;
+}
+
+.pipelineStepLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.pipelineStepLabelInactive {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.pipelineArrow {
+  color: var(--status-success);
+  font-size: 14px;
+  margin: 0 2px;
+}
+
+.pipelineArrowInactive {
+  color: var(--border-default);
+  opacity: 0.4;
+}
+
+.pipelineMeta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pipelineMetaItem {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.pipelineTorBadge {
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+  font-weight: var(--font-medium);
+}
+
+.pipelineEstimate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pipelineEstimateLabel {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.pipelineEstimateValue {
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+  color: var(--status-warning);
+}
+
+/* Tool catalog */
+.toolCountBadge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-default);
+  white-space: nowrap;
+}
+
+.toolCatalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.toolCategory {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.toolCategoryHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.toolCategoryLabel {
+  flex: 1;
+}
+
+.toolCategoryCount {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-primary);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.toolList {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.1s ease;
+}
+
+.toolItem:last-child {
+  border-bottom: none;
+}
+
+.toolItem:hover {
+  background: var(--bg-hover);
+}
+
+.toolItemDisabled {
+  opacity: 0.5;
+}
+
+.toolItemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.toolItemIconActive {
+  color: var(--accent-primary);
+}
+
+.toolItemInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.toolItemName {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+}
+
+.toolItemNameDisabled {
+  color: var(--text-tertiary);
+}
+
+.toolItemDesc {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+.toolItemStatus {
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.toolItemStatusOn {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--status-success);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.toolItemStatusOff {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-default);
+}
+
+/* Attack skill cards */
+.skillCard {
+  margin-bottom: var(--space-4);
+  transition: opacity 0.2s ease;
+}
+
+.skillCardDisabled {
+  opacity: 0.5;
+}
+
+.skillCardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-default);
+}
+
+.skillCardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.skillCardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.skillCardDesc {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* User skill card */
+.userSkillCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-default);
+  transition: opacity 0.2s ease;
+}
+
+.userSkillCardDisabled {
+  opacity: 0.5;
+}
+
+.userSkillCardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.userSkillCardName {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+}
+
+.userSkillCardMeta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.noSkillsEmpty {
+  text-align: center;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.settingsLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-default);
+  text-decoration: none;
+  transition: var(--transition-all);
+}
+
+.userSkillsHeaderRight {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 .phaseCheck {

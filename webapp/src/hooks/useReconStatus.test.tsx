@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useReconStatus } from './useReconStatus'
 import type { ReconState } from '@/lib/recon-types'
 
+vi.mock('@/components/ui/Toast/Toast', () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  }),
+}))
+
 describe('useReconStatus', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true })

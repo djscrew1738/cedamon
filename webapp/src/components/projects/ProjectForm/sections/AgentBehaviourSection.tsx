@@ -117,7 +117,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
           {/* Payload Direction */}
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Payload Direction</h3>
-            <p className={styles.toggleDescription} style={{ marginBottom: 'var(--space-2)' }}>
+            <p className={`${styles.toggleDescription} ${styles.fieldHintSpaced}`}>
               <strong>Reverse</strong>: target connects back to you (LHOST + LPORT). <strong>Bind</strong>: you connect to the target (leave LPORT empty).
             </p>
             <div className={styles.fieldGroup}>
@@ -142,7 +142,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
               </span>
             </div>
             {(data.agentNgrokTunnelEnabled || data.agentChiselTunnelEnabled) ? (
-              <p className={styles.toggleDescription} style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-1)' }}>
+              <p className={`${styles.toggleDescription} ${styles.tunnelInfoBox}`}>
                 {data.agentNgrokTunnelEnabled && 'LHOST and LPORT are auto-detected from the ngrok tunnel. No manual configuration needed.'}
                 {data.agentChiselTunnelEnabled && 'LHOST is derived from the VPS hostname. Both handler (4444) and web delivery (8080) ports are tunneled. No manual configuration needed.'}
               </p>
@@ -225,7 +225,7 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             return (
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Fireteam (multi-agent)</h3>
-                <div className={styles.fieldHint} style={{ marginBottom: 8 }}>
+                <div className={`${styles.fieldHint} ${styles.fieldHintSpaced}`}>
                   When on, the agent can deploy up to N specialist sub-agents in parallel on independent attack surfaces.
                   Parent stays in charge of safety approvals and phase transitions.
                 </div>
@@ -349,15 +349,15 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                     </div>
                     <div className={styles.fieldGroup}>
                       <label className={styles.fieldLabel}>Allowed phases</label>
-                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      <div className={styles.phaseCheckboxGroup}>
                         {(['informational', 'exploitation', 'post_exploitation'] as const).map(p => (
-                          <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <label key={p} className={styles.phaseCheckboxLabel}>
                             <input
                               type="checkbox"
                               checked={allowedPhases.includes(p)}
                               onChange={() => togglePhase(p)}
                             />
-                            <span style={{ fontSize: '0.85rem' }}>{p}</span>
+                            <span className={styles.phaseCheckboxText}>{p}</span>
                           </label>
                         ))}
                       </div>
@@ -379,9 +379,9 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                           const v = Math.max(1, Math.min(5, parseInt(e.target.value) || 3))
                           updateField('fireteamPropensity' as any, v as any)
                         }}
-                        style={{ width: '100%' }}
+                        className={styles.rangeFullWidth}
                       />
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted, #888)', marginTop: 2 }}>
+                      <div className={styles.propensityLabels}>
                         <span>1 - only very complex tasks</span>
                         <span>3 - balanced (default)</span>
                         <span>5 - deploy aggressively</span>
@@ -391,8 +391,8 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
                       </span>
                     </div>
                     {crossError && (
-                      <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
-                        <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+                      <div className={styles.hardBlockBanner}>
+                        <AlertTriangle size={14} className={styles.warningIcon} style={{ color: '#ef4444' }} />
                         <span>{crossError}</span>
                       </div>
                     )}
@@ -459,8 +459,8 @@ export function AgentBehaviourSection({ data, updateField }: AgentBehaviourSecti
             <h3 className={styles.subSectionTitle}>Approval Gates</h3>
 
             {(!data.agentRequireApprovalForExploitation || !data.agentRequireApprovalForPostExploitation || !(data.agentGuardrailEnabled ?? true) || !(data.agentRequireToolConfirmation ?? true)) && (
-              <div className={styles.shodanWarning} style={{ borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)' }}>
-                <AlertTriangle size={14} style={{ color: '#ef4444' }} />
+              <div className={styles.hardBlockBanner}>
+                <AlertTriangle size={14} className={styles.warningIcon} style={{ color: '#ef4444' }} />
                 <span>
                   <strong>Autonomous operation risk:</strong> One or more safety gates are disabled.
                   The AI agent may perform exploitation, post-exploitation, dangerous tool executions, or out-of-scope actions without human approval.

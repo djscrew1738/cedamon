@@ -59,6 +59,21 @@ export default function ProjectsPage() {
     }
   }
 
+  const handleStartScan = async (projectId: string) => {
+    try {
+      const res = await fetch(`/api/recon/${projectId}/start`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alertError(data.error || 'Failed to start recon')
+        return
+      }
+      toast.success('Recon pipeline started')
+      router.push(`/graph?project=${projectId}&autostart=true`)
+    } catch (err) {
+      alertError(err instanceof Error ? err.message : 'Failed to start recon')
+    }
+  }
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -187,6 +202,7 @@ export default function ProjectsPage() {
               createdAt={project.createdAt}
               onSelect={() => handleSelectProject(project)}
               onDelete={() => handleDeleteProject(project.id)}
+              onStartScan={() => handleStartScan(project.id)}
             />
           ))}
         </div>

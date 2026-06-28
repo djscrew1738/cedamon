@@ -487,7 +487,7 @@ def extract_axis(tool_name: Optional[str], tool_args: Optional[dict]) -> Optiona
         }
 
     # ── Family: automated SQLi tooling ──────────────────────────────────
-    if inner_tool == "execute_sqlmap" or (
+    if (
         inner_tool == "kali_shell"
         and isinstance(inner_args, dict)
         and "sqlmap" in str(inner_args.get("command") or "")

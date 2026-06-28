@@ -19,12 +19,14 @@ export const BUILTIN_RESERVED_TOOL_NAMES: ReadonlySet<string> = new Set([
   // Built-in (Python) tools
   'query_graph', 'web_search', 'cve_intel', 'shodan', 'google_dork',
   'execute_code', 'tradecraft_lookup',
-  // System MCP-backed tools (the 5 baseline kali-sandbox servers)
-  'execute_curl', 'execute_naabu', 'execute_httpx', 'execute_subfinder',
-  'execute_amass', 'execute_arjun', 'execute_ffuf', 'execute_gau',
-  'execute_jsluice', 'execute_katana', 'execute_wpscan',
-  'execute_nmap', 'execute_nuclei', 'kali_shell', 'execute_playwright',
-  'execute_hydra', 'metasploit_console', 'msf_restart',
+  // System MCP-backed tools (the kali-sandbox servers)
+  'execute_curl', 'execute_naabu', 'execute_masscan', 'execute_httpx',
+  'execute_subfinder', 'execute_amass', 'execute_arjun', 'execute_ffuf',
+  'execute_gau', 'execute_jsluice', 'execute_katana', 'execute_wpscan',
+  'execute_nmap', 'execute_nuclei', 'execute_searchsploit',
+  'kali_shell', 'kali_ssh', 'execute_playwright',
+  'execute_hydra', 'execute_exploit', 'metasploit_console', 'msf_restart',
+  'run_test_sequence',
 ])
 
 /** Server IDs reserved by system MCP servers — user IDs must not collide. */

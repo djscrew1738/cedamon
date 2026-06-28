@@ -41,6 +41,7 @@ interface AttackSuggestionCardProps {
   isRunningAll: boolean
   onRun: () => void
   onStop: () => void
+  onReRun?: () => void
   onShowLogs?: (runId: string) => void
 }
 
@@ -60,18 +61,22 @@ export function AttackSuggestionCard({
   isRunningAll,
   onRun,
   onStop,
+  onReRun,
   onShowLogs,
 }: AttackSuggestionCardProps) {
   return (
-    <div className={`${styles.card} ${isAlreadyRun && !isActive ? styles.cardDone : ''}`}>
+    <div
+      className={`${styles.card} ${isAlreadyRun && !isActive ? styles.cardDone : ''}`}
+      style={{ '--card-accent': cfg.color } as React.CSSProperties}
+    >
       {/* Left accent bar */}
-      <div className={styles.cardAccent} style={{ backgroundColor: cfg.color }} />
+      <div className={styles.cardAccent} />
 
       <div className={styles.cardBody}>
         {/* Header row */}
         <div className={styles.cardHeader}>
           <div className={styles.cardTitleRow}>
-            <span className={styles.categoryBadge} style={{ color: cfg.color }}>
+            <span className={styles.categoryBadge}>
               {cfg.icon}
               <span>{cfg.label}</span>
             </span>
@@ -130,10 +135,21 @@ export function AttackSuggestionCard({
               )}
             </>
           ) : isAlreadyRun ? (
-            <span className={styles.doneLabel}>
-              <CheckCircle2 size={14} />
-              Already completed
-            </span>
+            onReRun ? (
+              <button
+                className={styles.runBtn}
+                onClick={onReRun}
+                disabled={isAnyRunning || isRunningAll}
+              >
+                <Play size={14} />
+                <span>Re-run</span>
+              </button>
+            ) : (
+              <span className={styles.doneLabel}>
+                <CheckCircle2 size={14} />
+                Already completed
+              </span>
+            )
           ) : (
             <button
               className={styles.runBtn}

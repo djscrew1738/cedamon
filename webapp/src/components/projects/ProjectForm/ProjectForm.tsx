@@ -59,6 +59,7 @@ import { JsReconSection } from './sections/JsReconSection'
 import { GraphqlScanSection } from './sections/GraphqlScanSection'
 import { TakeoverSection } from './sections/TakeoverSection'
 import { VhostSniSection } from './sections/VhostSniSection'
+import { ToolCatalogSection } from './sections/ToolCatalogSection'
 import { PartialReconModal } from './WorkflowView/PartialReconModal'
 import { ReconPresetModal } from './ReconPresetModal'
 import { ProviderRequiredModal, ModelSelectionModal } from './ProjectLlmGate'
@@ -840,7 +841,90 @@ export function ProjectForm({
           <>
             <TargetSection data={formData} updateField={updateField} mode={mode} />
             <ScanModulesSection data={formData} updateField={updateField} />
+            {/* Scan pipeline summary */}
+            <div className={styles.section}>
+              <h2 className={styles.sectionTitle}>
+                <List size={16} />
+                Pipeline Summary
+              </h2>
+              <div className={styles.pipelineSummary}>
+                <div className={styles.pipelineModules}>
+                  {(() => {
+                    const MODULE_LABELS: Record<string, string> = {
+                      domain_discovery: 'Discovery & OSINT',
+                      port_scan: 'Port Scanning',
+                      http_probe: 'HTTP Probing',
+                      resource_enum: 'Resource Enumeration',
+                      vuln_scan: 'Vulnerability Scanning',
+                    }
+                    const MODULE_ICONS: Record<string, string> = {
+                      domain_discovery: '\u{1F310}',
+                      port_scan: '\u{1F4E1}',
+                      http_probe: '\u{1F517}',
+                      resource_enum: '\u{1F50D}',
+                      vuln_scan: '\u{1F6E1}\uFE0F',
+                    }
+                    const ordered = ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan']
+                    return ordered.map((modId, i) => {
+                      const enabled = formData.scanModules.includes(modId)
+                      return (
+                        <div key={modId} className={styles.pipelineStep}>
+                          <span className={`${styles.pipelineDot} ${enabled ? styles.pipelineDotActive : styles.pipelineDotInactive}`}>
+                            {enabled ? MODULE_ICONS[modId] : '\u2715'}
+                          </span>
+                          <span className={`${styles.pipelineStepLabel} ${!enabled ? styles.pipelineStepLabelInactive : ''}`}>
+                            {MODULE_LABELS[modId]}
+                          </span>
+                          {i < ordered.length - 1 && (
+                            <span className={`${styles.pipelineArrow} ${!enabled ? styles.pipelineArrowInactive : ''}`}>→</span>
+                          )}
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
+                <div className={styles.pipelineMeta}>
+                  <span className={styles.pipelineMetaItem}>
+                    {formData.scanModules.length} of 5 modules enabled
+                  </span>
+                  {formData.useTorForRecon && (
+                    <span className={styles.pipelineTorBadge}>Tor enabled</span>
+                  )}
+                </div>
+                <div className={styles.pipelineEstimate}>
+                  <span className={styles.pipelineEstimateLabel}>Estimated Duration</span>
+                  <span className={styles.pipelineEstimateValue}>
+                    {(() => {
+                      const modules = formData.scanModules as string[]
+                      let baseMin = 0
+                      if (modules.includes('domain_discovery')) baseMin += 10
+                      if (modules.includes('port_scan')) baseMin += 15
+                      if (modules.includes('http_probe')) baseMin += 5
+                      if (modules.includes('resource_enum')) baseMin += 20
+                      if (modules.includes('vuln_scan')) baseMin += 25
+                      // Multipliers from settings
+                      let mult = 1.0
+                      if (formData.useTorForRecon) mult += 0.5
+                      if ((formData.subdomainDiscoveryEnabled as boolean) !== false &&
+                          (formData.subdomainList as string[] || []).some(s => s !== '.')) mult += 0.3
+                      if (formData.nucleiEnabled as boolean !== false &&
+                          (formData.nucleiTemplates as string[] || []).length > 10) mult += 0.2
+                      const totalMin = Math.round(baseMin * mult)
+                      if (totalMin < 60) return `${totalMin} min`
+                      const hours = Math.floor(totalMin / 60)
+                      const mins = totalMin % 60
+                      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+                    })()}
+                  </span>
+                </div>
+              </div>
+            </div>
           </>
+        )}
+
+        {/* Tool Catalog */}
+        {(isMobile || (activeTab === 'target' && viewMode === 'tabs')) && (
+          <ToolCatalogSection formData={formData} />
         )}
 
         {(isMobile || (activeTab === 'discovery' && viewMode === 'tabs')) && (

@@ -1,8 +1,15 @@
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
+}
+
+/* Fallback for browsers that don't support dvh (e.g. older Safari) */
+@supports not (height: 100dvh) {
+  .layout {
+    height: 100vh;
+  }
 }
 
 .main {

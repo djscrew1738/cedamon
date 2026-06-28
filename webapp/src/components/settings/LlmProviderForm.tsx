@@ -438,18 +438,16 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
             ))}
             <div className={styles.headerAdd}>
               <input
-                className="textInput"
+                className={`textInput ${styles.fullFlex}`}
                 value={headerKey}
                 onChange={e => setHeaderKey(e.target.value)}
                 placeholder="Header name"
-                style={{ flex: 1 }}
               />
               <input
-                className="textInput"
+                className={`textInput ${styles.fullFlex}`}
                 value={headerValue}
                 onChange={e => setHeaderValue(e.target.value)}
                 placeholder="Value"
-                style={{ flex: 1 }}
               />
               <button className="secondaryButton" onClick={addHeader} disabled={!headerKey.trim()}>
                 <Plus size={12} />
@@ -492,7 +490,7 @@ export function LlmProviderForm({ userId, provider, existingProviderTypes = [], 
           </div>
 
           {/* SSL verify toggle */}
-          <div className="formGroup" style={{ marginTop: 'var(--space-4)' }}>
+          <div className={`formGroup ${styles.checkboxSection}`}>
             <label className={styles.checkboxLabel}>
               <input
                 type="checkbox"

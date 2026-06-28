@@ -486,6 +486,27 @@ TOOL_REGISTRY = {
             '   - Custom: `-u URL -t /opt/nuclei-templates/http/misconfiguration/springboot/ -jsonl`'
         ),
     },
+    "execute_searchsploit": {
+        "purpose": "Exploit-DB search — find public exploits by CVE, software, or keyword",
+        "when_to_use": "Look up public exploit code for a known CVE or product version before attempting manual exploitation",
+        "args_format": '"args": "searchsploit arguments without \'searchsploit\' prefix"',
+        "description": (
+            '**execute_searchsploit** (Exploit-DB local mirror — offline search)\n'
+            '   - Searches the local Exploit-DB mirror for public exploit code.\n'
+            '   - **Key flags**: `--cve CVE-ID` (search by CVE), '
+            '`-t title` (title search), `-s keywords` (full-text), '
+            '`-o` (overflow — show full path), `-w` (show URL), '
+            '`-p N` (show full path of EDB-ID N), `--id EDB-ID` (exact ID lookup), '
+            '`-j` (JSON output), `--disable-colour` (clean output).\n'
+            '   - **Examples**:\n'
+            '     - By CVE: `"--cve CVE-2024-21887 -j"`\n'
+            '     - By title: `"-t Apache Struts -j"`\n'
+            '     - Full path (copy to Kali): `"-p 50472 -o"`\n'
+            '     - Pipe to metasploit: combine with `metasploit_console` for module selection\n'
+            '   - Use AFTER `cve_intel` to retrieve actual exploit code, '
+            'BEFORE `metasploit_console` or `execute_code` when crafting a manual exploit.'
+        ),
+    },
     "execute_curl": {
         "purpose": "HTTP requests",
         "when_to_use": "Reachability checks, headers, status codes",
@@ -516,6 +537,24 @@ TOOL_REGISTRY = {
             '**execute_naabu** (Fast port scanning)\n'
             '   - Verify open ports or scan targets not yet in graph\n'
             '   - Example: `-host 10.0.0.5 -p 80,443,8080 -json`'
+        ),
+    },
+    "execute_masscan": {
+        "purpose": "Wide port scanning (masscan — full internet scale)",
+        "when_to_use": "Scan large IP ranges (e.g. /8, /16) quickly. Prefer execute_naabu for single-target or small-range scans.",
+        "args_format": '"args": "masscan arguments without \'masscan\' prefix"',
+        "description": (
+            '**execute_masscan** (Massive port scanning)\n'
+            '   - Scans large IP ranges at high speed (up to millions of packets/sec).\n'
+            '   - **Key flags**: `-p PORT` (ports), `--rate N` (packets/sec), '
+            '`--output-format json`, `-oJ file.json` (JSON output), '
+            '`--excludefile` (exclude list), `--src-port` (source port), '
+            '`--adapter-ip`/`--adapter-port` (interface binding).\n'
+            '   - **Examples**:\n'
+            '     - Scan subnet: `"10.0.0.0/24 -p80,443,8080 --rate=1000 -oJ /tmp/masscan.json"`\n'
+            '     - Top ports: `"10.0.0.0/16 -p1-65535 --rate=10000 --output-format json"`\n'
+            '   - Use INSTEAD of execute_naabu for large ranges (> /16). '
+            'For small targets (single IP or /24), use execute_naabu instead.'
         ),
     },
     "execute_jsluice": {
@@ -713,6 +752,22 @@ TOOL_REGISTRY = {
             '-- use their dedicated tools (better timeout, output parsing, tool tracking)'
         ),
     },
+    "kali_ssh": {
+        "purpose": "SSH into a remote Kali or target host from the sandbox",
+        "when_to_use": "Interactive remote access via SSH — use when a persistent shell session on a remote host is needed",
+        "args_format": '"args": "ssh arguments without \'ssh\' prefix (user@host -p PORT -i KEY ...)"',
+        "description": (
+            '**kali_ssh** (SSH remote access from Kali sandbox)\n'
+            '   - Establishes an SSH connection from the Kali sandbox to a remote host.\n'
+            '   - Supports key-based and password-based authentication.\n'
+            '   - **Key flags**: `-i KEYFILE` (identity file), `-p PORT` (custom port), '
+            '`-o StrictHostKeyChecking=no` (skip host key check), '
+            '`-o ConnectTimeout=10` (timeout), `-J jump_host` (jump host).\n'
+            '   - Use INSTEAD of `kali_shell` when you need to interact with a remote '
+            'host\'s shell rather than the Kali sandbox itself.\n'
+            '   - Example: `"user@10.0.0.5 -p 2222 -o StrictHostKeyChecking=no -o ConnectTimeout=10"`'
+        ),
+    },
     "execute_code": {
         "purpose": "Execute code files (Python, bash, C, etc.)",
         "when_to_use": "Multi-line exploit scripts without shell escaping issues",
@@ -725,6 +780,22 @@ TOOL_REGISTRY = {
             '   - **Python libs** (import directly): '
             'requests, beautifulsoup4, pycryptodome, PyJWT, paramiko, impacket, pwntools\n'
             '   - Do NOT use for shell commands — use kali_shell instead'
+        ),
+    },
+    "execute_exploit": {
+        "purpose": "Run a Metasploit or public exploit against a confirmed vulnerable target",
+        "when_to_use": "Launch a specific exploit module or PoC against a target with a confirmed vulnerability",
+        "args_format": '"args": "exploit command (metasploit resource script path, python script path, or binary path)"',
+        "description": (
+            '**execute_exploit** (Targeted exploit execution)\n'
+            '   - Runs a curated Metasploit resource script, Python exploit, or binary against a target.\n'
+            '   - Prefer `metasploit_console` for interactive exploitation sessions.\n'
+            '   - Use when you have a specific PoC script or one-shot exploit that does not need '
+            'an interactive metasploit session.\n'
+            '   - Files must exist in the Kali sandbox — upload via `fs_write` + scp or ensure they '
+            'are part of the shared workspace.\n'
+            '   - **Timeout**: 120s by default. Wrap long-running exploits in a resource script.\n'
+            '   - Example resource script path: `/workspace/project/exploit.rc`'
         ),
     },
     "execute_playwright": {
@@ -818,6 +889,20 @@ TOOL_REGISTRY = {
             '   - Dir: `-w .../common.txt -u http://target/FUZZ -mc 200,301,302,403 -ac -noninteractive`\n'
             '   - Vhost: `-w wordlist -u http://target -H "Host: FUZZ.domain" -fs 0 -ac -noninteractive`\n'
             '   - Param: `-w wordlist -u "http://target/page?p=FUZZ" -mc all -fs 0 -ac -noninteractive`'
+        ),
+    },
+    "run_test_sequence": {
+        "purpose": "Run a smoke/integration test sequence inside the Kali sandbox",
+        "when_to_use": "Verify tool availability, test connectivity, or run a deterministic test sequence after environment setup",
+        "args_format": '"args": "shell command or test script path to execute"',
+        "description": (
+            '**run_test_sequence** (Deterministic test execution in Kali sandbox)\n'
+            '   - Runs a pre-defined test script or command to verify tool availability, '
+            'target connectivity, or environment health.\n'
+            '   - Returns structured pass/fail results with exit codes.\n'
+            '   - Use AFTER environment setup to confirm tools are working, '
+            'BEFORE starting a full recon or exploit pipeline.\n'
+            '   - **Timeout**: 30s by default. Extend with `timeout=N` in args.'
         ),
     },
     "msf_restart": {

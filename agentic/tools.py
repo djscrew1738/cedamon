@@ -128,12 +128,14 @@ def _build_system_mcp_servers():
 # their registration shouldn't be filtered as if they were a stray user
 # manifest entry).
 SYSTEM_MCP_TOOL_NAMES = frozenset({
-    "execute_curl", "execute_naabu", "execute_httpx", "execute_subfinder",
-    "execute_amass", "execute_arjun", "execute_ffuf", "execute_gau",
-    "execute_jsluice", "execute_katana", "execute_wpscan",
-    "execute_nmap", "execute_nuclei", "kali_shell", "execute_playwright",
+    "execute_curl", "execute_naabu", "execute_masscan", "execute_httpx",
+    "execute_subfinder", "execute_amass", "execute_arjun", "execute_ffuf",
+    "execute_gau", "execute_jsluice", "execute_katana", "execute_wpscan",
+    "execute_nmap", "execute_nuclei", "execute_searchsploit",
+    "kali_shell", "kali_ssh", "execute_playwright",
     "execute_hydra", "metasploit_console", "msf_restart",
-    "execute_code", "cve_intel", "execute_masscan",
+    "execute_code", "execute_exploit", "run_test_sequence",
+    "cve_intel",
 })
 
 

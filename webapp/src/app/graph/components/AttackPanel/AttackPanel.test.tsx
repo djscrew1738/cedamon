@@ -260,7 +260,10 @@ describe('AttackPanel', () => {
       expect(screen.getByText('Running…')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /stop/i }))
+    const stopButtons = screen.getAllByRole('button', { name: /stop/i })
+    // Find the individual card stop button (not "Stop All")
+    const stopBtn = stopButtons.find(b => !b.textContent?.includes('All'))!
+    fireEvent.click(stopBtn)
     expect(mockStopPartialRecon).toHaveBeenCalledWith('run-002')
 
     fireEvent.click(screen.getByRole('button', { name: /logs/i }))
@@ -369,7 +372,7 @@ describe('AttackPanel', () => {
 
     // Mutate the mock surface to add a new service, then refresh
     mockSurface.services.push({ service: 'https', port: 443, count: 3 })
-    fireEvent.click(screen.getByRole('button', { name: /refresh suggestions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /refresh attack/i }))
 
     await waitFor(() => {
       expect(screen.getByText('+1')).toBeInTheDocument()

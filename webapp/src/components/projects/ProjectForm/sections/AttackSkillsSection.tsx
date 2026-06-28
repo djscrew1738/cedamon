@@ -15,6 +15,13 @@ import { SqliSection } from './SqliSection'
 import { SsrfSection } from './SsrfSection'
 import { RceSection } from './RceSection'
 import { PathTraversalSection } from './PathTraversalSection'
+import { CveExploitSection } from './CveExploitSection'
+import { XssSection } from './XssSection'
+import { ContainerK8sSection } from './ContainerK8sSection'
+import { LlmSecuritySection } from './LlmSecuritySection'
+import { CicdSection } from './CicdSection'
+import { BrowserExploitSection } from './BrowserExploitSection'
+import { HybridIdentitySection } from './HybridIdentitySection'
 import styles from '../ProjectForm.module.css'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
@@ -128,6 +135,54 @@ const BUILT_IN_SKILLS: BuiltInSkillDef[] = [
 type AttackSkillConfig = {
   builtIn: Record<string, boolean>
   user: Record<string, boolean>
+  xssConfig?: {
+    reflected?: boolean
+    stored?: boolean
+    dom?: boolean
+    blind?: boolean
+    wafBypass?: boolean
+    cspBypass?: boolean
+  }
+  k8sConfig?: {
+    registryScan?: boolean
+    rbacEnum?: boolean
+    podBreakout?: boolean
+    etcdExposure?: boolean
+    admissionAudit?: boolean
+    networkPolicy?: boolean
+  }
+  llmConfig?: {
+    promptInjection?: boolean
+    jailbreaking?: boolean
+    modelExtraction?: boolean
+    ragPoisoning?: boolean
+    contentFilterBypass?: boolean
+    excessiveAgency?: boolean
+  }
+  cicdConfig?: {
+    githubActions?: boolean
+    gitlabCi?: boolean
+    jenkins?: boolean
+    dependencyConfusion?: boolean
+    artifactPoisoning?: boolean
+    runnerCompromise?: boolean
+  }
+  browserConfig?: {
+    electronIpc?: boolean
+    chromeExtensions?: boolean
+    devtoolsHijack?: boolean
+    domClobbering?: boolean
+    serviceWorker?: boolean
+    postMessage?: boolean
+  }
+  identityConfig?: {
+    adfsCompromise?: boolean
+    azureAdConnect?: boolean
+    kerberosDelegation?: boolean
+    samlFederation?: boolean
+    crossForestPivot?: boolean
+    entraTokenTheft?: boolean
+  }
 }
 
 const DEFAULT_CONFIG: AttackSkillConfig = {
@@ -169,7 +224,6 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
 
   const config = getConfig(data)
 
-  // Fetch available user skills
   const fetchUserSkills = useCallback(async () => {
     if (!userId) { setLoading(false); return }
     try {
@@ -188,12 +242,6 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
     if (skillId in config.builtIn) {
       return config.builtIn[skillId] !== false
     }
-    // Key missing from saved config: fall back to the shipped default so the
-    // UI matches what the Python agent does (get_enabled_builtin_skills is a
-    // strict has-key check; missing key = disabled). Without this fallback,
-    // legacy projects show new skills as ON in the UI while the agent treats
-    // them as OFF, and toggling does not persist until the user explicitly
-    // clicks. Default-OFF skills like ssrf are the obvious victim.
     return DEFAULT_CONFIG.builtIn[skillId] ?? false
   }
 
@@ -206,10 +254,13 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
       ...config,
       builtIn: { ...config.builtIn, [skillId]: enabled },
     }
-    // Sync hydraEnabled with brute force master toggle
     if (skillId === 'brute_force_credential_guess') {
       updateField('hydraEnabled', enabled)
     }
+    updateField('attackSkillConfig', newConfig as unknown as FormData['attackSkillConfig'])
+  }
+
+  const updateSkillSubConfig = (newConfig: AttackSkillConfig) => {
     updateField('attackSkillConfig', newConfig as unknown as FormData['attackSkillConfig'])
   }
 
@@ -260,7 +311,6 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
       const fresh: UserSkillDef[] = await refreshResp.json()
       setUserSkills(fresh)
 
-      // Enable newly imported skills in THIS project's config (existing ones untouched).
       const newlyImported = fresh.filter(s => !previousIds.has(s.id))
       if (newlyImported.length > 0) {
         const updatedUser = { ...config.user }
@@ -311,51 +361,30 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
               return (
                 <div
                   key={skill.id}
-                  style={{
-                    marginBottom: 'var(--space-4)',
-                    opacity: enabled ? 1 : 0.5,
-                    transition: 'opacity 0.2s ease',
-                  }}
+                  className={`${styles.skillCard} ${!enabled ? styles.skillCardDisabled : ''}`}
                 >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-3)',
-                    marginBottom: enabled ? 'var(--space-3)' : 0,
-                    padding: 'var(--space-3)',
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: 'var(--radius-default)',
-                  }}>
+                  <div className={styles.skillCardHeader}>
                     <Toggle
                       checked={enabled}
                       onChange={(v) => toggleBuiltIn(skill.id, v)}
                       size="large"
                     />
-                    <div style={{ flex: 1 }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-1-5)',
-                        fontSize: 'var(--text-sm)',
-                        fontWeight: 'var(--font-semibold)',
-                        color: 'var(--text-primary)',
-                      }}>
+                    <div className={styles.skillCardInfo}>
+                      <div className={styles.skillCardTitle}>
                         {skill.icon}
                         {skill.name}
                         <span className={styles.badgeActive}>Active</span>
                       </div>
-                      <div style={{
-                        fontSize: 'var(--text-xs)',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '2px',
-                      }}>
+                      <div className={styles.skillCardDesc}>
                         {skill.description}
                       </div>
                     </div>
                   </div>
 
                   {/* Sub-settings rendered when skill is ON */}
+                  {enabled && skill.id === 'cve_exploit' && (
+                    <CveExploitSection data={data} updateField={updateField} />
+                  )}
                   {enabled && skill.id === 'brute_force_credential_guess' && (
                     <HydraSection data={data} updateField={updateField} />
                   )}
@@ -377,6 +406,24 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
                   {enabled && skill.id === 'path_traversal' && (
                     <PathTraversalSection data={data} updateField={updateField} />
                   )}
+                  {enabled && skill.id === 'xss' && (
+                    <XssSection config={config} onConfigChange={updateSkillSubConfig} />
+                  )}
+                  {enabled && skill.id === 'container_k8s' && (
+                    <ContainerK8sSection config={config} onConfigChange={updateSkillSubConfig} />
+                  )}
+                  {enabled && skill.id === 'llm_security' && (
+                    <LlmSecuritySection config={config} onConfigChange={updateSkillSubConfig} />
+                  )}
+                  {enabled && skill.id === 'cicd_pipeline' && (
+                    <CicdSection config={config} onConfigChange={updateSkillSubConfig} />
+                  )}
+                  {enabled && skill.id === 'browser_exploitation' && (
+                    <BrowserExploitSection config={config} onConfigChange={updateSkillSubConfig} />
+                  )}
+                  {enabled && skill.id === 'hybrid_identity' && (
+                    <HybridIdentitySection config={config} onConfigChange={updateSkillSubConfig} />
+                  )}
                 </div>
               )
             })}
@@ -392,7 +439,7 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
             User Agent Skills
             <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/Agent-Skills#community-skills" title="Open Community Agent Skills wiki section" />
           </h2>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <div className={styles.userSkillsHeaderRight}>
             <button
               type="button"
               className="secondaryButton"
@@ -401,7 +448,7 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
               title="Import all community attack skills into your library and enable them for this project"
             >
               {importing
-                ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                ? <Loader2 size={14} className={styles.spinner} />
                 : <Download size={14} />}
               Import from Community
             </button>
@@ -422,36 +469,16 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
             </p>
 
             {loading ? (
-              <div style={{ textAlign: 'center', padding: 'var(--space-4)', color: 'var(--text-tertiary)' }}>
-                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Loading...
+              <div className={styles.loadingContainer}>
+                <Loader2 size={16} className={styles.spinner} />
+                <span>Loading...</span>
               </div>
             ) : userSkills.length === 0 ? (
-              <div style={{
-                textAlign: 'center',
-                padding: 'var(--space-6) var(--space-4)',
-                color: 'var(--text-tertiary)',
-                fontSize: 'var(--text-sm)',
-              }}>
+              <div className={styles.noSkillsEmpty}>
                 <p style={{ marginBottom: 'var(--space-3)' }}>
                   No user skills uploaded yet. Upload <code>.md</code> skill files from Global Settings to create custom attack workflows.
                 </p>
-                <Link
-                  href="/settings"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-1-5)',
-                    padding: 'var(--space-2) var(--space-3)',
-                    fontSize: 'var(--text-xs)',
-                    fontWeight: 'var(--font-medium)',
-                    color: 'var(--text-primary)',
-                    background: 'var(--bg-hover)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: 'var(--radius-default)',
-                    textDecoration: 'none',
-                    transition: 'var(--transition-all)',
-                  }}
-                >
+                <Link href="/settings" className={styles.settingsLink}>
                   <Settings size={13} />
                   Go to Global Settings
                 </Link>
@@ -462,50 +489,24 @@ export function AttackSkillsSection({ data, updateField }: AttackSkillsSectionPr
                 return (
                   <div
                     key={skill.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-3)',
-                      marginBottom: 'var(--space-2)',
-                      padding: 'var(--space-3)',
-                      background: 'var(--bg-primary)',
-                      border: '1px solid var(--border-default)',
-                      borderRadius: 'var(--radius-default)',
-                      opacity: enabled ? 1 : 0.5,
-                      transition: 'opacity 0.2s ease',
-                    }}
+                    className={`${styles.userSkillCard} ${!enabled ? styles.userSkillCardDisabled : ''}`}
                   >
                     <Toggle
                       checked={enabled}
                       onChange={(v) => toggleUser(skill.id, v)}
                       size="large"
                     />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 'var(--space-1-5)',
-                        fontSize: 'var(--text-sm)',
-                        fontWeight: 'var(--font-semibold)',
-                        color: 'var(--text-primary)',
-                      }}>
+                    <div className={styles.userSkillCardInfo}>
+                      <div className={styles.userSkillCardName}>
                         <Swords size={14} />
                         {skill.name}
                       </div>
-                      <div style={{
-                        fontSize: 'var(--text-xs)',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '2px',
-                      }}>
+                      <div className={styles.userSkillCardMeta}>
                         {skill.description || (
                           <span style={{ opacity: 0.5, fontStyle: 'italic' }}>No description</span>
                         )}
                       </div>
-                      <div style={{
-                        fontSize: 'var(--text-xs)',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '2px',
-                      }}>
+                      <div className={styles.userSkillCardMeta}>
                         Uploaded {new Date(skill.createdAt).toLocaleDateString()}
                       </div>
                     </div>

@@ -425,6 +425,134 @@
   color: var(--text-primary);
 }
 
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 767px) {
+  .splitLayout {
+    flex-direction: column;
+  }
+
+  .leftPanel,
+  .rightPanel {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .rightPanel {
+    flex: 1;
+    min-height: 40vh;
+  }
+
+  .header {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .createForm {
+    padding: var(--space-3);
+    gap: var(--space-3);
+  }
+
+  .textarea {
+    min-height: 80px;
+    font-size: 16px; /* prevent iOS zoom */
+  }
+
+  .examplesMenu {
+    width: min(380px, calc(100vw - 24px));
+    left: auto;
+    right: 0;
+  }
+
+  .nameInput {
+    font-size: 16px;
+  }
+
+  .generateBtn {
+    padding: var(--space-2) var(--space-3);
+    min-height: 40px;
+  }
+
+  .saveRow {
+    flex-wrap: wrap;
+    gap: var(--space-1-5);
+  }
+
+  .saveBtn,
+  .saveSelectBtn,
+  .discardBtn {
+    padding: var(--space-2) var(--space-3);
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: var(--space-2);
+    gap: var(--space-1-5);
+  }
+
+  .title {
+    font-size: var(--text-xs);
+  }
+
+  .subtitle {
+    font-size: 10px;
+  }
+
+  .createForm {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .textarea {
+    min-height: 100px;
+    font-size: 14px;
+    padding: var(--space-2);
+  }
+
+  .generateRow {
+    flex-direction: column;
+  }
+
+  .generateBtn {
+    width: 100%;
+    justify-content: center;
+    padding: var(--space-2-5) var(--space-3);
+  }
+
+  .saveRow {
+    flex-direction: column;
+  }
+
+  .saveBtn,
+  .saveSelectBtn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .nameInput {
+    font-size: 14px;
+    padding: var(--space-2);
+  }
+
+  .examplesMenu {
+    width: calc(100vw - 16px);
+    max-height: 50vh;
+  }
+
+  .examplesItem {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .cypherCode {
+    font-size: 10px;
+    max-height: 120px;
+  }
+}
+
 /* -- Spinner -- */
 
 @keyframes spin {

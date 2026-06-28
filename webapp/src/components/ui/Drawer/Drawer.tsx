@@ -64,7 +64,7 @@ export function Drawer({
   const lastWidthRef = useRef<number | null>(null)
 
   const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.MouseEvent | React.TouchEvent) => {
       if (!resizable) return
       e.preventDefault()
       lastWidthRef.current = null
@@ -76,17 +76,22 @@ export function Drawer({
   useEffect(() => {
     if (!isResizing) return
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const computeWidth = (clientX: number) => {
       const el = drawerRef.current
       if (!el) return
       const rect = el.getBoundingClientRect()
-      const raw = position === 'left' ? e.clientX - rect.left : rect.right - e.clientX
+      const raw = position === 'left' ? clientX - rect.left : rect.right - clientX
       const clamped = Math.min(Math.max(raw, minWidth), maxWidth)
       lastWidthRef.current = clamped
       onResize?.(clamped)
     }
 
-    const handleMouseUp = () => {
+    const handleMouseMove = (e: MouseEvent) => computeWidth(e.clientX)
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) computeWidth(e.touches[0].clientX)
+    }
+
+    const handleEnd = () => {
       setIsResizing(false)
       if (lastWidthRef.current != null) {
         onResizeEnd?.(lastWidthRef.current)
@@ -94,7 +99,9 @@ export function Drawer({
     }
 
     document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('mouseup', handleEnd)
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    document.addEventListener('touchend', handleEnd)
     const prevUserSelect = document.body.style.userSelect
     const prevCursor = document.body.style.cursor
     document.body.style.userSelect = 'none'
@@ -102,7 +109,9 @@ export function Drawer({
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('mouseup', handleEnd)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleEnd)
       document.body.style.userSelect = prevUserSelect
       document.body.style.cursor = prevCursor
     }
@@ -219,6 +228,14 @@ export function Drawer({
     }
   }, [isOpen])
 
+  // ── Body scroll lock for overlay drawers ──
+  useEffect(() => {
+    if (mode !== 'overlay' || !isOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [mode, isOpen])
+
   const transformStyle = isDragging && dragOffset !== 0
     ? ({ transform: `translateX(${dragOffset}px)` } as React.CSSProperties)
     : undefined
@@ -257,6 +274,7 @@ export function Drawer({
         <div
           className={`${styles.resizeHandle} ${handleClass} ${isResizing ? styles.resizeHandleActive : ''}`}
           onMouseDown={handleResizeStart}
+          onTouchStart={handleResizeStart}
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize drawer"

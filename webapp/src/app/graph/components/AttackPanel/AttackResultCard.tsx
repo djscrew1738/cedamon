@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, CheckCircle2, Clock, TrendingUp, ScrollText, Terminal, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Clock, TrendingUp, ScrollText, Terminal, X, RotateCcw } from 'lucide-react'
 import styles from './AttackPanel.module.css'
 import type { PartialReconState } from '@/lib/recon-types'
 
@@ -12,6 +12,7 @@ interface AttackResultCardProps {
   run: PartialReconState
   onShowLogs?: (runId: string) => void
   onCompleteReverseShell?: (run: PartialReconState) => void
+  onRetry?: (run: PartialReconState) => void
   onDismiss: (runId: string) => void
 }
 
@@ -70,7 +71,7 @@ function renderRunStats(stats: Record<string, number> | null): React.ReactNode {
 // Component
 // ---------------------------------------------------------------------------
 
-export function AttackResultCard({ run, onShowLogs, onCompleteReverseShell, onDismiss }: AttackResultCardProps) {
+export function AttackResultCard({ run, onShowLogs, onCompleteReverseShell, onRetry, onDismiss }: AttackResultCardProps) {
   const isError = run.status === 'error'
 
   return (
@@ -100,6 +101,7 @@ export function AttackResultCard({ run, onShowLogs, onCompleteReverseShell, onDi
             className={styles.ghostBtn}
             onClick={() => onShowLogs(run.run_id)}
             title="View logs"
+            aria-label={`View logs for ${run.tool_id}`}
           >
             <ScrollText size={14} />
           </button>
@@ -113,6 +115,17 @@ export function AttackResultCard({ run, onShowLogs, onCompleteReverseShell, onDi
           >
             <Terminal size={14} />
             <span>Reverse Shell</span>
+          </button>
+        )}
+        {isError && onRetry && (
+          <button
+            className={styles.retryBtn}
+            onClick={() => onRetry(run)}
+            title="Retry this attack"
+            aria-label={`Retry ${run.tool_id}`}
+          >
+            <RotateCcw size={14} />
+            <span>Retry</span>
           </button>
         )}
         <button

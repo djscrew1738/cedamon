@@ -429,6 +429,46 @@
   cursor: not-allowed;
 }
 
+.stopAllBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #f87171;
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.stopAllBtn:hover {
+  background: #f87171;
+  color: #000;
+}
+
+.retryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.retryBtn:hover {
+  background: #fbbf24;
+  color: #000;
+}
+
 /* Category filters */
 .filters {
   display: flex;
@@ -573,6 +613,7 @@
 .cardAccent {
   width: 3px;
   flex-shrink: 0;
+  background-color: var(--card-accent);
 }
 
 .cardBody {
@@ -603,6 +644,7 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  color: var(--card-accent);
 }
 
 .priorityBadge {
@@ -850,6 +892,10 @@
     min-height: 36px;
   }
 
+  .searchInput {
+    font-size: 16px; /* prevent iOS zoom on focus */
+  }
+
   .summaryGrid {
     grid-template-columns: repeat(2, 1fr);
     gap: 6px;
@@ -899,10 +945,6 @@
     gap: 6px;
   }
 
-  .cardActionBtn {
-    min-height: 36px;
-  }
-
   .content {
     padding: 10px 12px;
   }
@@ -927,10 +969,6 @@
   .toolbar {
     padding: 8px 12px;
     gap: 6px;
-  }
-
-  .toolbarBtn {
-    min-height: 36px;
   }
 
   .emptyState {
@@ -982,14 +1020,16 @@
     padding: 1px 6px;
   }
 
-  .runAllBtn {
+  .runAllBtn,
+  .stopAllBtn {
     font-size: 11px;
     padding: 4px 8px;
   }
 
   .filterPill {
     font-size: 10px;
-    padding: 2px 6px;
+    padding: 4px 10px;
+    min-height: 32px;
   }
 
   .cardTitleRow {
@@ -1013,7 +1053,8 @@
     gap: 3px;
   }
 
-  .shellBtn {
+  .shellBtn,
+  .retryBtn {
     font-size: 11px;
     padding: 4px 8px;
     min-height: 44px;
@@ -1024,7 +1065,8 @@
     height: 44px;
   }
 
-  .runAllBtn {
+  .runAllBtn,
+  .stopAllBtn {
     min-height: 44px;
   }
 

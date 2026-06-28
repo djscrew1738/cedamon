@@ -85,6 +85,22 @@ OWNERSHIP_TXT_PREFIX = None
 IP_MODE = None
 TARGET_IPS = None
 
+# ---------------------------------------------------------------------------
+# Shared OSINT enrichment tool definitions (used by both run_domain_recon and
+# run_ip_recon). Each entry maps: (ENABLED_SETTING, MODULE_PATH, FUNCTION,
+# GRAPH_UPDATE_METHOD). Extracted here to eliminate the identical dict
+# previously duplicated in both call paths.
+# ---------------------------------------------------------------------------
+_OSINT_TOOLS: dict[str, tuple[str, str, str, str]] = {
+    'censys': ('CENSYS_ENABLED', 'recon.main_recon_modules.censys_enrich', 'run_censys_enrichment_isolated', 'update_graph_from_censys'),
+    'fofa': ('FOFA_ENABLED', 'recon.main_recon_modules.fofa_enrich', 'run_fofa_enrichment_isolated', 'update_graph_from_fofa'),
+    'otx': ('OTX_ENABLED', 'recon.main_recon_modules.otx_enrich', 'run_otx_enrichment_isolated', 'update_graph_from_otx'),
+    'netlas': ('NETLAS_ENABLED', 'recon.main_recon_modules.netlas_enrich', 'run_netlas_enrichment_isolated', 'update_graph_from_netlas'),
+    'virustotal': ('VIRUSTOTAL_ENABLED', 'recon.main_recon_modules.virustotal_enrich', 'run_virustotal_enrichment_isolated', 'update_graph_from_virustotal'),
+    'zoomeye': ('ZOOMEYE_ENABLED', 'recon.main_recon_modules.zoomeye_enrich', 'run_zoomeye_enrichment_isolated', 'update_graph_from_zoomeye'),
+    'criminalip': ('CRIMINALIP_ENABLED', 'recon.main_recon_modules.criminalip_enrich', 'run_criminalip_enrichment_isolated', 'update_graph_from_criminalip'),
+}
+
 
 def _load_settings():
     """Load project settings and populate module-level globals."""
@@ -980,20 +996,11 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
 
     # OSINT Enrichment (parallel, same logic as domain recon Group 3b)
-    _ip_osint_tools = {
-        'censys': ('CENSYS_ENABLED', 'recon.main_recon_modules.censys_enrich', 'run_censys_enrichment_isolated', 'update_graph_from_censys'),
-        'fofa': ('FOFA_ENABLED', 'recon.main_recon_modules.fofa_enrich', 'run_fofa_enrichment_isolated', 'update_graph_from_fofa'),
-        'otx': ('OTX_ENABLED', 'recon.main_recon_modules.otx_enrich', 'run_otx_enrichment_isolated', 'update_graph_from_otx'),
-        'netlas': ('NETLAS_ENABLED', 'recon.main_recon_modules.netlas_enrich', 'run_netlas_enrichment_isolated', 'update_graph_from_netlas'),
-        'virustotal': ('VIRUSTOTAL_ENABLED', 'recon.main_recon_modules.virustotal_enrich', 'run_virustotal_enrichment_isolated', 'update_graph_from_virustotal'),
-        'zoomeye': ('ZOOMEYE_ENABLED', 'recon.main_recon_modules.zoomeye_enrich', 'run_zoomeye_enrichment_isolated', 'update_graph_from_zoomeye'),
-        'criminalip': ('CRIMINALIP_ENABLED', 'recon.main_recon_modules.criminalip_enrich', 'run_criminalip_enrichment_isolated', 'update_graph_from_criminalip'),
-    }
     if not settings.get('OSINT_ENRICHMENT_ENABLED', False):
         enabled_ip_osint = {}
     else:
         enabled_ip_osint = {
-            name: cfg for name, cfg in _ip_osint_tools.items()
+            name: cfg for name, cfg in _OSINT_TOOLS.items()
             if settings.get(cfg[0], False)
             and (
                 settings.get(f'{name.upper()}_API_KEY', '')
@@ -1543,21 +1550,11 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
     # GROUP 3b — OSINT Enrichment (parallel, passive — no packets to target)
     # Runs independently from port scanning; data feeds into the graph only.
     # =====================================================================
-    _osint_tools = {
-        'censys': ('CENSYS_ENABLED', 'recon.main_recon_modules.censys_enrich', 'run_censys_enrichment_isolated', 'update_graph_from_censys'),
-        'fofa': ('FOFA_ENABLED', 'recon.main_recon_modules.fofa_enrich', 'run_fofa_enrichment_isolated', 'update_graph_from_fofa'),
-        'otx': ('OTX_ENABLED', 'recon.main_recon_modules.otx_enrich', 'run_otx_enrichment_isolated', 'update_graph_from_otx'),
-        'netlas': ('NETLAS_ENABLED', 'recon.main_recon_modules.netlas_enrich', 'run_netlas_enrichment_isolated', 'update_graph_from_netlas'),
-        'virustotal': ('VIRUSTOTAL_ENABLED', 'recon.main_recon_modules.virustotal_enrich', 'run_virustotal_enrichment_isolated', 'update_graph_from_virustotal'),
-        'zoomeye': ('ZOOMEYE_ENABLED', 'recon.main_recon_modules.zoomeye_enrich', 'run_zoomeye_enrichment_isolated', 'update_graph_from_zoomeye'),
-        'criminalip': ('CRIMINALIP_ENABLED', 'recon.main_recon_modules.criminalip_enrich', 'run_criminalip_enrichment_isolated', 'update_graph_from_criminalip'),
-    }
-
     if not _settings.get('OSINT_ENRICHMENT_ENABLED', False):
         enabled_osint = {}
     else:
         enabled_osint = {
-            name: cfg for name, cfg in _osint_tools.items()
+            name: cfg for name, cfg in _OSINT_TOOLS.items()
             if _settings.get(cfg[0], False)
             and (
                 _settings.get(f'{name.upper()}_API_KEY', '')

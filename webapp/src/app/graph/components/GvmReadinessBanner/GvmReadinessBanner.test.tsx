@@ -19,7 +19,7 @@ describe('GvmReadinessBanner', () => {
     render(<GvmReadinessBanner available={true} ready={false} />)
 
     expect(
-      screen.getByText(/GVM is installed but still syncing vulnerability feeds/i)
+      screen.getByText(/GVM feed sync in progress/i)
     ).toBeInTheDocument()
   })
 

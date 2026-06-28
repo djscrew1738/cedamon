@@ -43,7 +43,6 @@ const DATA_HANDLING_OPTIONS = [
 ]
 
 const COMPLIANCE_OPTIONS = ['PCI-DSS', 'HIPAA', 'SOC2', 'GDPR', 'ISO27001']
-
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
 export function RoeSection({ data, updateField, updateMultipleFields, mode, onFileSelected }: RoeSectionProps) {
@@ -63,7 +62,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
     try {
       const formData = new FormData()
       formData.append('file', file)
-      // Pass the currently selected LLM model so the agent uses it for parsing
       if (data.agentOpenaiModel) {
         formData.append('model', data.agentOpenaiModel as string)
       }
@@ -80,64 +78,35 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
 
       const parsed = await response.json()
 
-      // Build update object from parsed fields, only setting non-null values
       const updates: Partial<ProjectFormData> = {}
       const fieldMap: Record<string, keyof ProjectFormData> = {
-        name: 'name',
-        description: 'description',
-        targetDomain: 'targetDomain',
-        targetIps: 'targetIps',
-        ipMode: 'ipMode',
-        subdomainList: 'subdomainList',
-        stealthMode: 'stealthMode',
-        roeEnabled: 'roeEnabled',
-        roeRawText: 'roeRawText',
-        roeClientName: 'roeClientName',
-        roeClientContactName: 'roeClientContactName',
-        roeClientContactEmail: 'roeClientContactEmail',
-        roeClientContactPhone: 'roeClientContactPhone',
-        roeEmergencyContact: 'roeEmergencyContact',
-        roeEngagementStartDate: 'roeEngagementStartDate',
-        roeEngagementEndDate: 'roeEngagementEndDate',
-        roeEngagementType: 'roeEngagementType',
-        roeExcludedHosts: 'roeExcludedHosts',
-        roeExcludedHostReasons: 'roeExcludedHostReasons',
-        roeTimeWindowEnabled: 'roeTimeWindowEnabled',
-        roeTimeWindowTimezone: 'roeTimeWindowTimezone',
-        roeTimeWindowDays: 'roeTimeWindowDays',
-        roeTimeWindowStartTime: 'roeTimeWindowStartTime',
-        roeTimeWindowEndTime: 'roeTimeWindowEndTime',
-        roeForbiddenCategories: 'roeForbiddenCategories',
-        agentToolPhaseMap: 'agentToolPhaseMap',
-        roeMaxSeverityPhase: 'roeMaxSeverityPhase',
-        roeAllowDos: 'roeAllowDos',
-        roeAllowSocialEngineering: 'roeAllowSocialEngineering',
-        roeAllowPhysicalAccess: 'roeAllowPhysicalAccess',
-        roeAllowDataExfiltration: 'roeAllowDataExfiltration',
-        roeAllowAccountLockout: 'roeAllowAccountLockout',
-        roeAllowProductionTesting: 'roeAllowProductionTesting',
-        roeGlobalMaxRps: 'roeGlobalMaxRps',
-        roeSensitiveDataHandling: 'roeSensitiveDataHandling',
-        roeDataRetentionDays: 'roeDataRetentionDays',
-        roeRequireDataEncryption: 'roeRequireDataEncryption',
-        roeStatusUpdateFrequency: 'roeStatusUpdateFrequency',
-        roeCriticalFindingNotify: 'roeCriticalFindingNotify',
-        roeIncidentProcedure: 'roeIncidentProcedure',
-        roeThirdPartyProviders: 'roeThirdPartyProviders',
-        roeComplianceFrameworks: 'roeComplianceFrameworks',
-        roeNotes: 'roeNotes',
-        naabuRateLimit: 'naabuRateLimit',
-        nucleiRateLimit: 'nucleiRateLimit',
-        katanaRateLimit: 'katanaRateLimit',
-        httpxRateLimit: 'httpxRateLimit',
-        nucleiSeverity: 'nucleiSeverity',
-        scanModules: 'scanModules',
+        name: 'name', description: 'description', targetDomain: 'targetDomain',
+        targetIps: 'targetIps', ipMode: 'ipMode', subdomainList: 'subdomainList',
+        stealthMode: 'stealthMode', roeEnabled: 'roeEnabled', roeRawText: 'roeRawText',
+        roeClientName: 'roeClientName', roeClientContactName: 'roeClientContactName',
+        roeClientContactEmail: 'roeClientContactEmail', roeClientContactPhone: 'roeClientContactPhone',
+        roeEmergencyContact: 'roeEmergencyContact', roeEngagementStartDate: 'roeEngagementStartDate',
+        roeEngagementEndDate: 'roeEngagementEndDate', roeEngagementType: 'roeEngagementType',
+        roeExcludedHosts: 'roeExcludedHosts', roeExcludedHostReasons: 'roeExcludedHostReasons',
+        roeTimeWindowEnabled: 'roeTimeWindowEnabled', roeTimeWindowTimezone: 'roeTimeWindowTimezone',
+        roeTimeWindowDays: 'roeTimeWindowDays', roeTimeWindowStartTime: 'roeTimeWindowStartTime',
+        roeTimeWindowEndTime: 'roeTimeWindowEndTime', roeForbiddenCategories: 'roeForbiddenCategories',
+        agentToolPhaseMap: 'agentToolPhaseMap', roeMaxSeverityPhase: 'roeMaxSeverityPhase',
+        roeAllowDos: 'roeAllowDos', roeAllowSocialEngineering: 'roeAllowSocialEngineering',
+        roeAllowPhysicalAccess: 'roeAllowPhysicalAccess', roeAllowDataExfiltration: 'roeAllowDataExfiltration',
+        roeAllowAccountLockout: 'roeAllowAccountLockout', roeAllowProductionTesting: 'roeAllowProductionTesting',
+        roeGlobalMaxRps: 'roeGlobalMaxRps', roeSensitiveDataHandling: 'roeSensitiveDataHandling',
+        roeDataRetentionDays: 'roeDataRetentionDays', roeRequireDataEncryption: 'roeRequireDataEncryption',
+        roeStatusUpdateFrequency: 'roeStatusUpdateFrequency', roeCriticalFindingNotify: 'roeCriticalFindingNotify',
+        roeIncidentProcedure: 'roeIncidentProcedure', roeThirdPartyProviders: 'roeThirdPartyProviders',
+        roeComplianceFrameworks: 'roeComplianceFrameworks', roeNotes: 'roeNotes',
+        naabuRateLimit: 'naabuRateLimit', nucleiRateLimit: 'nucleiRateLimit',
+        katanaRateLimit: 'katanaRateLimit', httpxRateLimit: 'httpxRateLimit',
+        nucleiSeverity: 'nucleiSeverity', scanModules: 'scanModules',
       }
 
       for (const [key, formKey] of Object.entries(fieldMap)) {
         if (parsed[key] !== null && parsed[key] !== undefined) {
-          // agentToolPhaseMap: LLM returns only disabled tools (e.g. {"execute_hydra": []}).
-          // Merge into existing map so we don't wipe out all other tools' phases.
           if (key === 'agentToolPhaseMap' && typeof parsed[key] === 'object') {
             const currentMap = (typeof data.agentToolPhaseMap === 'string'
               ? JSON.parse(data.agentToolPhaseMap)
@@ -145,18 +114,15 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
             const disabledTools = parsed[key] as Record<string, string[]>
             const merged = { ...currentMap }
             for (const [tool, phases] of Object.entries(disabledTools)) {
-              merged[tool] = phases // override only the tools the LLM wants to disable
+              merged[tool] = phases
             }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (updates as any)[formKey] = merged
             continue
           }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (updates as any)[formKey] = parsed[key]
         }
       }
 
-      // Store parsed JSON for viewer
       updates.roeParsedJson = parsed
       updates.roeEnabled = true
 
@@ -239,7 +205,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
 
       {isOpen && (
         <div className={styles.sectionContent}>
-          {/* Document Upload (create mode only) */}
           {mode === 'create' && (
             <div className={styles.subSection}>
               <h3 className={styles.subSectionTitle}>Upload RoE Document</h3>
@@ -253,7 +218,7 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                     ref={fileInputRef}
                     type="file"
                     accept=".pdf,.txt,.md,.docx"
-                    style={{ display: 'none' }}
+                    className={styles.hiddenFileInput}
                     onChange={(e) => {
                       const file = e.target.files?.[0]
                       if (file) handleFileUpload(file)
@@ -261,10 +226,9 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                   />
                   <button
                     type="button"
-                    className="secondaryButton"
+                    className={`secondaryButton ${styles.fitWidth}`}
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isParsing}
-                    style={{ width: 'fit-content' }}
                   >
                     {isParsing ? (
                       <>
@@ -279,7 +243,7 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                     )}
                   </button>
                   {parseError && (
-                    <span style={{ color: 'var(--color-error)', fontSize: '0.8rem', marginTop: 4 }}>
+                    <span className={styles.parseErrorText}>
                       {parseError}
                     </span>
                   )}
@@ -288,7 +252,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
             </div>
           )}
 
-          {/* Master Switch */}
           <div className={styles.subSection}>
             <div className={styles.fieldRow}>
               <div className={styles.fieldGroup}>
@@ -305,7 +268,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
 
           {data.roeEnabled && (
             <>
-              {/* Client & Engagement */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Client & Engagement</h3>
                 <div className={styles.fieldRow}>
@@ -362,39 +324,35 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Excluded Hosts */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Excluded Hosts</h3>
                 <p className={styles.sectionDescription}>IPs or domains that must NEVER be scanned or tested.</p>
                 {(data.roeExcludedHosts || []).map((host, i) => (
-                  <div key={i} className={styles.fieldRow} style={{ alignItems: 'flex-end' }}>
-                    <div className={styles.fieldGroup} style={{ flex: 1 }}>
+                  <div key={i} className={`${styles.fieldRow} ${styles.excludedHostRow}`}>
+                    <div className={`${styles.fieldGroup} ${styles.flexFieldGroup}`}>
                       <label className={styles.fieldLabel}>Host</label>
                       <input className="textInput" value={host} readOnly={readOnly}
                         onChange={(e) => updateExcludedHost(i, e.target.value)} placeholder="IP or domain" />
                     </div>
-                    <div className={styles.fieldGroup} style={{ flex: 1 }}>
+                    <div className={`${styles.fieldGroup} ${styles.flexFieldGroup}`}>
                       <label className={styles.fieldLabel}>Reason</label>
                       <input className="textInput" value={(data.roeExcludedHostReasons || [])[i] || ''} readOnly={readOnly}
                         onChange={(e) => updateExcludedReason(i, e.target.value)} placeholder="Why excluded" />
                     </div>
                     {!readOnly && (
-                      <button type="button" className="secondaryButton" onClick={() => removeExcludedHost(i)}
-                        style={{ marginBottom: 4 }}>
+                      <button type="button" className={`secondaryButton ${styles.mbButton}`} onClick={() => removeExcludedHost(i)}>
                         <Minus size={14} />
                       </button>
                     )}
                   </div>
                 ))}
                 {!readOnly && (
-                  <button type="button" className="secondaryButton" onClick={addExcludedHost}
-                    style={{ width: 'fit-content', marginTop: 4 }}>
+                  <button type="button" className={`secondaryButton ${styles.fitWidth} ${styles.mtButton}`} onClick={addExcludedHost}>
                     <Plus size={14} /> Add Excluded Host
                   </button>
                 )}
               </div>
 
-              {/* Time Window */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Time Window</h3>
                 <div className={styles.fieldRow}>
@@ -430,9 +388,9 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                     <div className={styles.fieldRow}>
                       <div className={styles.fieldGroup}>
                         <label className={styles.fieldLabel}>Allowed Days</label>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <div className={styles.chipsWrap}>
                           {WEEKDAYS.map(day => (
-                            <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: readOnly ? 'default' : 'pointer' }}>
+                            <label key={day} className={`${styles.chipLabel} ${readOnly ? styles.chipLabelReadOnly : styles.chipLabelClickable}`}>
                               <input type="checkbox" checked={(data.roeTimeWindowDays || []).includes(day)}
                                 disabled={readOnly} onChange={() => toggleDay(day)} />
                               {day.charAt(0).toUpperCase() + day.slice(1, 3)}
@@ -445,10 +403,9 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 )}
               </div>
 
-              {/* Testing Permissions */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Testing Permissions</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className={styles.permissionsGrid}>
                   <div className={styles.fieldGroup}>
                     <label className={styles.fieldLabel}>Allow Availability Testing</label>
                     <Toggle checked={data.roeAllowDos} onChange={(v) => updateField('roeAllowDos', v)} disabled={readOnly} />
@@ -476,18 +433,17 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Forbidden Categories */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Forbidden Techniques</h3>
-                <p style={{ fontSize: '0.8rem', color: '#888', margin: '0 0 8px 0' }}>
+                <p className={styles.sectionHintText}>
                   Tool-level restrictions are applied via Tool Phase Restrictions in the Tool Matrix tab.
                 </p>
                 <div className={styles.fieldRow}>
                   <div className={styles.fieldGroup}>
                     <label className={styles.fieldLabel}>Forbidden Categories</label>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div className={styles.chipsWrap}>
                       {FORBIDDEN_CATEGORIES.map(cat => (
-                        <label key={cat.value} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: readOnly ? 'default' : 'pointer' }}>
+                        <label key={cat.value} className={`${styles.chipLabel} ${readOnly ? styles.chipLabelReadOnly : styles.chipLabelClickable}`}>
                           <input type="checkbox" checked={(data.roeForbiddenCategories || []).includes(cat.value)}
                             disabled={readOnly} onChange={() => toggleForbiddenCategory(cat.value)} />
                           {cat.label}
@@ -498,7 +454,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Severity Cap & Rate Limit */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Constraints</h3>
                 <div className={styles.fieldRow}>
@@ -520,7 +475,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Data Handling */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Data Handling</h3>
                 <div className={styles.fieldRow}>
@@ -548,7 +502,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Communication */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Communication</h3>
                 <div className={styles.fieldRow}>
@@ -578,15 +531,14 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Compliance */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Compliance & Authorization</h3>
                 <div className={styles.fieldRow}>
                   <div className={styles.fieldGroup}>
                     <label className={styles.fieldLabel}>Compliance Frameworks</label>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div className={styles.chipsWrap}>
                       {COMPLIANCE_OPTIONS.map(fw => (
-                        <label key={fw} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: readOnly ? 'default' : 'pointer' }}>
+                        <label key={fw} className={`${styles.chipLabel} ${readOnly ? styles.chipLabelReadOnly : styles.chipLabelClickable}`}>
                           <input type="checkbox" checked={(data.roeComplianceFrameworks || []).includes(fw)}
                             disabled={readOnly} onChange={() => toggleCompliance(fw)} />
                           {fw}
@@ -597,7 +549,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Third-Party Providers */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Third-Party Providers</h3>
                 <div className={styles.fieldRow}>
@@ -611,7 +562,6 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Notes */}
               <div className={styles.subSection}>
                 <h3 className={styles.subSectionTitle}>Notes</h3>
                 <div className={styles.fieldRow}>
@@ -623,14 +573,12 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
                 </div>
               </div>
 
-              {/* Raw RoE Text (always read-only) */}
               {data.roeRawText && (
                 <div className={styles.subSection}>
                   <h3 className={styles.subSectionTitle}>Extracted Document Text</h3>
                   <div className={styles.fieldRow}>
                     <div className={styles.fieldGroup}>
-                      <textarea className="textInput" rows={8} value={data.roeRawText} readOnly
-                        style={{ fontFamily: 'monospace', fontSize: '0.8rem' }} />
+                      <textarea className={`textInput ${styles.monospaceTextarea}`} rows={8} value={data.roeRawText} readOnly />
                     </div>
                   </div>
                 </div>
@@ -670,17 +618,14 @@ export function RoeSection({ data, updateField, updateMultipleFields, mode, onFi
           <CheckCircle size={20} />
           <strong>Project settings have been updated from your RoE document.</strong>
         </div>
-
         <p style={{ margin: 0 }}>
           The following tabs may have been modified based on the parsed rules. Please review them before saving:
         </p>
-
         <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <li><strong>Target &amp; Modules</strong> — target domain, IP addresses, scan modules, rate limits</li>
           <li><strong>Tool Matrix</strong> — Tool Phase Restrictions (forbidden tools are disabled in the matrix)</li>
           <li><strong>Rules of Engagement</strong> — excluded hosts, time windows, testing permissions, compliance</li>
         </ul>
-
         <p style={{ margin: 0, padding: '10px 12px', background: 'var(--color-surface-alt, rgba(59,130,246,0.08))', borderRadius: '6px', borderLeft: '3px solid var(--color-accent, #3b82f6)' }}>
           The Rules of Engagement will be enforced on both the <strong>recon pipeline</strong> (host exclusions, rate limits, time windows) and the <strong>agentic AI</strong> (tool restrictions, severity phase cap, prompt instructions).
         </p>

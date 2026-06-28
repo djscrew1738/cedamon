@@ -20,10 +20,10 @@ INTERNAL_HEADERS = {"X-Internal-Key": os.environ.get("INTERNAL_API_KEY", "")}
 # =============================================================================
 DANGEROUS_TOOLS = frozenset({
     'execute_nmap', 'execute_naabu', 'execute_masscan', 'execute_nuclei', 'execute_curl',
-    'execute_httpx', 'msf_restart', 'kali_shell', 'metasploit_console',
-    'execute_code', 'execute_hydra', 'execute_playwright', 'execute_wpscan',
+    'execute_httpx', 'msf_restart', 'kali_shell', 'kali_ssh', 'metasploit_console',
+    'execute_code', 'execute_exploit', 'execute_hydra', 'execute_playwright', 'execute_wpscan',
     'execute_searchsploit', 'execute_arjun', 'execute_ffuf', 'execute_amass', 'execute_gau',
-    'execute_katana',
+    'execute_katana', 'run_test_sequence',
 })
 
 # =============================================================================

@@ -632,3 +632,267 @@
   font-size: 11px;
   margin-top: 8px;
 }
+
+/* ─── Mobile responsive ─── */
+
+@media (max-width: 767px) {
+  .tabs {
+    flex-shrink: 0;
+  }
+
+  .tab {
+    padding: 10px 8px;
+    font-size: 12px;
+    gap: 4px;
+  }
+
+  .breadcrumb {
+    padding: 8px 10px;
+    font-size: 11px;
+    gap: 3px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .entry,
+  .job {
+    grid-template-columns: 16px 1fr auto;
+    padding: 8px 10px;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .entryMeta,
+  .jobMeta {
+    font-size: 10px;
+    gap: 6px;
+  }
+
+  .entryActions,
+  .jobActions {
+    opacity: 1;
+    gap: 6px;
+  }
+
+  .actionBtn {
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+  }
+
+  .mkdirRow {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .filterRow {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .filterInput {
+    font-size: 16px;
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+
+  .sortHeader {
+    padding: 6px 10px;
+    gap: 4px;
+  }
+
+  .sortBtn {
+    padding: 4px 10px;
+    font-size: 10px;
+    min-height: 32px;
+  }
+
+  .modalBackdrop {
+    padding: 12px;
+  }
+
+  .modal {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .modalHeader {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .modalBody {
+    padding: 14px;
+    font-size: 12px;
+  }
+
+  .modalActions {
+    padding: 10px 14px;
+    gap: 10px;
+  }
+
+  .modalBtn {
+    padding: 8px 16px;
+    font-size: 13px;
+    min-height: 40px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .previewHeader {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .previewPath {
+    font-size: 12px;
+  }
+
+  .previewMeta {
+    font-size: 10px;
+    padding: 4px 10px;
+  }
+
+  .previewText {
+    font-size: 11px;
+    padding: 10px;
+  }
+
+  .propertiesTable {
+    font-size: 11px;
+  }
+
+  .propertiesTable th {
+    width: 70px;
+    padding: 4px 6px 4px 0;
+  }
+
+  .uploadingHint {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .empty,
+  .error,
+  .loading {
+    padding: 14px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .tabs {
+    gap: 0;
+  }
+
+  .tab {
+    padding: 8px 6px;
+    font-size: 11px;
+    gap: 3px;
+  }
+
+  .breadcrumb {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+
+  .entry,
+  .job {
+    grid-template-columns: 14px 1fr auto;
+    padding: 6px 8px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .entryMeta,
+  .jobMeta {
+    font-size: 9px;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .entryName,
+  .jobName {
+    font-size: 11px;
+  }
+
+  .entryActions,
+  .jobActions {
+    gap: 4px;
+  }
+
+  .actionBtn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mkdirRow {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .filterRow {
+    padding: 4px 8px;
+    gap: 4px;
+  }
+
+  .filterInput {
+    font-size: 14px;
+    min-height: 34px;
+  }
+
+  .sortHeader {
+    padding: 4px 8px;
+    gap: 2px;
+    flex-wrap: wrap;
+  }
+
+  .sortBtn {
+    padding: 3px 8px;
+    font-size: 9px;
+    min-height: 30px;
+  }
+
+  .modal {
+    border-radius: 12px 12px 0 0;
+    margin-top: auto;
+    max-height: 85vh;
+  }
+
+  .modalActions {
+    flex-direction: column;
+  }
+
+  .previewHeader {
+    padding: 6px 8px;
+  }
+
+  .previewPath {
+    font-size: 11px;
+  }
+
+  .previewMeta {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+
+  .previewText {
+    font-size: 10px;
+    padding: 8px;
+  }
+
+  .propertiesTable {
+    font-size: 10px;
+  }
+
+  .bulkBar {
+    padding: 4px 8px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .bulkBtn {
+    padding: 3px 6px;
+    font-size: 10px;
+    min-height: 32px;
+  }
+}

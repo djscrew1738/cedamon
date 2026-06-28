@@ -21,6 +21,31 @@ const SCAN_MODULE_OPTIONS = [
   { id: 'vuln_scan', label: 'Vulnerability Scanning', description: 'Nuclei vulnerability scanner', indent: 3 },
 ]
 
+// Scan intensity presets: which modules are enabled at each level
+const SCAN_INTENSITY_PRESETS: Record<string, string[]> = {
+  quick: ['domain_discovery', 'port_scan', 'http_probe'],
+  standard: ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan'],
+  deep: ['domain_discovery', 'port_scan', 'http_probe', 'resource_enum', 'vuln_scan'],
+}
+
+const SCAN_INTENSITY_OPTIONS = [
+  { id: 'quick', label: 'Quick', description: 'Core recon: domain → ports → HTTP' },
+  { id: 'standard', label: 'Standard', description: 'Full pipeline including resource enum + vuln scan' },
+  { id: 'deep', label: 'Deep', description: 'All modules, Masscan + Naabu, max thoroughness' },
+] as const
+
+type ScanIntensity = typeof SCAN_INTENSITY_OPTIONS[number]['id']
+
+function detectCurrentIntensity(modules: string[]): ScanIntensity | null {
+  for (const opt of SCAN_INTENSITY_OPTIONS) {
+    const preset = SCAN_INTENSITY_PRESETS[opt.id]
+    if (preset.length === modules.length && preset.every(m => modules.includes(m))) {
+      return opt.id
+    }
+  }
+  return null
+}
+
 // Module dependency tree: child → parent
 const MODULE_DEPENDENCIES: Record<string, string | null> = {
   domain_discovery: null,
@@ -51,6 +76,17 @@ function isParentEnabled(moduleId: string, enabledModules: string[]): boolean {
 
 export function ScanModulesSection({ data, updateField }: ScanModulesSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
+
+  const currentIntensity = detectCurrentIntensity(data.scanModules)
+
+  const applyIntensity = (intensity: ScanIntensity) => {
+    const preset = SCAN_INTENSITY_PRESETS[intensity]
+    updateField('scanModules', [...preset])
+    // Deep: also enable Masscan for maximum port coverage
+    if (intensity === 'deep') {
+      updateField('masscanEnabled', true as FormData['masscanEnabled'])
+    }
+  }
 
   const toggleModule = (moduleId: string) => {
     const current = data.scanModules
@@ -92,24 +128,45 @@ export function ScanModulesSection({ data, updateField }: ScanModulesSectionProp
           <p className={styles.sectionDescription}>
             Control the reconnaissance pipeline by enabling or disabling specific modules. Each module builds upon the results of its parent, creating a comprehensive attack surface map from domain discovery through vulnerability detection.
           </p>
+
+          {/* Scan intensity presets */}
+          <div className={styles.intensitySelector}>
+            <span className={styles.intensityLabel}>Scan Intensity</span>
+            <div className={styles.intensityOptions}>
+              {SCAN_INTENSITY_OPTIONS.map(opt => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`${styles.intensityOption} ${currentIntensity === opt.id ? styles.intensityOptionActive : ''}`}
+                  onClick={() => applyIntensity(opt.id)}
+                  title={opt.description}
+                  aria-pressed={currentIntensity === opt.id}
+                >
+                  <span className={styles.intensityOptionLabel}>{opt.label}</span>
+                  <span className={styles.intensityOptionDesc}>{opt.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>Enabled Modules</h3>
-            <p className={styles.fieldHint} style={{ marginBottom: '0.75rem' }}>
+            <p className={`${styles.fieldHint} ${styles.fieldHintSpaced}`}>
               Modules have dependencies: disabling a parent disables all children
             </p>
             {SCAN_MODULE_OPTIONS.map(module => {
               const isEnabled = data.scanModules.includes(module.id)
               const parentEnabled = isParentEnabled(module.id, data.scanModules)
               const isDisabledByParent = !parentEnabled && !isEnabled
+              const indentClass = module.indent === 1 ? styles.toggleRowIndent1
+                : module.indent === 2 ? styles.toggleRowIndent2
+                : module.indent === 3 ? styles.toggleRowIndent3
+                : ''
 
               return (
                 <div
                   key={module.id}
-                  className={styles.toggleRow}
-                  style={{
-                    paddingLeft: `${module.indent * 1.25}rem`,
-                    opacity: isDisabledByParent ? 0.5 : 1,
-                  }}
+                  className={`${styles.toggleRow} ${indentClass} ${isDisabledByParent ? styles.toggleRowMuted : ''}`}
                 >
                   <div>
                     <span className={styles.toggleLabel}>
@@ -132,7 +189,7 @@ export function ScanModulesSection({ data, updateField }: ScanModulesSectionProp
 
           <div className={styles.subSection}>
             <h3 className={styles.subSectionTitle}>General Options</h3>
-            <div className={styles.toggleRow} style={{ opacity: 0.7 }}>
+            <div className={`${styles.toggleRow} ${styles.toggleRowDisabled}`}>
               <div>
                 <span className={styles.toggleLabel}>Update Graph Database</span>
                 <p className={styles.toggleDescription}>

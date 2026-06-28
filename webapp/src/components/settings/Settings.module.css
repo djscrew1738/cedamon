@@ -419,6 +419,16 @@
   accent-color: var(--accent-primary, var(--color-crimson-500));
 }
 
+/* Utility: full-flex child */
+.fullFlex {
+  flex: 1;
+}
+
+/* Checkbox section spacing */
+.checkboxSection {
+  margin-top: var(--space-4);
+}
+
 /* Settings fields grid */
 .settingsGrid {
   display: grid;

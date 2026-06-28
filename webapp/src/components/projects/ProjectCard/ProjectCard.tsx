@@ -1,6 +1,6 @@
 'use client'
 
-import { Globe, Calendar, Settings, Trash2 } from 'lucide-react'
+import { Globe, Calendar, Settings, Trash2, Play, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import styles from './ProjectCard.module.css'
 
@@ -13,6 +13,7 @@ interface ProjectCardProps {
   isSelected?: boolean
   onSelect?: () => void
   onDelete?: () => void
+  onStartScan?: () => void
 }
 
 export function ProjectCard({
@@ -23,7 +24,8 @@ export function ProjectCard({
   createdAt,
   isSelected,
   onSelect,
-  onDelete
+  onDelete,
+  onStartScan,
 }: ProjectCardProps) {
   const formattedDate = new Date(createdAt).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -86,6 +88,34 @@ export function ProjectCard({
           </div>
         </div>
       </div>
+      {(onStartScan || onSelect) && (
+        <div className={styles.footerActions}>
+          {onStartScan && (
+            <button
+              className={styles.scanButton}
+              onClick={(e) => {
+                e.stopPropagation()
+                onStartScan()
+              }}
+              title="Start reconnaissance pipeline"
+            >
+              <Play size={12} />
+              Start Scan
+            </button>
+          )}
+          {onSelect && (
+            <Link
+              href={`/graph?project=${id}`}
+              className={styles.graphLink}
+              onClick={(e) => e.stopPropagation()}
+              title="Open in attack graph"
+            >
+              <ExternalLink size={12} />
+              View Graph
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   )
 }
