@@ -13,6 +13,24 @@
   margin-bottom: var(--space-2);
 }
 
+.pageTitleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pageSubtitle {
+  font-size: 0.55em;
+  font-weight: 400;
+  opacity: 0.5;
+}
+
+.pageDescription {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 var(--space-4);
+}
+
 /* Tabs */
 .tabBar {
   display: flex;

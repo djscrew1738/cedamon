@@ -169,8 +169,8 @@ export default function SettingsPage() {
   if (!userId) {
     return (
       <div className={styles.page}>
-        <h1 className={styles.pageTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
-          <span>Global Settings <span style={{ fontSize: '0.55em', fontWeight: 400, opacity: 0.5 }}>(User-Scoped)</span></span>
+        <h1 className={styles.pageTitleRow}>
+          <span>Global Settings <span className={styles.pageSubtitle}>(User-Scoped)</span></span>
           <WikiInfoButton target="settings" title="Open Global Settings wiki page" />
         </h1>
         <div className={styles.emptyState}>Select a user to configure settings.</div>
@@ -180,8 +180,8 @@ export default function SettingsPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>Global Settings <span style={{ fontSize: '0.55em', fontWeight: 400, opacity: 0.5 }}>(User-Scoped)</span></h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: '0 0 var(--space-4)' }}>
+      <h1 className={styles.pageTitle}>Global Settings <span className={styles.pageSubtitle}>(User-Scoped)</span></h1>
+      <p className={styles.pageDescription}>
         Personal configuration for the current user. These settings apply across all projects.
       </p>
 
@@ -212,7 +212,7 @@ export default function SettingsPage() {
       {/* Tab: LLM Providers */}
       {activeTab === 'providers' && <div className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <h2 className={styles.sectionTitle}>
             <span>LLM Providers</span>
             <WikiInfoButton target="https://github.com/samugit83/redamon/wiki/AI-Model-Providers" title="Open AI Model Providers wiki page" />
           </h2>
