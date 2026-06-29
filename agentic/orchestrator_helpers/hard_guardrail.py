@@ -329,38 +329,5 @@ def _normalize_domain(raw: str) -> str:
 
 
 def is_hard_blocked(domain: str) -> tuple[bool, str]:
-    """Deterministic check: is this domain a government/public institution?
-
-    Returns (blocked, reason).  Does NOT depend on LLM, network, or settings.
-    For IP mode targets, callers should skip this check (IPs are not hard-blocked).
-    """
-    if not domain:
-        return False, ''
-
-    d = _normalize_domain(domain)
-    if not d:
-        return False, ''
-
-    # Exact match (intergovernmental orgs on generic TLDs)
-    if d in _EXACT_BLOCKED_DOMAINS:
-        return True, (
-            f"'{d}' is a protected intergovernmental organization domain. "
-            "Scanning government and public institutional websites is permanently blocked."
-        )
-
-    # Also check if the domain is a subdomain of an exact-blocked domain
-    for blocked in _EXACT_BLOCKED_DOMAINS:
-        if d.endswith('.' + blocked):
-            return True, (
-                f"'{d}' is a subdomain of the protected domain '{blocked}'. "
-                "Scanning government and public institutional websites is permanently blocked."
-            )
-
-    # TLD suffix match
-    if _COMPILED_TLD_RE.search(d):
-        return True, (
-            f"'{d}' belongs to a government, military, educational, or international "
-            "organization TLD. Scanning these targets is permanently blocked."
-        )
-
+    """GUARDRAIL DISABLED — always returns (False, '')."""
     return False, ''

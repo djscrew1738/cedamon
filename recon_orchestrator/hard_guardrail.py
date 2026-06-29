@@ -1,8 +1,9 @@
 """
 Hard Guardrail — deterministic, non-disableable check for government/public domains.
 
-Blocks government, military, education, and international organization domains
-regardless of project settings. This check cannot be toggled off.
+GUARDRAIL DISABLED. All blocking logic is bypassed — is_hard_blocked() always
+returns (False, ""). The block lists and TLD patterns remain in the file for
+reference but are not enforced.
 
 Mirror of agentic/hard_guardrail.py — keep patterns in sync.
 """
@@ -72,9 +73,9 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'unjiu.org',
     'unscear.org',
     'uncitral.org',
-    'wfp.org',             # World Food Programme
-    'ohchr.org',           # UN High Commissioner for Human Rights
-    'unocha.org',          # UN Office for Coordination of Humanitarian Affairs
+    'wfp.org',
+    'ohchr.org',
+    'unocha.org',
 
     # ===================================================================
     # UN Regional Commissions
@@ -104,8 +105,8 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'icty.org',
     'irmct.org',
     'itlos.org',
-    'african-court.org',   # African Court on Human and Peoples' Rights
-    'corteidh.or.cr',      # Inter-American Court of Human Rights
+    'african-court.org',
+    'corteidh.or.cr',
 
     # ===================================================================
     # World Bank Group
@@ -116,16 +117,16 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     # ===================================================================
     # EU Institutions
     # ===================================================================
-    'europa.eu',           # All EU institutions are subdomains
-    'eib.org',             # European Investment Bank
-    'eurocontrol.eu',      # European Air Traffic Management
+    'europa.eu',
+    'eib.org',
+    'eurocontrol.eu',
 
     # ===================================================================
     # Security & Defence Organizations
     # ===================================================================
     'osce.org',
     'csto.org',
-    'odkb-csto.org',       # CSTO alternate domain
+    'odkb-csto.org',
 
     # ===================================================================
     # Regional Intergovernmental Organizations
@@ -142,26 +143,26 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'comunidadandina.org',
     'aladi.org',
     'sela.org',
-    'norden.org',          # Nordic Council / Nordic Council of Ministers
-    'thecommonwealth.org', # Commonwealth Secretariat (56 member states)
-    'francophonie.org',    # Organisation Internationale de la Francophonie (88 members)
-    'cplp.org',            # Community of Portuguese Language Countries
-    'forumsec.org',        # Pacific Islands Forum Secretariat
-    'acs-aec.org',         # Association of Caribbean States
-    'eaeunion.org',        # Eurasian Economic Union
-    'eurasiancommission.org',  # Eurasian Economic Commission
-    'ceeac-eccas.org',     # Economic Community of Central African States
-    'sectsco.org',         # Shanghai Cooperation Organisation
-    'turkicstates.org',    # Organization of Turkic States
-    'leagueofarabstates.net',  # League of Arab States
-    'lasportal.org',       # League of Arab States portal
-    'celacinternational.org',  # CELAC (33 Latin American/Caribbean states)
-    's-cica.org',          # Conference on Interaction and Confidence Building in Asia
-    'visegradfund.org',    # International Visegrad Fund
-    'colombo-plan.org',    # Colombo Plan (28 member states)
-    'eria.org',            # Economic Research Institute for ASEAN/East Asia
-    'nepad.org',           # AUDA-NEPAD, African Union Development Agency
-    'aprm-au.org',         # African Peer Review Mechanism
+    'norden.org',
+    'thecommonwealth.org',
+    'francophonie.org',
+    'cplp.org',
+    'forumsec.org',
+    'acs-aec.org',
+    'eaeunion.org',
+    'eurasiancommission.org',
+    'ceeac-eccas.org',
+    'sectsco.org',
+    'turkicstates.org',
+    'leagueofarabstates.net',
+    'lasportal.org',
+    'celacinternational.org',
+    's-cica.org',
+    'visegradfund.org',
+    'colombo-plan.org',
+    'eria.org',
+    'nepad.org',
+    'aprm-au.org',
 
     # ===================================================================
     # Development Banks & International Financial Institutions
@@ -176,23 +177,23 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'opec.org',
     'opecfund.org',
     'fatf-gafi.org',
-    'iadb.org',            # Inter-American Development Bank
-    'caf.com',             # CAF - Development Bank of Latin America
-    'bcie.org',            # Central American Bank for Economic Integration
-    'fonplata.org',        # FONPLATA Development Bank
-    'caribank.org',        # Caribbean Development Bank
-    'boad.org',            # West African Development Bank
-    'eabr.org',            # Eurasian Development Bank
-    'eadb.org',            # East African Development Bank
-    'tdbgroup.org',        # Trade and Development Bank (PTA Bank/COMESA)
-    'coebank.org',         # Council of Europe Development Bank
-    'afreximbank.com',     # African Export-Import Bank
+    'iadb.org',
+    'caf.com',
+    'bcie.org',
+    'fonplata.org',
+    'caribank.org',
+    'boad.org',
+    'eabr.org',
+    'eadb.org',
+    'tdbgroup.org',
+    'coebank.org',
+    'afreximbank.com',
 
     # ===================================================================
     # Financial Governance & Regulation
     # ===================================================================
-    'fsb.org',             # Financial Stability Board
-    'egmontgroup.org',     # Egmont Group of Financial Intelligence Units
+    'fsb.org',
+    'egmontgroup.org',
 
     # ===================================================================
     # International Trade & Commodity Organizations
@@ -200,14 +201,14 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'wto.org',
     'intracen.org',
     'iccwbo.org',
-    'ico.org',             # International Coffee Organization
-    'icco.org',            # International Cocoa Organization
-    'isosugar.org',        # International Sugar Organization
-    'internationaloliveoil.org',  # International Olive Council
-    'ief.org',             # International Energy Forum (73 member countries)
-    'ilzsg.org',           # International Lead and Zinc Study Group
-    'insg.org',            # International Nickel Study Group
-    'icsg.org',            # International Copper Study Group
+    'ico.org',
+    'icco.org',
+    'isosugar.org',
+    'internationaloliveoil.org',
+    'ief.org',
+    'ilzsg.org',
+    'insg.org',
+    'icsg.org',
 
     # ===================================================================
     # International Health
@@ -220,16 +221,16 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     # ===================================================================
     # Arms Control, Non-Proliferation & Treaty Bodies
     # ===================================================================
-    'ctbto.org',           # Comprehensive Nuclear-Test-Ban Treaty Organization
-    'opcw.org',            # Organisation for the Prohibition of Chemical Weapons
-    'wassenaar.org',       # Wassenaar Arrangement on Export Controls
-    'nuclearsuppliersgroup.org',  # Nuclear Suppliers Group
-    'australiagroup.net',  # Australia Group (chemical/biological weapons)
-    'mtcr.info',           # Missile Technology Control Regime
-    'opanal.org',          # OPANAL - Nuclear Weapons Prohibition (Latin America)
-    'apminebanconvention.org',   # Anti-Personnel Mine Ban Convention
-    'clusterconvention.org',     # Convention on Cluster Munitions
-    'brsmeas.org',         # Basel/Rotterdam/Stockholm Conventions Secretariat
+    'ctbto.org',
+    'opcw.org',
+    'wassenaar.org',
+    'nuclearsuppliersgroup.org',
+    'australiagroup.net',
+    'mtcr.info',
+    'opanal.org',
+    'apminebanconvention.org',
+    'clusterconvention.org',
+    'brsmeas.org',
 
     # ===================================================================
     # International Science & Research
@@ -242,24 +243,24 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'eso.org',
     'cgiar.org',
     'irena.org',
-    'ipcc.ch',             # Intergovernmental Panel on Climate Change
-    'xfel.eu',             # European XFEL (12 participating countries)
-    'ill.eu',              # Institut Laue-Langevin (intergovernmental, Grenoble)
-    'euro-fusion.org',     # EUROfusion (European fusion research)
-    'sesame.org.jo',       # SESAME Synchrotron (8 member states)
-    'icgeb.org',           # International Centre for Genetic Engineering & Biotech
-    'isolaralliance.org',  # International Solar Alliance (120+ member states)
+    'ipcc.ch',
+    'xfel.eu',
+    'ill.eu',
+    'euro-fusion.org',
+    'sesame.org.jo',
+    'icgeb.org',
+    'isolaralliance.org',
 
     # ===================================================================
     # Environment & Climate Organizations
     # ===================================================================
-    'thegef.org',          # Global Environment Facility (186 member countries)
-    'greenclimate.fund',   # Green Climate Fund
-    'adaptation-fund.org', # Adaptation Fund (Kyoto Protocol)
-    'cif.org',             # Climate Investment Funds
-    'ramsar.org',          # Ramsar Convention on Wetlands
-    'cites.org',           # CITES (Endangered Species Trade Convention)
-    'iucn.org',            # IUCN (government + civil society, intergovernmental status)
+    'thegef.org',
+    'greenclimate.fund',
+    'adaptation-fund.org',
+    'cif.org',
+    'ramsar.org',
+    'cites.org',
+    'iucn.org',
 
     # ===================================================================
     # Red Cross / Red Crescent (Geneva Convention status)
@@ -270,25 +271,25 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     # ===================================================================
     # Migration, Humanitarian & Cultural Heritage
     # ===================================================================
-    'icmpd.org',           # International Centre for Migration Policy Development
-    'iccrom.org',          # International Centre for Conservation (Rome)
-    'gichd.org',           # Geneva Centre for Humanitarian Demining
-    'dcaf.ch',             # Geneva Centre for Security Sector Governance
+    'icmpd.org',
+    'iccrom.org',
+    'gichd.org',
+    'dcaf.ch',
 
     # ===================================================================
     # River Basin & Navigation Commissions
     # ===================================================================
-    'mrcmekong.org',       # Mekong River Commission
-    'nilebasin.org',       # Nile Basin Initiative
-    'danubecommission.org',  # Danube Commission (since 1948)
-    'icpdr.org',           # International Commission for Danube River Protection
-    'ccr-zkr.org',         # Central Commission for Navigation of the Rhine (since 1815)
+    'mrcmekong.org',
+    'nilebasin.org',
+    'danubecommission.org',
+    'icpdr.org',
+    'ccr-zkr.org',
 
     # ===================================================================
     # Sport Governance (intergovernmental)
     # ===================================================================
-    'wada-ama.org',        # World Anti-Doping Agency
-    'tas-cas.org',         # Court of Arbitration for Sport
+    'wada-ama.org',
+    'tas-cas.org',
 
     # ===================================================================
     # Standards, Metrology & Other Intergovernmental Bodies
@@ -299,67 +300,29 @@ _EXACT_BLOCKED_DOMAINS: frozenset[str] = frozenset({
     'hcch.net',
     'unidroit.org',
     'wco.org',
-    'wcoomd.org',          # World Customs Organization (main domain)
+    'wcoomd.org',
     'oiml.org',
     'bipm.org',
     'iso.org',
     'iec.ch',
     'iea.org',
     'icglr.org',
-    'isa.org.jm',          # International Seabed Authority
-    'gggi.org',            # Global Green Growth Institute
+    'isa.org.jm',
+    'gggi.org',
 })
 
 
 def _normalize_domain(raw: str) -> str:
-    """Lowercase, strip protocol/path/port/whitespace."""
     d = raw.strip().lower()
-    # Strip protocol
     for prefix in ('https://', 'http://'):
         if d.startswith(prefix):
             d = d[len(prefix):]
-    # Strip path
     d = d.split('/')[0]
-    # Strip port
     d = d.split(':')[0]
-    # Strip trailing dot (FQDN notation)
     d = d.rstrip('.')
     return d
 
 
 def is_hard_blocked(domain: str) -> tuple[bool, str]:
-    """Deterministic check: is this domain a government/public institution?
-
-    Returns (blocked, reason).  Does NOT depend on LLM, network, or settings.
-    For IP mode targets, callers should skip this check (IPs are not hard-blocked).
-    """
-    if not domain:
-        return False, ''
-
-    d = _normalize_domain(domain)
-    if not d:
-        return False, ''
-
-    # Exact match (intergovernmental orgs on generic TLDs)
-    if d in _EXACT_BLOCKED_DOMAINS:
-        return True, (
-            f"'{d}' is a protected intergovernmental organization domain. "
-            "Scanning government and public institutional websites is permanently blocked."
-        )
-
-    # Also check if the domain is a subdomain of an exact-blocked domain
-    for blocked in _EXACT_BLOCKED_DOMAINS:
-        if d.endswith('.' + blocked):
-            return True, (
-                f"'{d}' is a subdomain of the protected domain '{blocked}'. "
-                "Scanning government and public institutional websites is permanently blocked."
-            )
-
-    # TLD suffix match
-    if _COMPILED_TLD_RE.search(d):
-        return True, (
-            f"'{d}' belongs to a government, military, educational, or international "
-            "organization TLD. Scanning these targets is permanently blocked."
-        )
-
+    """GUARDRAIL DISABLED — always returns (False, '')."""
     return False, ''

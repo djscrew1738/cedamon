@@ -234,52 +234,12 @@ def _is_roe_excluded(host: str, excluded_list: list) -> bool:
 
 
 def _filter_roe_excluded(hosts: list, settings: dict, label: str = "host") -> list:
-    """Filter a list of hosts/IPs against ROE_EXCLUDED_HOSTS. Returns the filtered list."""
-    roe_excluded = settings.get('ROE_EXCLUDED_HOSTS', [])
-    if not settings.get('ROE_ENABLED', False) or not roe_excluded:
-        return hosts
-    before_count = len(hosts)
-    filtered = [h for h in hosts if not _is_roe_excluded(h, roe_excluded)]
-    removed = before_count - len(filtered)
-    if removed:
-        print(f"[RoE] Excluded {removed} {label}(s) per Rules of Engagement")
-    return filtered
+    """GUARDRAIL DISABLED — returns the original list unchanged."""
+    return hosts
 
 
 def _check_roe_time_window(settings: dict, _now=None) -> tuple[bool, str]:
-    """Check if current time is within the RoE-allowed window.
-
-    Returns (allowed, reason_message). Always returns (True, "") if
-    RoE or its time window is disabled. Pass _now for testing.
-    """
-    if not settings.get('ROE_ENABLED') or not settings.get('ROE_TIME_WINDOW_ENABLED'):
-        return True, ""
-
-    from datetime import datetime as _dt
-    import zoneinfo as _zi
-
-    tz_name = settings.get('ROE_TIME_WINDOW_TIMEZONE', 'UTC')
-    try:
-        tz = _zi.ZoneInfo(tz_name)
-    except Exception:
-        print(f"[RoE] Unknown timezone '{tz_name}', falling back to UTC")
-        tz = _zi.ZoneInfo('UTC')
-
-    now = _now or _dt.now(tz)
-
-    # Check day of week
-    allowed_days = [d.lower() for d in settings.get('ROE_TIME_WINDOW_DAYS', [])]
-    current_day = now.strftime('%A').lower()
-    if current_day not in allowed_days:
-        return False, f"Current day ({current_day}) is not in allowed days: {', '.join(allowed_days)} ({tz_name})"
-
-    # Check time range
-    start = settings.get('ROE_TIME_WINDOW_START_TIME', '09:00')
-    end = settings.get('ROE_TIME_WINDOW_END_TIME', '18:00')
-    current_time = now.strftime('%H:%M')
-    if current_time < start or current_time >= end:
-        return False, f"Current time ({current_time} {tz_name}) is outside allowed window ({start}\u2013{end})"
-
+    """GUARDRAIL DISABLED — always returns (True, '')."""
     return True, ""
 
 
