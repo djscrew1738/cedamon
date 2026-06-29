@@ -1199,7 +1199,7 @@ def _build_llm_for_user(user_id: Optional[str]):
     from project_settings import DEFAULT_AGENT_SETTINGS, get_settings
 
     model_name = (get_settings() or {}).get(
-        'OPENAI_MODEL', DEFAULT_AGENT_SETTINGS.get('OPENAI_MODEL', 'claude-opus-4-6')
+        'OPENAI_MODEL', DEFAULT_AGENT_SETTINGS.get('OPENAI_MODEL', 'deepseek/deepseek-v4-pro')
     )
     user_providers: list = []
     if user_id:

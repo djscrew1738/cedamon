@@ -439,33 +439,28 @@ class AgentOrchestrator:
             logger.warning(f"User MCP manifest reload check failed: {e}", exc_info=True)
 
     def _build_section_picker_llm(self):
-        """Instantiate a Haiku LLM for the tradecraft section picker.
+        """Instantiate a lightweight LLM for the tradecraft section picker.
 
         Returns None on any failure -> the manager will fall back to self.llm.
         """
         try:
             picker_model = get_setting(
-                'TRADECRAFT_SECTION_PICKER_MODEL', 'claude-haiku-4-5'
+                'TRADECRAFT_SECTION_PICKER_MODEL', 'deepseek/deepseek-v4-flash'
             )
-            from langchain_anthropic import ChatAnthropic
             from orchestrator_helpers.llm_setup import (
+                setup_llm,
                 _resolve_provider_key,
-                _anthropic_supports_temperature,
             )
             from project_settings import get_settings
             user_providers = get_settings().get('USER_LLM_PROVIDERS') or []
-            anthropic_p = _resolve_provider_key(user_providers, 'anthropic')
-            api_key = (anthropic_p or {}).get('apiKey')
+            deepseek_p = _resolve_provider_key(user_providers, 'deepseek')
+            api_key = (deepseek_p or {}).get('apiKey')
             if not api_key:
                 return None
-            picker_kwargs = dict(
-                model=picker_model,
-                anthropic_api_key=api_key,
-                max_tokens=64,
+            return setup_llm(
+                picker_model,
+                deepseek_api_key=api_key,
             )
-            if _anthropic_supports_temperature(picker_model):
-                picker_kwargs["temperature"] = 0
-            return ChatAnthropic(**picker_kwargs)
         except Exception as e:
             logger.debug(f"Section picker LLM build skipped: {e}", exc_info=True)
             return None

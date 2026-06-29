@@ -55,39 +55,40 @@ SUB_CONTAINER_IMAGES = [
 
 # Phase patterns to detect from logs
 # Order matters - more specific patterns should come first within each phase
+# Pre-compiled for performance — log streaming calls pattern.search(line) on every line
 PHASE_PATTERNS = [
-    (r"\[Phase 1\]|\[PHASE 1\]|Phase 1:|WHOIS Lookup|domain.*discovery|Domain Reconnaissance", "Domain Discovery", 1),
-    (r"\[Phase 2\]|\[PHASE 2\]|Phase 2:|NAABU PORT SCANNER|port.*scan", "Port Scanning", 2),
-    (r"\[Phase 3\]|\[PHASE 3\]|Phase 3:|HTTPX HTTP PROBER|http.*prob", "HTTP Probing", 3),
-    (r"\[Phase 4\]|\[PHASE 4\]|Phase 4:|Resource Enumeration|Katana.*GAU|resource.*enum", "Resource Enumeration", 4),
-    (r"\[Phase 4\.5\]|\[PHASE 4\.5\]|Phase 4\.5:|AI Surface Recon|ai_surface_recon", "AI Surface Recon", 4.5),
-    (r"\[Phase 5\]|\[PHASE 5\]|Phase 5:|NUCLEI|Vulnerability Scan|vuln.*scan", "Vulnerability Scanning", 5),
-    (r"\[Phase 6\]|\[PHASE 6\]|Phase 6:|CVE LOOKUP|MITRE|CWE|CAPEC", "CVE & MITRE", 6),
+    (re.compile(r"\[Phase 1\]|\[PHASE 1\]|Phase 1:|WHOIS Lookup|domain.*discovery|Domain Reconnaissance", re.IGNORECASE), "Domain Discovery", 1),
+    (re.compile(r"\[Phase 2\]|\[PHASE 2\]|Phase 2:|NAABU PORT SCANNER|port.*scan", re.IGNORECASE), "Port Scanning", 2),
+    (re.compile(r"\[Phase 3\]|\[PHASE 3\]|Phase 3:|HTTPX HTTP PROBER|http.*prob", re.IGNORECASE), "HTTP Probing", 3),
+    (re.compile(r"\[Phase 4\]|\[PHASE 4\]|Phase 4:|Resource Enumeration|Katana.*GAU|resource.*enum", re.IGNORECASE), "Resource Enumeration", 4),
+    (re.compile(r"\[Phase 4\.5\]|\[PHASE 4\.5\]|Phase 4\.5:|AI Surface Recon|ai_surface_recon", re.IGNORECASE), "AI Surface Recon", 4.5),
+    (re.compile(r"\[Phase 5\]|\[PHASE 5\]|Phase 5:|NUCLEI|Vulnerability Scan|vuln.*scan", re.IGNORECASE), "Vulnerability Scanning", 5),
+    (re.compile(r"\[Phase 6\]|\[PHASE 6\]|Phase 6:|CVE LOOKUP|MITRE|CWE|CAPEC", re.IGNORECASE), "CVE & MITRE", 6),
 ]
 
 
 # GVM phase patterns to detect from logs
 GVM_PHASE_PATTERNS = [
-    (r"Loading recon data", "Loading Recon Data", 1),
-    (r"Connecting to GVM|Waiting for GVM to be ready", "Waiting for GVM", 2),
-    (r"Connected to GVM at", "Connected to GVM", 3),
-    (r"PHASE 1.*Scanning.*IP|Scanning.*IP addresses", "Scanning IPs", 4),
-    (r"PHASE 2.*Scanning.*hostname|Scanning.*hostnames", "Scanning Hostnames", 5),
+    (re.compile(r"Loading recon data", re.IGNORECASE), "Loading Recon Data", 1),
+    (re.compile(r"Connecting to GVM|Waiting for GVM to be ready", re.IGNORECASE), "Waiting for GVM", 2),
+    (re.compile(r"Connected to GVM at", re.IGNORECASE), "Connected to GVM", 3),
+    (re.compile(r"PHASE 1.*Scanning.*IP|Scanning.*IP addresses", re.IGNORECASE), "Scanning IPs", 4),
+    (re.compile(r"PHASE 2.*Scanning.*hostname|Scanning.*hostnames", re.IGNORECASE), "Scanning Hostnames", 5),
 ]
 
 
 # GitHub Secret Hunt phase patterns to detect from logs
 GITHUB_HUNT_PHASE_PATTERNS = [
-    (r"GitHub Secret Hunter|Loading.*settings|Initializing", "Loading Settings", 1),
-    (r"Scanning repository|Organization found|User found|Scanning organization", "Scanning Repositories", 2),
-    (r"SCAN SUMMARY|Final results saved|Scan complete", "Complete", 3),
+    (re.compile(r"GitHub Secret Hunter|Loading.*settings|Initializing", re.IGNORECASE), "Loading Settings", 1),
+    (re.compile(r"Scanning repository|Organization found|User found|Scanning organization", re.IGNORECASE), "Scanning Repositories", 2),
+    (re.compile(r"SCAN SUMMARY|Final results saved|Scan complete", re.IGNORECASE), "Complete", 3),
 ]
 
 # TruffleHog Secret Scanner phase patterns to detect from logs
 TRUFFLEHOG_PHASE_PATTERNS = [
-    (r"TruffleHog Secret Scanner|Loading.*settings|Initializing TruffleHog", "Loading Settings", 1),
-    (r"Scanning repositor|Scanning organization|Running:.*trufflehog", "Scanning Repositories", 2),
-    (r"SCAN SUMMARY|Final results saved|Scan complete", "Complete", 3),
+    (re.compile(r"TruffleHog Secret Scanner|Loading.*settings|Initializing TruffleHog", re.IGNORECASE), "Loading Settings", 1),
+    (re.compile(r"Scanning repositor|Scanning organization|Running:.*trufflehog", re.IGNORECASE), "Scanning Repositories", 2),
+    (re.compile(r"SCAN SUMMARY|Final results saved|Scan complete", re.IGNORECASE), "Complete", 3),
 ]
 
 
@@ -122,6 +123,15 @@ class ContainerManager:
         # Cache for feed-sync readiness probes so health checks don't hammer GVM
         self._gvm_ready_cache: Tuple[Optional[bool], datetime] = (None, datetime.min.replace(tzinfo=timezone.utc))
         self._gvm_ready_cache_ttl = timedelta(seconds=60)
+        # Cache for image-existence checks — avoids repeated Docker API calls
+        # when multiple partial recons or rapid start/stop cycles trigger
+        # _ensure_recon_image in quick succession.
+        self._image_exists_cache: Tuple[Optional[bool], datetime] = (None, datetime.min.replace(tzinfo=timezone.utc))
+        self._image_exists_cache_ttl = timedelta(seconds=30)
+        # Dirty flag for state persistence — _save_state(force=False) is a no-op
+        # when clean. The _periodic_persist loop flushes every 5s. _mark_dirty()
+        # is called after every state mutation instead of _save_state().
+        self._state_dirty = False
         self._state_store = state_store or OrchestratorStateStore()
         self._load_state()
         self._recover_containers()
@@ -208,10 +218,24 @@ class ContainerManager:
 
         Implements automatic retry with exponential backoff (1s, 4s, 16s)
         to handle transient failures (network blips, layer cache corruption).
+
+        Uses a short-TTL cache so repeated calls within the same burst (e.g.
+        multiple partial recons starting at once) don't hammer the Docker API.
         """
+        now = datetime.now(timezone.utc)
+        cached, cached_at = self._image_exists_cache
+        if cached is True and (now - cached_at) < self._image_exists_cache_ttl:
+            return
+        if cached is False and (now - cached_at) < self._image_exists_cache_ttl:
+            raise RuntimeError(
+                f"Recon image {self.recon_image} previously not found — "
+                f"cache TTL ({self._image_exists_cache_ttl.total_seconds():.0f}s) not yet expired"
+            )
+
         try:
             await self._exec(self.client.images.get, self.recon_image)
             logger.info(f"Recon image {self.recon_image} found {context}")
+            self._image_exists_cache = (True, now)
             return
         except NotFound:
             pass  # Need to build
@@ -234,6 +258,7 @@ class ContainerManager:
                     rm=True,
                 )
                 logger.info(f"Recon image {self.recon_image} built {context}")
+                self._image_exists_cache = (True, datetime.now(timezone.utc))
                 return
             except Exception as e:
                 logger.warning(
@@ -246,8 +271,51 @@ class ContainerManager:
                         f"Failed to build recon image after {max_retries} attempts: {e}"
                     ) from e
 
-    def _save_state(self) -> None:
-        """Persist the current orchestrator state to disk."""
+    async def _prepull_sub_images(self, context: str = "") -> None:
+        """Pre-pull sub-container images in parallel.
+
+        The recon container spawns sibling containers (naabu, httpx, nuclei,
+        etc.) that need their own Docker images. Pulling them before the
+        pipeline starts eliminates cold-start delays on the first run.
+        Images that are already present are a no-op for the Docker daemon.
+
+        Runs concurrently via ThreadPoolExecutor so all 7 pulls happen in
+        parallel rather than serially.
+        """
+        logger.info(f"Pre-pulling {len(SUB_CONTAINER_IMAGES)} sub-container images {context}")
+        loop = asyncio.get_running_loop()
+
+        def _pull_one(image: str) -> tuple[str, bool]:
+            try:
+                self.client.images.pull(image)
+                return image, True
+            except Exception as e:
+                logger.warning(f"Failed to pre-pull {image}: {e}")
+                return image, False
+
+        with ThreadPoolExecutor(max_workers=min(len(SUB_CONTAINER_IMAGES), 7), thread_name_prefix="prepull") as executor:
+            futures = [loop.run_in_executor(executor, _pull_one, img) for img in SUB_CONTAINER_IMAGES]
+            results = await asyncio.gather(*futures)
+
+        ok = sum(1 for _, success in results if success)
+        failed = len(results) - ok
+        if failed:
+            logger.warning(f"Pre-pulled {ok}/{len(results)} sub-images, {failed} failed {context}")
+        else:
+            logger.info(f"Pre-pulled all {ok} sub-container images {context}")
+
+    def _mark_dirty(self) -> None:
+        """Mark state as needing persistence. Called after every mutation."""
+        self._state_dirty = True
+
+    def _save_state(self, force: bool = False) -> None:
+        """Persist the current orchestrator state to disk.
+
+        When force=False (default), this is a no-op if state is clean.
+        The _periodic_persist loop calls _save_state(force=True) every 5s.
+        """
+        if not force and not self._state_dirty:
+            return
         self._state_store.save(
             self.running_states,
             self.gvm_states,
@@ -255,13 +323,14 @@ class ContainerManager:
             self.trufflehog_states,
             self.partial_recon_states,
         )
+        self._state_dirty = False
 
     async def _periodic_persist(self) -> None:
         """Flush the in-memory state snapshot to disk on a fixed cadence."""
         while True:
             try:
                 await asyncio.sleep(self._persist_interval)
-                self._save_state()
+                self._save_state(force=True)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -286,7 +355,7 @@ class ContainerManager:
                 pass
             self._persist_task = None
         try:
-            self._save_state()
+            self._save_state(force=True)
         except Exception as e:
             logger.warning(f"Final state flush during shutdown failed: {e}")
         self._log_executor.shutdown(wait=False)
@@ -363,7 +432,7 @@ class ContainerManager:
             if not runs:
                 del self.partial_recon_states[project_id]
 
-        self._save_state()
+        self._mark_dirty()
 
     # =========================================================================
     # P3: Recon Scheduling — background loop that starts scheduled recons
@@ -621,7 +690,7 @@ class ContainerManager:
                         state.status = ReconStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
-            self._save_state()
+            self._mark_dirty()
             return state
 
         # Check if there's an orphan container
@@ -669,14 +738,13 @@ class ContainerManager:
             if self._count_active_partial_recons(project_id) > 0:
                 raise ValueError(f"Partial recon(s) running for project {project_id}. Stop them first.")
 
-            # Clean up any existing container
+            # Clean up any existing container (single API call — skip redundant get)
             container_name = self._get_container_name(project_id)
             try:
-                old_container = await self._exec(self.client.containers.get, container_name)
-                await self._exec(old_container.remove, force=True)
+                await self._exec(self.client.api.remove_container, container_name, force=True)
                 logger.info(f"Removed old container {container_name} for project {project_id}")
             except NotFound:
-                logger.info(f"No existing container to remove for project {project_id}")
+                pass  # Nothing to clean up
 
             # Create new state
             state = ReconState(
@@ -685,13 +753,15 @@ class ContainerManager:
                 started_at=datetime.now(timezone.utc),
             )
             self.running_states[project_id] = state
-            self._save_state()
+            self._mark_dirty()
 
             try:
                 # Store webapp API URL for mid-run RoE re-validation
                 self._project_webapp_urls[project_id] = webapp_api_url
                 # Ensure recon image exists (with retry)
                 await self._ensure_recon_image(context=f"for project {project_id}")
+                # Pre-pull sub-container images in background (best-effort, non-blocking)
+                asyncio.create_task(self._prepull_sub_images(context=f"for project {project_id}"))
 
                 logger.info(
                     f"Spawning recon container {container_name} for project {project_id} "
@@ -775,7 +845,7 @@ class ContainerManager:
                 state.error = str(e)
                 logger.error(f"Failed to start recon for {project_id}: {e}")
 
-            self._save_state()
+            self._mark_dirty()
             return state
 
     def _cleanup_sub_containers(self, since: datetime | None = None) -> int:
@@ -786,18 +856,23 @@ class ContainerManager:
                    When None, cleans ALL matching sub-containers (full recon stop).
 
         Returns the count of containers cleaned up.
+
+        Stop+remove operations run in parallel via ThreadPoolExecutor so
+        cleanup time is bounded by the slowest individual container rather
+        than the sum of all timeouts.
         """
-        cleaned = 0
         try:
             # Find all running containers
             containers = self.client.containers.list(all=True)
+
+            # Phase 1: identify matching sub-containers
+            matching: list = []
             for container in containers:
                 try:
                     # Apply time-based filter for selective cleanup
                     if since is not None:
                         created_at = container.attrs.get("Created", "0")
                         try:
-                            # Docker Created is RFC 3339 or Unix timestamp as string
                             created_ts = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                         except (ValueError, AttributeError):
                             try:
@@ -812,33 +887,45 @@ class ContainerManager:
                     image_name = container.attrs.get("Config", {}).get("Image", "")
 
                     for sub_image in SUB_CONTAINER_IMAGES:
-                        # Match by image name or tags
                         if (sub_image in image_name or
                             any(sub_image in tag for tag in image_tags)):
-                            container_name = container.name
-                            container_status = container.status
-
-                            # Stop if running or paused
-                            if container_status in ("running", "paused"):
-                                if container_status == "paused":
-                                    logger.info(f"Unpausing sub-container before stop: {container_name} ({sub_image})")
-                                    container.unpause()
-                                logger.info(f"Stopping sub-container: {container_name} ({sub_image})")
-                                container.stop(timeout=5)
-
-                            # Remove container
-                            logger.info(f"Removing sub-container: {container_name} ({sub_image})")
-                            container.remove(force=True)
-                            cleaned += 1
+                            matching.append((container, sub_image))
                             break
+                except Exception:
+                    continue
 
+            if not matching:
+                return 0
+
+            # Phase 2: stop+remove in parallel
+            def _stop_and_remove(container, sub_image: str) -> bool:
+                try:
+                    cname = container.name
+                    if container.status in ("running", "paused"):
+                        if container.status == "paused":
+                            logger.info(f"Unpausing sub-container before stop: {cname} ({sub_image})")
+                            container.unpause()
+                        logger.info(f"Stopping sub-container: {cname} ({sub_image})")
+                        container.stop(timeout=5)
+                    logger.info(f"Removing sub-container: {cname} ({sub_image})")
+                    container.remove(force=True)
+                    return True
+                except NotFound:
+                    return True  # already gone
                 except Exception as e:
                     logger.warning(f"Error cleaning up container {container.name}: {e}")
+                    return False
+
+            with ThreadPoolExecutor(max_workers=min(len(matching), 10), thread_name_prefix="sub-cleanup") as executor:
+                results = list(executor.map(
+                    lambda args: _stop_and_remove(*args), matching
+                ))
+
+            return sum(1 for r in results if r)
 
         except Exception as e:
             logger.error(f"Error listing containers for cleanup: {e}")
-
-        return cleaned
+            return 0
 
     async def pause_recon(self, project_id: str) -> ReconState:
         """Pause a running recon process using Docker cgroups freeze"""
@@ -861,7 +948,7 @@ class ContainerManager:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def resume_recon(self, project_id: str) -> ReconState:
@@ -885,7 +972,7 @@ class ContainerManager:
                 state.status = ReconStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def stop_recon(self, project_id: str, timeout: int = 10) -> ReconState:
@@ -951,7 +1038,7 @@ class ContainerManager:
         if project_id in self.running_states:
             del self.running_states[project_id]
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     def _parse_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> ReconLogEvent:
@@ -977,7 +1064,7 @@ class ContainerManager:
 
         # Detect phase changes
         for pattern, phase_name, num in PHASE_PATTERNS:
-            if re.search(pattern, line, re.IGNORECASE):
+            if pattern.search(line):
                 if phase_name != current_phase:
                     phase = phase_name
                     phase_num = num
@@ -1264,33 +1351,37 @@ class ContainerManager:
         return sum(1 for s in self.running_states.values() if s.status == ReconStatus.RUNNING)
 
     async def cleanup(self):
-        """Cleanup all running containers on shutdown"""
-        for project_id in list(self.running_states.keys()):
+        """Cleanup all running containers on shutdown — parallel across scan types."""
+        import asyncio
+
+        async def _safe_stop(name: str, stop_fn, *args):
             try:
-                await self.stop_recon(project_id, timeout=5)
+                await stop_fn(*args)
             except Exception as e:
-                logger.error(f"Error cleaning up recon {project_id}: {e}")
+                logger.error(f"Error cleaning up {name}: {e}")
+
+        # Build a flat list of concurrent stop tasks for all scan types
+        tasks: list = []
+
+        for project_id in list(self.running_states.keys()):
+            tasks.append(_safe_stop(f"recon {project_id}", self.stop_recon, project_id, 5))
+
         for project_id, runs in list(self.partial_recon_states.items()):
             for run_id in list(runs.keys()):
-                try:
-                    await self.stop_partial_recon(project_id, run_id, timeout=5)
-                except Exception as e:
-                    logger.error(f"Error cleaning up partial recon {project_id}/{run_id}: {e}")
+                tasks.append(_safe_stop(f"partial recon {project_id}/{run_id}", self.stop_partial_recon, project_id, run_id, 5))
+
         for project_id in list(self.gvm_states.keys()):
-            try:
-                await self.stop_gvm_scan(project_id, timeout=5)
-            except Exception as e:
-                logger.error(f"Error cleaning up GVM {project_id}: {e}")
+            tasks.append(_safe_stop(f"GVM {project_id}", self.stop_gvm_scan, project_id, 5))
+
         for project_id in list(self.github_hunt_states.keys()):
-            try:
-                await self.stop_github_hunt(project_id, timeout=5)
-            except Exception as e:
-                logger.error(f"Error cleaning up GitHub hunt {project_id}: {e}")
+            tasks.append(_safe_stop(f"GitHub hunt {project_id}", self.stop_github_hunt, project_id, 5))
+
         for project_id in list(self.trufflehog_states.keys()):
-            try:
-                await self.stop_trufflehog(project_id, timeout=5)
-            except Exception as e:
-                logger.error(f"Error cleaning up TruffleHog {project_id}: {e}")
+            tasks.append(_safe_stop(f"TruffleHog {project_id}", self.stop_trufflehog, project_id, 5))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
         self._log_executor.shutdown(wait=False)
 
     # =========================================================================
@@ -1435,7 +1526,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.partial_recon_states.setdefault(project_id, {})[run_id] = state
-        self._save_state()
+        self._mark_dirty()
         logger.info(
             f"start_partial_recon project_id={project_id} tool_id={tool_id} run_id={run_id} "
             f"container_name={container_name}"
@@ -1523,7 +1614,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start partial recon for {project_id}/{run_id}: {e}")
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def stop_partial_recon(self, project_id: str, run_id: str, timeout: int = 10) -> PartialReconState:
@@ -1591,7 +1682,7 @@ class ContainerManager:
             logger.warning("_refresh_partial_recon_state: config_path = Path(f'/tmp/redamon/partial_{project_id}_{run_id}.json')", exc_info=True)
             pass
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def pause_partial_recon(self, project_id: str, run_id: str) -> PartialReconState:
@@ -1618,7 +1709,7 @@ class ContainerManager:
         runs = self.partial_recon_states.get(project_id, {})
         if run_id in runs:
             runs[run_id] = state
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def resume_partial_recon(self, project_id: str, run_id: str) -> PartialReconState:
@@ -1644,7 +1735,7 @@ class ContainerManager:
         runs = self.partial_recon_states.get(project_id, {})
         if run_id in runs:
             runs[run_id] = state
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def stream_partial_logs(self, project_id: str, run_id: str) -> AsyncGenerator[ReconLogEvent, None]:
@@ -1837,7 +1928,7 @@ class ContainerManager:
                         state.status = GvmStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
-            self._save_state()
+            self._mark_dirty()
             return state
 
         # Check if there's an orphan container
@@ -1873,11 +1964,10 @@ class ContainerManager:
         if current_state.status in (GvmStatus.RUNNING, GvmStatus.PAUSED):
             raise ValueError(f"GVM scan already active for project {project_id}")
 
-        # Clean up any existing container
+        # Clean up any existing container (single API call)
         container_name = self._get_gvm_container_name(project_id)
         try:
-            old_container = self.client.containers.get(container_name)
-            old_container.remove(force=True)
+            self.client.api.remove_container(container_name, force=True)
             logger.info(f"Removed old GVM container {container_name}")
         except NotFound:
             pass
@@ -1889,7 +1979,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.gvm_states[project_id] = state
-        self._save_state()
+        self._mark_dirty()
 
         try:
             # Wait for GVM feed sync before spawning the scanner. This avoids
@@ -1956,7 +2046,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start GVM scan for {project_id}: {e}")
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def pause_gvm_scan(self, project_id: str) -> GvmState:
@@ -1980,7 +2070,7 @@ class ContainerManager:
                 state.status = GvmStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def resume_gvm_scan(self, project_id: str) -> GvmState:
@@ -2004,7 +2094,7 @@ class ContainerManager:
                 state.status = GvmStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def stop_gvm_scan(self, project_id: str, timeout: int = 10) -> GvmState:
@@ -2035,7 +2125,7 @@ class ContainerManager:
         if project_id in self.gvm_states:
             del self.gvm_states[project_id]
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     def _parse_gvm_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> GvmLogEvent:
@@ -2060,7 +2150,7 @@ class ContainerManager:
 
         # Detect phase changes
         for pattern, phase_name, num in GVM_PHASE_PATTERNS:
-            if re.search(pattern, line, re.IGNORECASE):
+            if pattern.search(line):
                 if phase_name != current_phase:
                     phase = phase_name
                     phase_num = num
@@ -2396,7 +2486,7 @@ class ContainerManager:
                         state.status = GithubHuntStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
-            self._save_state()
+            self._mark_dirty()
             return state
 
         # Check if there's an orphan container
@@ -2431,11 +2521,10 @@ class ContainerManager:
         if current_state.status in (GithubHuntStatus.RUNNING, GithubHuntStatus.PAUSED):
             raise ValueError(f"GitHub hunt already active for project {project_id}")
 
-        # Clean up any existing container
+        # Clean up any existing container (single API call)
         container_name = self._get_github_hunt_container_name(project_id)
         try:
-            old_container = self.client.containers.get(container_name)
-            old_container.remove(force=True)
+            self.client.api.remove_container(container_name, force=True)
             logger.info(f"Removed old GitHub hunt container {container_name}")
         except NotFound:
             pass
@@ -2447,7 +2536,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.github_hunt_states[project_id] = state
-        self._save_state()
+        self._mark_dirty()
 
         try:
             # Ensure GitHub hunt image exists
@@ -2506,7 +2595,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start GitHub hunt for {project_id}: {e}")
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def pause_github_hunt(self, project_id: str) -> GithubHuntState:
@@ -2530,7 +2619,7 @@ class ContainerManager:
                 state.status = GithubHuntStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def resume_github_hunt(self, project_id: str) -> GithubHuntState:
@@ -2554,7 +2643,7 @@ class ContainerManager:
                 state.status = GithubHuntStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def stop_github_hunt(self, project_id: str, timeout: int = 10) -> GithubHuntState:
@@ -2585,7 +2674,7 @@ class ContainerManager:
         if project_id in self.github_hunt_states:
             del self.github_hunt_states[project_id]
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     def _parse_github_hunt_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> GithubHuntLogEvent:
@@ -2612,7 +2701,7 @@ class ContainerManager:
 
         # Detect phase changes
         for pattern, phase_name, num in GITHUB_HUNT_PHASE_PATTERNS:
-            if re.search(pattern, line, re.IGNORECASE):
+            if pattern.search(line):
                 if phase_name != current_phase:
                     phase = phase_name
                     phase_num = num
@@ -2817,7 +2906,7 @@ class ContainerManager:
                         state.status = TrufflehogStatus.ERROR
                         state.error = f"Docker API error: {e}"
 
-            self._save_state()
+            self._mark_dirty()
             return state
 
         # Check if there's an orphan container
@@ -2852,11 +2941,10 @@ class ContainerManager:
         if current_state.status in (TrufflehogStatus.RUNNING, TrufflehogStatus.PAUSED):
             raise ValueError(f"TruffleHog scan already active for project {project_id}")
 
-        # Clean up any existing container
+        # Clean up any existing container (single API call)
         container_name = self._get_trufflehog_container_name(project_id)
         try:
-            old_container = self.client.containers.get(container_name)
-            old_container.remove(force=True)
+            self.client.api.remove_container(container_name, force=True)
             logger.info(f"Removed old TruffleHog container {container_name}")
         except NotFound:
             pass
@@ -2868,7 +2956,7 @@ class ContainerManager:
             started_at=datetime.now(timezone.utc),
         )
         self.trufflehog_states[project_id] = state
-        self._save_state()
+        self._mark_dirty()
 
         try:
             # Ensure TruffleHog image exists
@@ -2927,7 +3015,7 @@ class ContainerManager:
             state.error = str(e)
             logger.error(f"Failed to start TruffleHog scan for {project_id}: {e}")
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def pause_trufflehog(self, project_id: str) -> TrufflehogState:
@@ -2951,7 +3039,7 @@ class ContainerManager:
                 state.status = TrufflehogStatus.ERROR
                 state.error = f"Failed to pause: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def resume_trufflehog(self, project_id: str) -> TrufflehogState:
@@ -2975,7 +3063,7 @@ class ContainerManager:
                 state.status = TrufflehogStatus.ERROR
                 state.error = f"Failed to resume: {e}"
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     async def stop_trufflehog(self, project_id: str, timeout: int = 10) -> TrufflehogState:
@@ -3006,7 +3094,7 @@ class ContainerManager:
         if project_id in self.trufflehog_states:
             del self.trufflehog_states[project_id]
 
-        self._save_state()
+        self._mark_dirty()
         return state
 
     def _parse_trufflehog_log_line(self, line: str, current_phase: Optional[str], current_phase_num: Optional[int], timestamp: Optional[datetime] = None) -> TrufflehogLogEvent:
@@ -3033,7 +3121,7 @@ class ContainerManager:
 
         # Detect phase changes
         for pattern, phase_name, num in TRUFFLEHOG_PHASE_PATTERNS:
-            if re.search(pattern, line, re.IGNORECASE):
+            if pattern.search(line):
                 if phase_name != current_phase:
                     phase = phase_name
                     phase_num = num

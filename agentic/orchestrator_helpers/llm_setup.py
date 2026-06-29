@@ -358,7 +358,7 @@ def _resolve_provider_key(
 def apply_project_settings(orchestrator, project_id: str) -> None:
     """Load project settings from webapp API and reconfigure LLM if model changed."""
     settings = load_project_settings(project_id)
-    new_model = settings.get('OPENAI_MODEL', 'claude-opus-4-6')
+    new_model = settings.get('OPENAI_MODEL', 'deepseek/deepseek-v4-pro')
 
     # Re-run LLM setup if model changed OR if LLM is None (previous setup failed)
     model_changed = new_model != orchestrator.model_name

@@ -873,60 +873,7 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             except Exception as e:
                 print(f"[!][ResourceEnum] {name} failed: {e}")
 
-    # Run Kiterunner in parallel for each wordlist
-    if KITERUNNER_ENABLED and target_urls and kr_binary_path and KITERUNNER_WORDLISTS:
-        # KITERUNNER_PARALLELISM already extracted from settings above
-        max_workers = min(KITERUNNER_PARALLELISM, len(KITERUNNER_WORDLISTS))
-        print(f"\n[*][Kiterunner] Running API discovery ({len(KITERUNNER_WORDLISTS)} wordlists, {max_workers} parallel)...")
-
-        def _run_kr_wordlist(wordlist_name):
-            print(f"\n[*][Kiterunner] Processing wordlist: {wordlist_name}")
-            _, wordlist_path = ensure_kiterunner_binary(wordlist_name)
-            if not wordlist_path:
-                print(f"[!][Kiterunner] Could not get wordlist: {wordlist_name}")
-                return wordlist_name, []
-            wordlist_results = run_kiterunner_discovery(
-                target_urls,
-                kr_binary_path,
-                wordlist_path,
-                wordlist_name,
-                KITERUNNER_RATE_LIMIT,
-                KITERUNNER_CONNECTIONS,
-                KITERUNNER_TIMEOUT,
-                KITERUNNER_SCAN_TIMEOUT,
-                KITERUNNER_THREADS,
-                KITERUNNER_IGNORE_STATUS,
-                KITERUNNER_MATCH_STATUS,
-                KITERUNNER_MIN_CONTENT_LENGTH,
-                KITERUNNER_HEADERS,
-                use_proxy
-            )
-            return wordlist_name, wordlist_results
-
-        all_wordlist_results = []
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(_run_kr_wordlist, wl): wl
-                for wl in KITERUNNER_WORDLISTS
-            }
-            for future in as_completed(futures):
-                try:
-                    wordlist_name, wordlist_results = future.result()
-                    all_wordlist_results.append((wordlist_name, wordlist_results))
-                    print(f"[+][Kiterunner] {wordlist_name}: {len(wordlist_results)} endpoints found")
-                except Exception as e:
-                    wl = futures[future]
-                    print(f"[!][Kiterunner] Failed for {wl}: {e}")
-
-        # Merge all results, deduplicating
-        existing_urls = set()
-        for wordlist_name, wordlist_results in all_wordlist_results:
-            for result in wordlist_results:
-                key = (result['url'], result['method'])
-                if key not in existing_urls:
-                    kr_results.append(result)
-                    existing_urls.add(key)
-        print(f"[+][Kiterunner] Total unique endpoints: {len(kr_results)}")
+    # Kiterunner moved to Phase 2 parallel block (below)
 
     # Organize discovered endpoints
     if katana_urls:
@@ -959,19 +906,14 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         print(f"[+][Hakrawler] Overlap with Katana: {hakrawler_stats['hakrawler_overlap']}")
 
     # ------------------------------------------------------------------
-    # PHASE 4-6: jsluice, FFuf, ZAP Ajax Spider (parallel fan-out group)
+    # Phase 2: FFuf || Jsluice || Arjun || Kiterunner || ZAP Ajax Spider (parallel)
     #
-    # These three tools are independent of each other — each takes Phase-1
-    # (Katana + Hakrawler + GAU) data as input and produces new endpoint
-    # candidates.  We launch them in parallel, then merge results into
-    # organized_data sequentially.
+    # All five tools consume Phase-1 endpoints (Katana + Hakrawler) and
+    # produce independent output. Each wrapper returns an isolated dict —
+    # NEVER mutates organized_data. The main thread merges after all finish.
     # ------------------------------------------------------------------
-    print(f"\n[*][ResourceEnum] Post-crawl analysis (parallel): jsluice + FFuf + ZAP")
+    print(f"\n[*][ResourceEnum] Post-crawl analysis (parallel): jsluice + FFuf + ZAP + Arjun + Kiterunner")
     print("-" * 40)
-
-    jsluice_stats: dict = {}
-    ffuf_stats: dict = {}
-    zap_ajax_result: tuple = (), {}
 
     # FFuf setup (lightweight — compute before submitting to parallel pool)
     ffuf_setup: dict = {"enabled": False, "discovered_base_paths": None, "extensions": FFUF_EXTENSIONS}
@@ -1020,8 +962,34 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     if ZAP_AJAX_SPIDER_ENABLED:
         zap_ajax_seed_urls = sorted(set(target_urls))
 
-    def _run_jsluice() -> dict:
-        """Run jsluice post-crawl JS analysis."""
+    # Arjun setup: build target URL list from Phase-1 endpoints (never mutates organized_data)
+    arjun_setup: dict = {"enabled": False, "target_urls": []}
+    if ARJUN_ENABLED:
+        if arjun_binary_check():
+            arjun_setup["enabled"] = True
+            arjun_target_urls = []
+            for base_url, base_data in organized_data['by_base_url'].items():
+                for path in base_data.get('endpoints', {}).keys():
+                    full_url = base_url.rstrip('/') + path
+                    arjun_target_urls.append(full_url)
+            if not arjun_target_urls:
+                arjun_target_urls = list(target_urls)
+            if len(arjun_target_urls) > ARJUN_MAX_ENDPOINTS:
+                api_urls = [u for u in arjun_target_urls if any(p in u.lower() for p in ['/api/', '/v1/', '/v2/', '/graphql', '/rest/'])]
+                dynamic_urls = [u for u in arjun_target_urls if u not in api_urls and any(u.lower().endswith(e) for e in ['.php', '.asp', '.aspx', '.jsp'])]
+                other_urls = [u for u in arjun_target_urls if u not in api_urls and u not in dynamic_urls]
+                arjun_target_urls = (api_urls + dynamic_urls + other_urls)[:ARJUN_MAX_ENDPOINTS]
+                print(f"[*][Arjun] Capped to {ARJUN_MAX_ENDPOINTS} endpoints (API: {len(api_urls)}, dynamic: {len(dynamic_urls)}, other: {len(other_urls)})")
+            arjun_setup["target_urls"] = arjun_target_urls
+        else:
+            print("[!][Arjun] arjun binary not found in PATH, skipping")
+
+    # --- Isolated wrapper functions ---
+    # Each returns a dict of {key: value} pairs — NEVER mutates organized_data
+    # or any shared state. The main thread merges results after all workers finish.
+
+    def _run_jsluice_isolated() -> dict:
+        """Run jsluice post-crawl JS analysis. Returns isolated result dict."""
         local_stats = {
             "jsluice_total": 0, "jsluice_parsed": 0, "jsluice_new": 0,
             "jsluice_overlap": 0, "jsluice_verify_total": 0,
@@ -1029,11 +997,11 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             "jsluice_verified": 0, "jsluice_skipped_unverified": 0,
         }
         if not JSLUICE_ENABLED or not (JSLUICE_EXTRACT_URLS or JSLUICE_EXTRACT_SECRETS):
-            return {"result": None, "stats": local_stats, "pre_verify_count": 0}
+            return {"jsluice_result": None, "jsluice_stats": local_stats, "jsluice_pre_verify": 0}
 
         all_crawl_urls = list(set(katana_urls + hakrawler_urls))
         if not all_crawl_urls:
-            return {"result": None, "stats": local_stats, "pre_verify_count": 0}
+            return {"jsluice_result": None, "jsluice_stats": local_stats, "jsluice_pre_verify": 0}
 
         jsluice_result = run_jsluice_analysis(
             all_crawl_urls, JSLUICE_MAX_FILES, JSLUICE_TIMEOUT,
@@ -1057,13 +1025,13 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             local_stats["jsluice_verify_candidates"] = pre_verify_count
             local_stats["jsluice_verified"] = pre_verify_count
 
-        return {"result": jsluice_result, "stats": local_stats, "pre_verify_count": pre_verify_count}
+        return {"jsluice_result": jsluice_result, "jsluice_stats": local_stats, "jsluice_pre_verify": pre_verify_count}
 
-    def _run_ffuf() -> dict:
-        """Run FFuf directory fuzzing."""
+    def _run_ffuf_isolated() -> dict:
+        """Run FFuf directory fuzzing. Returns isolated result dict."""
         local_stats = {"ffuf_total": 0, "ffuf_new": 0, "ffuf_overlap": 0}
         if not ffuf_setup["enabled"]:
-            return {"result": None, "meta": {}, "stats": local_stats}
+            return {"ffuf_results": None, "ffuf_meta": {}, "ffuf_stats": local_stats}
 
         ffuf_results, ffuf_meta = run_ffuf_discovery(
             target_urls, FFUF_WORDLIST, FFUF_THREADS, FFUF_RATE,
@@ -1074,16 +1042,16 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             target_domains, ffuf_setup["discovered_base_paths"],
             use_proxy, FFUF_PARALLELISM,
         )
-        return {"result": ffuf_results, "meta": ffuf_meta, "stats": local_stats}
+        return {"ffuf_results": ffuf_results, "ffuf_meta": ffuf_meta, "ffuf_stats": local_stats}
 
-    def _run_zap_ajax() -> dict:
-        """Run ZAP Ajax Spider browser-driven discovery."""
+    def _run_zap_ajax_isolated() -> dict:
+        """Run ZAP Ajax Spider browser-driven discovery. Returns isolated result dict."""
         local_stats = {
             "zap_ajax_spider_total": 0, "zap_ajax_spider_parsed": 0,
             "zap_ajax_spider_new": 0, "zap_ajax_spider_overlap": 0,
         }
         if not ZAP_AJAX_SPIDER_ENABLED:
-            return {"result": ([], {}), "stats": local_stats}
+            return {"zap_ajax_urls": [], "zap_ajax_meta": {}, "zap_ajax_stats": local_stats}
 
         print(f"\n[*][ZAP Ajax] Running browser-driven discovery ({len(zap_ajax_seed_urls)} seed URLs)...")
         zap_urls, zap_meta = run_zap_ajax_spider(
@@ -1107,22 +1075,156 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
             use_proxy=use_proxy,
             parallelism=ZAP_AJAX_SPIDER_PARALLELISM,
         )
-        return {"result": (zap_urls, zap_meta), "stats": local_stats}
+        return {"zap_ajax_urls": zap_urls, "zap_ajax_meta": zap_meta, "zap_ajax_stats": local_stats}
 
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="post-crawl") as pc_exec:
-        jsluice_fut = pc_exec.submit(_run_jsluice)
-        ffuf_fut = pc_exec.submit(_run_ffuf)
-        zap_fut = pc_exec.submit(_run_zap_ajax)
+    def _run_arjun_isolated() -> dict:
+        """Run Arjun parameter discovery. Returns isolated result dict."""
+        if not arjun_setup["enabled"]:
+            return {"arjun_results": None, "arjun_meta": {}, "arjun_enabled": False}
+        try:
+            arjun_results, arjun_meta = run_arjun_discovery(
+                arjun_setup["target_urls"],
+                ARJUN_METHODS,
+                ARJUN_THREADS,
+                ARJUN_TIMEOUT,
+                ARJUN_SCAN_TIMEOUT,
+                ARJUN_CHUNK_SIZE,
+                ARJUN_RATE_LIMIT,
+                ARJUN_STABLE,
+                ARJUN_PASSIVE,
+                ARJUN_DISABLE_REDIRECTS,
+                ARJUN_CUSTOM_HEADERS,
+                target_domains,
+                use_proxy,
+            )
+            return {"arjun_results": arjun_results, "arjun_meta": arjun_meta, "arjun_enabled": True}
+        except Exception as e:
+            print(f"[!][Arjun] Failed: {e}")
+            return {"arjun_results": None, "arjun_meta": {}, "arjun_enabled": False}
 
-        # Wait for all three to complete
-        jsluice_out = jsluice_fut.result()
-        ffuf_out = ffuf_fut.result()
-        zap_ajax_out = zap_fut.result()
+    def _run_kiterunner_isolated() -> dict:
+        """Run Kiterunner API discovery across wordlists. Returns isolated result dict."""
+        if not (KITERUNNER_ENABLED and target_urls and kr_binary_path and KITERUNNER_WORDLISTS):
+            return {"kr_results": [], "kr_enabled": False}
+        try:
+            max_workers = min(KITERUNNER_PARALLELISM, len(KITERUNNER_WORDLISTS))
+            print(f"\n[*][Kiterunner] Running API discovery ({len(KITERUNNER_WORDLISTS)} wordlists, {max_workers} parallel)...")
+
+            def _run_kr_wordlist(wordlist_name):
+                print(f"\n[*][Kiterunner] Processing wordlist: {wordlist_name}")
+                _, wordlist_path = ensure_kiterunner_binary(wordlist_name)
+                if not wordlist_path:
+                    print(f"[!][Kiterunner] Could not get wordlist: {wordlist_name}")
+                    return wordlist_name, []
+                wordlist_results = run_kiterunner_discovery(
+                    target_urls,
+                    kr_binary_path,
+                    wordlist_path,
+                    wordlist_name,
+                    KITERUNNER_RATE_LIMIT,
+                    KITERUNNER_CONNECTIONS,
+                    KITERUNNER_TIMEOUT,
+                    KITERUNNER_SCAN_TIMEOUT,
+                    KITERUNNER_THREADS,
+                    KITERUNNER_IGNORE_STATUS,
+                    KITERUNNER_MATCH_STATUS,
+                    KITERUNNER_MIN_CONTENT_LENGTH,
+                    KITERUNNER_HEADERS,
+                    use_proxy
+                )
+                return wordlist_name, wordlist_results
+
+            all_wordlist_results = []
+            with ThreadPoolExecutor(max_workers=max_workers) as kr_exec:
+                kr_futures = {
+                    kr_exec.submit(_run_kr_wordlist, wl): wl
+                    for wl in KITERUNNER_WORDLISTS
+                }
+                for future in as_completed(kr_futures):
+                    try:
+                        wordlist_name, wordlist_results = future.result()
+                        all_wordlist_results.append((wordlist_name, wordlist_results))
+                        print(f"[+][Kiterunner] {wordlist_name}: {len(wordlist_results)} endpoints found")
+                    except Exception as e:
+                        wl = kr_futures[future]
+                        print(f"[!][Kiterunner] Failed for {wl}: {e}")
+
+            kr_results_local = []
+            existing_urls = set()
+            for wordlist_name, wordlist_results in all_wordlist_results:
+                for result in wordlist_results:
+                    key = (result['url'], result['method'])
+                    if key not in existing_urls:
+                        kr_results_local.append(result)
+                        existing_urls.add(key)
+            print(f"[+][Kiterunner] Total unique endpoints: {len(kr_results_local)}")
+            return {"kr_results": kr_results_local, "kr_enabled": True}
+        except Exception as e:
+            print(f"[!][Kiterunner] Failed: {e}")
+            return {"kr_results": [], "kr_enabled": False}
+
+    # --- Launch all Phase 2 tools in parallel ---
+    phase2_tools = {}
+    if JSLUICE_ENABLED:
+        phase2_tools['jsluice'] = _run_jsluice_isolated
+    if FFUF_ENABLED and ffuf_setup["enabled"]:
+        phase2_tools['ffuf'] = _run_ffuf_isolated
+    if ZAP_AJAX_SPIDER_ENABLED:
+        phase2_tools['zap_ajax'] = _run_zap_ajax_isolated
+    if ARJUN_ENABLED and arjun_setup["enabled"]:
+        phase2_tools['arjun'] = _run_arjun_isolated
+    if KITERUNNER_ENABLED and target_urls and kr_binary_path and KITERUNNER_WORDLISTS:
+        phase2_tools['kiterunner'] = _run_kiterunner_isolated
+
+    # Initialize result holders (defaults for when a tool is disabled or fails)
+    jsluice_result: dict = None
+    jsluice_stats: dict = {}
+    jsluice_urls_pre_verify_count: int = 0
+    ffuf_results: list = []
+    ffuf_meta: dict = {}
+    ffuf_stats: dict = {"ffuf_total": 0, "ffuf_new": 0, "ffuf_overlap": 0}
+    zap_ajax_urls: list = []
+    zap_ajax_meta: dict = {}
+    zap_ajax_stats: dict = {
+        "zap_ajax_spider_total": 0, "zap_ajax_spider_parsed": 0,
+        "zap_ajax_spider_new": 0, "zap_ajax_spider_overlap": 0,
+    }
+    arjun_results: list = []
+    arjun_meta: dict = {}
+    arjun_stats: dict = {
+        "arjun_total": 0, "arjun_new_endpoints": 0,
+        "arjun_existing_enriched": 0, "arjun_params_discovered": 0,
+    }
+    kr_results: list = []
+
+    if phase2_tools:
+        with ThreadPoolExecutor(max_workers=min(len(phase2_tools), 5), thread_name_prefix="phase2") as p2_exec:
+            p2_futures = {name: p2_exec.submit(fn) for name, fn in phase2_tools.items()}
+            for name, future in p2_futures.items():
+                try:
+                    merge_dict = future.result()
+                    if name == 'jsluice':
+                        jsluice_result = merge_dict.get("jsluice_result")
+                        jsluice_stats = merge_dict.get("jsluice_stats", {})
+                        jsluice_urls_pre_verify_count = merge_dict.get("jsluice_pre_verify", 0)
+                    elif name == 'ffuf':
+                        ffuf_results = merge_dict.get("ffuf_results") or []
+                        ffuf_meta = merge_dict.get("ffuf_meta", {})
+                        ffuf_stats = merge_dict.get("ffuf_stats", ffuf_stats)
+                    elif name == 'zap_ajax':
+                        zap_ajax_urls = merge_dict.get("zap_ajax_urls", [])
+                        zap_ajax_meta = merge_dict.get("zap_ajax_meta", {})
+                        zap_ajax_stats = merge_dict.get("zap_ajax_stats", zap_ajax_stats)
+                    elif name == 'arjun':
+                        arjun_results = merge_dict.get("arjun_results") or []
+                        arjun_meta = merge_dict.get("arjun_meta", {})
+                    elif name == 'kiterunner':
+                        kr_results = merge_dict.get("kr_results") or []
+                    print(f"[+][ResourceEnum] {name} complete")
+                except Exception as e:
+                    print(f"[!][ResourceEnum] {name} failed: {e}")
 
     # --- Merge jsluice results ---
-    jsluice_result = jsluice_out["result"]
-    jsluice_stats = jsluice_out["stats"]
-    jsluice_urls_pre_verify_count = jsluice_out["pre_verify_count"]
     if (jsluice_result or {}).get("urls"):
         print("\n[*][jsluice] Merging extracted URLs into results...")
         organized_data['by_base_url'], merge_stats = merge_jsluice_into_by_base_url(
@@ -1140,8 +1242,6 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         print(f"[-][jsluice] No URLs survived validation ({jsluice_stats['jsluice_skipped_blacklist']} blacklisted, {jsluice_stats['jsluice_skipped_unverified']} unverified)")
 
     # --- Merge FFuf results ---
-    ffuf_stats = ffuf_out["stats"]
-    ffuf_results = ffuf_out["result"]
     if ffuf_results:
         print("\n[*][FFuf] Merging discovered endpoints into results...")
         organized_data['by_base_url'], ffuf_stats = merge_ffuf_into_by_base_url(
@@ -1152,8 +1252,6 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
         print(f"[+][FFuf] Overlap with crawlers: {ffuf_stats['ffuf_overlap']}")
 
     # --- Merge ZAP Ajax Spider results ---
-    zap_ajax_urls, zap_ajax_meta = zap_ajax_out["result"]
-    zap_ajax_stats = zap_ajax_out["stats"]
     if zap_ajax_urls:
         print("\n[*][ZAP Ajax] Merging discovered URLs into results...")
         organized_data['by_base_url'], zap_ajax_stats = merge_zap_ajax_into_by_base_url(
@@ -1164,65 +1262,17 @@ def run_resource_enum(recon_data: dict, output_file: Optional[Path] = None, sett
     print(f"[+][ZAP Ajax] New endpoints: {zap_ajax_stats['zap_ajax_spider_new']}")
     print(f"[+][ZAP Ajax] Overlap: {zap_ajax_stats['zap_ajax_spider_overlap']}")
 
-    # Arjun parameter discovery (runs after crawlers/FFuf, enriches endpoints with hidden params)
-    # Feeds DISCOVERED endpoint URLs (not just base URLs) for maximum coverage.
-    arjun_stats = {
-        "arjun_total": 0,
-        "arjun_new_endpoints": 0,
-        "arjun_existing_enriched": 0,
-        "arjun_params_discovered": 0,
-    }
-
-    if ARJUN_ENABLED:
-        if arjun_binary_check():
-            # Collect full endpoint URLs from discovered data (Katana + Hakrawler + jsluice + FFuf)
-            arjun_target_urls = []
-            for base_url, base_data in organized_data['by_base_url'].items():
-                for path in base_data.get('endpoints', {}).keys():
-                    full_url = base_url.rstrip('/') + path
-                    arjun_target_urls.append(full_url)
-
-            # Fall back to base target_urls if no endpoints discovered yet
-            if not arjun_target_urls:
-                arjun_target_urls = list(target_urls)
-
-            # Cap to max endpoints (most interesting first — API/dynamic endpoints)
-            if len(arjun_target_urls) > ARJUN_MAX_ENDPOINTS:
-                # Prioritize API and dynamic endpoints over static ones
-                api_urls = [u for u in arjun_target_urls if any(p in u.lower() for p in ['/api/', '/v1/', '/v2/', '/graphql', '/rest/'])]
-                dynamic_urls = [u for u in arjun_target_urls if u not in api_urls and any(u.lower().endswith(e) for e in ['.php', '.asp', '.aspx', '.jsp'])]
-                other_urls = [u for u in arjun_target_urls if u not in api_urls and u not in dynamic_urls]
-                arjun_target_urls = (api_urls + dynamic_urls + other_urls)[:ARJUN_MAX_ENDPOINTS]
-                print(f"[*][Arjun] Capped to {ARJUN_MAX_ENDPOINTS} endpoints (API: {len(api_urls)}, dynamic: {len(dynamic_urls)}, other: {len(other_urls)})")
-
-            arjun_results, arjun_meta = run_arjun_discovery(
-                arjun_target_urls,
-                ARJUN_METHODS,
-                ARJUN_THREADS,
-                ARJUN_TIMEOUT,
-                ARJUN_SCAN_TIMEOUT,
-                ARJUN_CHUNK_SIZE,
-                ARJUN_RATE_LIMIT,
-                ARJUN_STABLE,
-                ARJUN_PASSIVE,
-                ARJUN_DISABLE_REDIRECTS,
-                ARJUN_CUSTOM_HEADERS,
-                target_domains,
-                use_proxy,
-            )
-
-            if arjun_results:
-                print("\n[*][Arjun] Merging discovered parameters into results...")
-                organized_data['by_base_url'], arjun_stats = merge_arjun_into_by_base_url(
-                    arjun_results,
-                    organized_data['by_base_url'],
-                )
-                print(f"[+][Arjun] Total URLs with params: {arjun_stats['arjun_total']}")
-                print(f"[+][Arjun] New endpoints: {arjun_stats['arjun_new_endpoints']}")
-                print(f"[+][Arjun] Existing endpoints enriched: {arjun_stats['arjun_existing_enriched']}")
-                print(f"[+][Arjun] Parameters discovered: {arjun_stats['arjun_params_discovered']}")
-        else:
-            print("[!][Arjun] arjun binary not found in PATH, skipping")
+    # --- Merge Arjun results ---
+    if arjun_results:
+        print("\n[*][Arjun] Merging discovered parameters into results...")
+        organized_data['by_base_url'], arjun_stats = merge_arjun_into_by_base_url(
+            arjun_results,
+            organized_data['by_base_url'],
+        )
+        print(f"[+][Arjun] Total URLs with params: {arjun_stats['arjun_total']}")
+        print(f"[+][Arjun] New endpoints: {arjun_stats['arjun_new_endpoints']}")
+        print(f"[+][Arjun] Existing endpoints enriched: {arjun_stats['arjun_existing_enriched']}")
+        print(f"[+][Arjun] Parameters discovered: {arjun_stats['arjun_params_discovered']}")
 
     # Merge GAU results if available
     gau_stats = {

@@ -214,7 +214,7 @@ model Project {
   stealthMode                 Boolean  @default(false) @map("stealth_mode")
   targetGuardrailEnabled      Boolean  @default(true) @map("target_guardrail_enabled")
   aiInPipeline                Boolean  @default(false) @map("ai_in_pipeline")
-  aiPipelineModel             String   @default("claude-opus-4-6") @map("ai_pipeline_model")
+  aiPipelineModel             String   @default("deepseek/deepseek-v4-pro") @map("ai_pipeline_model")
 
   // ========== RECON PRESET ==========
   reconPresetId               String?  @map("recon_preset_id")
@@ -709,7 +709,7 @@ model Project {
   gvmCleanupAfterScan               Boolean @default(true) @map("gvm_cleanup_after_scan")
 
   // ========== AGENT BEHAVIOUR ==========
-  agentOpenaiModel                      String   @default("claude-opus-4-6") @map("agent_openai_model")
+  agentOpenaiModel                      String   @default("deepseek/deepseek-v4-pro") @map("agent_openai_model")
   agentInformationalSystemPrompt        String   @default("") @map("agent_informational_system_prompt")
   agentExplSystemPrompt                 String   @default("") @map("agent_expl_system_prompt")
   agentPostExplSystemPrompt             String   @default("") @map("agent_post_expl_system_prompt")

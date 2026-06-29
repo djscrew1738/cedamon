@@ -450,6 +450,18 @@ def _run_uncover_expansion(combined_result: dict, settings: dict, target_domain:
     return None
 
 
+def _run_cve_correlation(combined_result: dict) -> dict | None:
+    """Thread-safe CVE version correlation runner. Returns correlation dict or None."""
+    try:
+        nmap_data = combined_result.get("nmap_scan", {})
+        vuln_data = combined_result.get("vuln_scan", {})
+        correlation_result = correlate_vulns_with_versions(vuln_data, nmap_data)
+        return correlation_result if correlation_result else None
+    except Exception as e:
+        print(f"[!][CVE] Version correlation failed (continuing): {e}")
+        return None
+
+
 def parse_target(target: str, subdomain_list: list = None) -> dict:
     """
     Parse target domain and determine scan mode based on SUBDOMAIN_LIST.
@@ -1870,43 +1882,61 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                 checkpoint.fail_phase("vuln_scan", phase_a_errors["vuln_scan"])
 
         # ================================================================
-        # GROUP 6 Phase B — MITRE enrichment (depends on Nuclei CVEs)
+        # GROUP 6 Phase B+C — MITRE Enrichment + CVE Version Correlation (parallel)
+        # Both depend on vuln_scan data but produce independent output keys.
+        # Running in parallel overlaps MITRE API calls with CVE cross-referencing.
         # ================================================================
-        if "vuln_scan" in SCAN_MODULES and _settings.get('MITRE_ENABLED', True) and 'vuln_scan' in combined_result:
-            print(f"\n[*][Pipeline] GROUP 6 Phase B: MITRE CVE Enrichment")
-            print("-" * 40)
-            try:
-                combined_result = run_mitre_enrichment(combined_result, output_file=output_file, settings=_settings)
-                _graph_update_bg("update_graph_from_vuln_scan", combined_result, USER_ID, PROJECT_ID)
-            except Exception as e:
-                print(f"[!][Pipeline] mitre_enrichment failed: {e}")
-                combined_result["metadata"].setdefault("phase_errors", {})["mitre_enrichment"] = str(e)
-                save_recon_file(combined_result, output_file)
+        phase_bc_futures = {}
+        phase_bc_executor = None
+        mitre_enabled = ("vuln_scan" in SCAN_MODULES and _settings.get('MITRE_ENABLED', True) and 'vuln_scan' in combined_result)
+        cve_correlation_enabled = (_settings.get('CVE_VERSION_CORRELATION_ENABLED', True) and 'vuln_scan' in combined_result
+                                   and bool(combined_result.get("nmap_scan", {})) and bool(combined_result.get("vuln_scan", {}).get("all_cves")))
 
-        # ================================================================
-        # GROUP 6 Phase C — CVE Version Correlation (depends on nmap + vuln_scan)
-        # Cross-validates CVE findings with detected service versions
-        # ================================================================
-        if _settings.get('CVE_VERSION_CORRELATION_ENABLED', True) and 'vuln_scan' in combined_result:
-            nmap_data = combined_result.get("nmap_scan", {})
-            vuln_data = combined_result.get("vuln_scan", {})
-            if nmap_data and vuln_data.get("all_cves"):
-                print(f"\n[*][Pipeline] GROUP 6 Phase C: CVE Version Correlation")
-                print("-" * 40)
+        if mitre_enabled or cve_correlation_enabled:
+            workers = (1 if mitre_enabled else 0) + (1 if cve_correlation_enabled else 0)
+            label_parts = []
+            if mitre_enabled: label_parts.append("MITRE Enrichment")
+            if cve_correlation_enabled: label_parts.append("CVE Version Correlation")
+            print(f"\n[*][Pipeline] GROUP 6 Phase B+C: {' + '.join(label_parts)} (parallel)")
+            print("-" * 40)
+
+            phase_bc_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="phase-bc")
+
+            if mitre_enabled:
+                phase_bc_futures["mitre"] = phase_bc_executor.submit(
+                    run_mitre_enrichment, combined_result, output_file, _settings
+                )
+
+            if cve_correlation_enabled:
+                phase_bc_futures["cve_correlation"] = phase_bc_executor.submit(
+                    _run_cve_correlation, combined_result
+                )
+
+            phase_bc_executor.shutdown(wait=True)
+
+            for name, future in phase_bc_futures.items():
                 try:
-                    correlation_result = correlate_vulns_with_versions(vuln_data, nmap_data)
-                    if correlation_result:
-                        combined_result["cve_correlation"] = correlation_result
-                        combined_result["metadata"]["cve_version_correlation"] = {
-                            "cves_correlated": correlation_result.get("correlated_count", 0),
-                            "confirmed_applicable": correlation_result.get("confirmed_applicable", 0),
-                            "unconfirmed": correlation_result.get("unconfirmed_count", 0),
-                        }
-                        print(f"[+][CVE] Correlated {correlation_result.get('correlated_count', 0)} CVEs with service versions")
-                        print(f"[+][CVE] Confirmed applicable: {correlation_result.get('confirmed_applicable', 0)}")
-                        save_recon_file(combined_result, output_file)
+                    if name == "mitre":
+                        combined_result = future.result()
+                        _graph_update_bg("update_graph_from_vuln_scan", combined_result, USER_ID, PROJECT_ID)
+                        print(f"[+][MITRE] Enrichment merged")
+                    elif name == "cve_correlation":
+                        correlation_result = future.result()
+                        if correlation_result:
+                            combined_result["cve_correlation"] = correlation_result
+                            combined_result["metadata"]["cve_version_correlation"] = {
+                                "cves_correlated": correlation_result.get("correlated_count", 0),
+                                "confirmed_applicable": correlation_result.get("confirmed_applicable", 0),
+                                "unconfirmed": correlation_result.get("unconfirmed_count", 0),
+                            }
+                            print(f"[+][CVE] Correlated {correlation_result.get('correlated_count', 0)} CVEs with service versions")
+                            print(f"[+][CVE] Confirmed applicable: {correlation_result.get('confirmed_applicable', 0)}")
+                            save_recon_file(combined_result, output_file)
                 except Exception as e:
-                    print(f"[!][CVE] Version correlation failed (continuing): {e}")
+                    print(f"[!][Pipeline] {name} failed: {e}")
+                    combined_result["metadata"].setdefault("phase_errors", {})[name] = str(e)
+                    if name == "mitre":
+                        save_recon_file(combined_result, output_file)
 
         # ================================================================
         # GROUP 6 Phase D — Finding Deduplication (after all vuln scanners)

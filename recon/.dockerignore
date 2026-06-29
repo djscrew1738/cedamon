@@ -1,0 +1,57 @@
+# Docker build context — exclude everything that doesn't go into the image.
+# This keeps the build context small and maximizes layer caching.
+
+# Virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Tests
+tests/
+*_test.py
+test_*.py
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docs
+docs/
+*.md
+!README.md
+
+# Node/webapp (not needed for recon image)
+webapp/
+node_modules/
+.next/
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Agentic (separate service)
+agentic/
+
+# Output data
+output/
+*.json
+!requirements*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
