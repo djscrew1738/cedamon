@@ -422,11 +422,75 @@
   .headerActions {
     width: 100%;
     flex-wrap: wrap;
+    gap: var(--space-1-5);
+  }
+
+  .headerActions .primaryButton,
+  .headerActions .secondaryButton,
+  .quickCreateBtn {
+    min-height: 44px;
+    padding: var(--space-2-5) var(--space-3);
+    font-size: var(--text-sm);
   }
 
   .quickCreateBtn {
     flex: 1;
     justify-content: center;
+  }
+
+  .modal {
+    max-width: 95vw;
+    margin: var(--space-2);
+    padding: var(--space-4);
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modalTitle {
+    font-size: var(--text-base);
+  }
+
+  .modalActions {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .modalActions button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .emptyActions {
+    flex-direction: column;
+    width: 100%;
+    gap: var(--space-2);
+  }
+
+  .emptyActions a,
+  .emptyActions button {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .skeletonGrid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .skeletonCard {
+    padding: var(--space-3);
+  }
+
+  .skeletonActions {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .skeletonBtn {
+    width: 100%;
   }
 }
 
@@ -454,5 +518,21 @@
   .grid, .skeletonGrid {
     grid-template-columns: 1fr;
     gap: var(--space-3);
+  }
+
+  .modal {
+    max-width: 100vw;
+    margin: var(--space-1);
+    padding: var(--space-3);
+    border-radius: var(--radius-default);
+  }
+
+  .quickCreateInfo {
+    font-size: 11px;
+    padding: var(--space-1-5) var(--space-2);
+  }
+
+  .creatingStatus {
+    padding: var(--space-3);
   }
 }
