@@ -104,6 +104,7 @@ export function useGvmStatus({
 
     setIsLoading(true)
     setError(null)
+    if (showToasts) toast.info('Starting GVM vulnerability scan...')
 
     try {
       const response = await fetch(`/api/gvm/${projectId}/start`, {
@@ -111,19 +112,27 @@ export function useGvmStatus({
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to start GVM scan')
+        const data = await response.json().catch(() => ({}))
+        const err = data.error || ''
+        if (err.includes('fetch failed') || err.includes('ECONNREFUSED') || err.includes('Internal server error')) {
+          throw new Error(
+            'Recon orchestrator is not running. Start it with: docker compose up -d recon-orchestrator'
+          )
+        }
+        throw new Error(err || 'Failed to start GVM scan')
       }
 
       const data: GvmState = await response.json()
       setState(data)
       previousStatusRef.current = data.status
+      if (showToasts) toast.success('GVM vulnerability scan started')
       return data
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
       onErrorRef.current?.(errorMessage)
+      if (showToasts) toast.error(errorMessage, 'GVM Start Failed')
       return null
 
     } finally {

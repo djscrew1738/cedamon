@@ -302,10 +302,12 @@ export function GraphToolbar({}: GraphToolbarProps) {
               <button
                 className={`${styles.gvmButton} ${isGvmActive ? styles.gvmButtonActive : ''}`}
                 onClick={isGvmPaused ? onResumeGvm : onStartGvm}
-                disabled={!gvmAvailable || isGvmRunning || (!hasReconData && !isGvmPaused) || (stealthMode && !isGvmPaused)}
+                disabled={!gvmAvailable || !gvmReady || isGvmRunning || (!hasReconData && !isGvmPaused) || (stealthMode && !isGvmPaused)}
                 title={
                   !gvmAvailable
                     ? 'GVM is not installed. Run ./redamon.sh install --gvm to enable vulnerability scanning'
+                    : gvmAvailable && !gvmReady
+                    ? 'GVM feed sync in progress — scans will be available when sync completes'
                     : stealthMode && !isGvmPaused
                     ? 'GVM scanning is disabled in Stealth Mode (generates ~50,000 active probes per target)'
                     : !hasReconData && !isGvmPaused
@@ -321,10 +323,12 @@ export function GraphToolbar({}: GraphToolbarProps) {
               >
                 {isGvmRunning ? (
                   <Loader2 size={14} className={styles.spinner} />
+                ) : !gvmReady ? (
+                  <Loader2 size={14} className={styles.spinner} />
                 ) : (
                   <Shield size={14} />
                 )}
-                <span>{isGvmStopping ? 'Stopping...' : isGvmBusy ? 'Scanning...' : isGvmPaused ? 'Resume' : 'GVM Scan'}</span>
+                <span>{isGvmStopping ? 'Stopping...' : isGvmBusy ? 'Scanning...' : isGvmPaused ? 'Resume' : !gvmReady ? 'Syncing...' : 'GVM Scan'}</span>
               </button>
 
               {isGvmBusy && (
