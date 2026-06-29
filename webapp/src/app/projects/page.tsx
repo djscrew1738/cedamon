@@ -143,7 +143,7 @@ export default function ProjectsPage() {
         const reconRes = await fetch(`/api/recon/${project.id}/start`, { method: 'POST' })
         if (reconRes.ok) {
           toast.success('Recon pipeline started')
-          router.push(`/graph?project=${project.id}&autostart=true`)
+          router.push(`/graph?project=${project.id}&openlogs=recon`)
           return
         }
         const reconData = await reconRes.json().catch(() => ({}))
@@ -157,7 +157,7 @@ export default function ProjectsPage() {
         toast.error('Project created, but could not reach recon orchestrator')
       }
 
-      // Navigate to graph anyway
+      // Navigate to graph — recon logs will open if it started, graph view otherwise
       router.push(`/graph?project=${project.id}`)
     } catch (err) {
       alertError(err instanceof Error ? err.message : 'Failed to create project')
