@@ -100,24 +100,17 @@ export function ImportModal({ isOpen, userId, onClose, onSuccess }: ImportModalP
             <div className="formGroup">
               <label className="formLabel">Project Backup File</label>
               <div
-                style={{
-                  border: '2px dashed var(--border-default)',
-                  borderRadius: 'var(--radius-default)',
-                  padding: 'var(--space-4)',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  background: file ? 'var(--bg-tertiary)' : 'transparent',
-                }}
+                className={`${styles.importDropzone} ${file ? styles.importDropzoneHasFile : ''}`}
                 onClick={() => fileInputRef.current?.click()}
               >
                 {file ? (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)' }}>
+                  <div className={styles.importFileInfo}>
                     <FileArchive size={16} />
-                    <span style={{ fontSize: 'var(--text-sm)' }}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                    <span className={styles.importFileName}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
                   </div>
                 ) : (
-                  <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
-                    <Upload size={24} style={{ margin: '0 auto var(--space-2)', display: 'block' }} />
+                  <div className={styles.importPlaceholder}>
+                    <Upload size={24} className={styles.importUploadIcon} />
                     Click to select a RedAmon export ZIP file
                   </div>
                 )}
@@ -129,7 +122,7 @@ export function ImportModal({ isOpen, userId, onClose, onSuccess }: ImportModalP
                   style={{ display: 'none' }}
                 />
               </div>
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
+              <p className={styles.importHint}>
                 The project will be created under the currently selected user.
               </p>
             </div>
@@ -154,36 +147,27 @@ export function ImportModal({ isOpen, userId, onClose, onSuccess }: ImportModalP
         )}
 
         {status === 'uploading' && (
-          <div style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-            <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', margin: '0 auto var(--space-3)', display: 'block' }} />
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+          <div className={styles.importLoading}>
+            <Loader2 size={32} className={styles.importSpinner} />
+            <p className={styles.importLoadingText}>
               Importing project data...
             </p>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            <p className={styles.importLoadingSubtext}>
               This may take a moment for large projects.
             </p>
           </div>
         )}
 
         {status === 'success' && result && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--success)' }}>
+          <div className={styles.importSuccess}>
+            <div className={styles.importSuccessHeader}>
               <CheckCircle size={20} />
-              <span style={{ fontWeight: 'var(--font-semibold)' }}>Import Successful</span>
+              <span className={styles.importSuccessTitle}>Import Successful</span>
             </div>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
+            <p className={styles.importSuccessMsg}>
               Project &quot;{result.projectName}&quot; has been restored.
             </p>
-            <div style={{
-              fontSize: 'var(--text-xs)',
-              color: 'var(--text-tertiary)',
-              background: 'var(--bg-tertiary)',
-              padding: 'var(--space-2)',
-              borderRadius: 'var(--radius-default)',
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 'var(--space-1)',
-            }}>
+            <div className={styles.importStats}>
               <span>Conversations: {result.stats.conversations}</span>
               <span>Messages: {result.stats.messages}</span>
               <span>Remediations: {result.stats.remediations}</span>
@@ -201,12 +185,12 @@ export function ImportModal({ isOpen, userId, onClose, onSuccess }: ImportModalP
         )}
 
         {status === 'error' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--danger)' }}>
+          <div className={styles.importError}>
+            <div className={styles.importErrorHeader}>
               <AlertCircle size={20} />
-              <span style={{ fontWeight: 'var(--font-semibold)' }}>Import Failed</span>
+              <span className={styles.importErrorTitle}>Import Failed</span>
             </div>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
+            <p className={styles.importErrorMsg}>
               {errorMessage}
             </p>
             <div className={styles.modalActions}>

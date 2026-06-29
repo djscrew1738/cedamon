@@ -400,6 +400,56 @@ def _auto_enable_contextual_modules(settings: dict, combined_result: dict) -> bo
     return changed
 
 
+def _run_dns_prevalidation(combined_result: dict, subdomains_to_validate: list, settings: dict) -> dict | None:
+    """Thread-safe DNS pre-validation runner. Returns dict of keys to merge into combined_result."""
+    try:
+        prevalidation_result = prevalidate_subdomains(
+            subdomains_to_validate,
+            timeout=settings.get('DNS_PREVALIDATION_TIMEOUT', 5.0),
+            workers=settings.get('DNS_PREVALIDATION_WORKERS', 50),
+            detect_wildcards=settings.get('DNS_PREVALIDATION_DETECT_WILDCARDS', True),
+        )
+        if prevalidation_result.get("stale_domains") or prevalidation_result.get("wildcard_domains"):
+            filtered_dns = filter_dns_stale(
+                combined_result.get("dns", {}),
+                prevalidation_result.get("stale_domains", []),
+                prevalidation_result.get("wildcard_domains", []),
+            )
+            result = {
+                "dns": filtered_dns,
+                "metadata": {
+                    **combined_result.get("metadata", {}),
+                    "dns_prevalidation": {
+                        "original_count": len(subdomains_to_validate),
+                        "validated_count": prevalidation_result.get("valid_count", 0),
+                        "stale_removed": len(prevalidation_result.get("stale_domains", [])),
+                        "wildcards_removed": len(prevalidation_result.get("wildcard_domains", [])),
+                    },
+                },
+            }
+            print(f"[+][DNS] Pre-validation complete: {prevalidation_result.get('valid_count', 0)} valid, "
+                  f"{len(prevalidation_result.get('stale_domains', []))} stale, "
+                  f"{len(prevalidation_result.get('wildcard_domains', []))} wildcard")
+            return result
+    except Exception as e:
+        print(f"[!][DNS] Pre-validation failed (continuing): {e}")
+    return None
+
+
+def _run_uncover_expansion(combined_result: dict, settings: dict, target_domain: str) -> dict | None:
+    """Thread-safe Uncover expansion runner. Returns dict with 'uncover' key to merge."""
+    try:
+        from recon.main_recon_modules.uncover_enrich import run_uncover_expansion, merge_uncover_into_pipeline
+        uncover_data = run_uncover_expansion(combined_result, settings)
+        if uncover_data:
+            merge_uncover_into_pipeline(combined_result, uncover_data, target_domain)
+            print(f"[+][Uncover] Expansion merged")
+            return {"uncover": uncover_data}
+    except Exception as e:
+        print(f"[!][Uncover] Expansion failed: {e}")
+    return None
+
+
 def parse_target(target: str, subdomain_list: list = None) -> dict:
     """
     Parse target domain and determine scan mode based on SUBDOMAIN_LIST.
@@ -904,7 +954,8 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
             print(f"[!][Uncover] Expansion failed: {e}")
 
     # =====================================================================
-    # Shodan + Port Scan (parallel fan-out) — same pattern as domain recon
+    # Shodan + Port Scan + OSINT (parallel fan-out) — same pattern as domain recon
+    # OSINT runs concurrently with port_scan + nmap to overlap network wait times.
     # =====================================================================
     shodan_enabled = settings.get('SHODAN_ENABLED', True) and any([
         settings.get('SHODAN_HOST_LOOKUP'),
@@ -915,6 +966,30 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
 
     naabu_enabled = settings.get('NAABU_ENABLED', True)
     masscan_enabled = settings.get('MASSCAN_ENABLED', True)
+
+    # Pre-flight OSINT: launch background executor (overlaps with port_scan + nmap)
+    ip_osint_executor = None
+    ip_osint_futures: dict = {}
+    ip_osint_enabled: dict = {}
+    if settings.get('OSINT_ENRICHMENT_ENABLED', False):
+        ip_osint_enabled = {
+            name: cfg for name, cfg in _OSINT_TOOLS.items()
+            if settings.get(cfg[0], False)
+            and (
+                settings.get(f'{name.upper()}_API_KEY', '')
+                or (name == 'censys' and settings.get('CENSYS_API_TOKEN', ''))
+                or name == 'otx'  # OTX supports anonymous requests without an API key
+            )
+        }
+        if ip_osint_enabled:
+            import importlib
+            ip_osint_workers = min(len(ip_osint_enabled), 5)
+            ip_osint_executor = ThreadPoolExecutor(max_workers=ip_osint_workers, thread_name_prefix="ip-osint-bg")
+            print(f"\n[*][Pipeline] OSINT Enrichment ({', '.join(ip_osint_enabled.keys())}) — launched in background")
+            for name, (_, module_path, func_name, _) in ip_osint_enabled.items():
+                mod = importlib.import_module(module_path)
+                fn = getattr(mod, func_name)
+                ip_osint_futures[name] = ip_osint_executor.submit(fn, combined_result, settings)
 
     if "port_scan" in SCAN_MODULES and not naabu_enabled and not masscan_enabled:
         print("\n[!][Pipeline] Both Naabu and Masscan are disabled — skipping port scan phase")
@@ -995,40 +1070,20 @@ def run_ip_recon(target_ips: list, settings: dict) -> dict:
         if "nmap_scan" in combined_result:
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
 
-    # OSINT Enrichment (parallel, same logic as domain recon Group 3b)
-    if not settings.get('OSINT_ENRICHMENT_ENABLED', False):
-        enabled_ip_osint = {}
-    else:
-        enabled_ip_osint = {
-            name: cfg for name, cfg in _OSINT_TOOLS.items()
-            if settings.get(cfg[0], False)
-            and (
-                settings.get(f'{name.upper()}_API_KEY', '')
-                or (name == 'censys' and settings.get('CENSYS_API_TOKEN', ''))
-                or name == 'otx'  # OTX supports anonymous requests without an API key
-            )
-        }
-    if enabled_ip_osint:
-        print(f"\n[*][Pipeline] OSINT Enrichment ({', '.join(enabled_ip_osint.keys())}) — parallel")
-        print("-" * 40)
-        import importlib
-        osint_workers = min(len(enabled_ip_osint), 5)
-        with ThreadPoolExecutor(max_workers=osint_workers, thread_name_prefix="ip-osint") as osint_exec:
-            osint_futures = {}
-            for name, (_, module_path, func_name, _) in enabled_ip_osint.items():
-                mod = importlib.import_module(module_path)
-                fn = getattr(mod, func_name)
-                osint_futures[name] = osint_exec.submit(fn, combined_result, settings)
-            for name, future in osint_futures.items():
-                try:
-                    data = future.result()
-                    if data:
-                        combined_result[name] = data
-                        combined_result["metadata"]["modules_executed"].append(f"{name}_enrich")
-                        print(f"[+][{name.upper()}] Enrichment merged")
-                except Exception as e:
-                    print(f"[!][{name.upper()}] Enrichment failed: {e}")
-        for name, (_, _, _, graph_method) in enabled_ip_osint.items():
+    # OSINT fan-in — wait for background executor and merge results
+    if ip_osint_executor is not None:
+        ip_osint_executor.shutdown(wait=True)
+        print(f"\n[*][Pipeline] OSINT fan-in — merging {len(ip_osint_futures)} enrichment tool(s)")
+        for name, future in ip_osint_futures.items():
+            try:
+                data = future.result()
+                if data:
+                    combined_result[name] = data
+                    combined_result["metadata"]["modules_executed"].append(f"{name}_enrich")
+                    print(f"[+][{name.upper()}] Enrichment merged")
+            except Exception as e:
+                print(f"[!][{name.upper()}] Enrichment failed: {e}")
+        for name, (_, _, _, graph_method) in ip_osint_enabled.items():
             if name in combined_result:
                 _graph_update_bg(graph_method, combined_result, USER_ID, PROJECT_ID)
 
@@ -1383,60 +1438,63 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
         _graph_update_bg("update_graph_from_urlscan_discovery", combined_result, USER_ID, PROJECT_ID)
 
     # =====================================================================
-    # GROUP 2.5 — DNS Pre-validation (before port scan)
-    # Validates subdomains exist and filters wildcards/stale entries
+    # GROUP 2.5+2b — DNS Pre-validation + Uncover Expansion (parallel)
+    # Both only depend on subdomain DNS data from Group 1. No cross-dependency.
+    # Running them in parallel overlaps their respective wait times.
     # =====================================================================
-    if _settings.get('DNS_PREVALIDATION_ENABLED', True):
-        subdomains_to_validate = list(combined_result.get("dns", {}).get("subdomains", {}).keys())
-        if subdomains_to_validate:
-            print(f"\n[*][Pipeline] GROUP 2.5: DNS Pre-validation — {len(subdomains_to_validate)} subdomain(s)")
-            print("-" * 40)
-            try:
-                prevalidation_result = prevalidate_subdomains(
-                    subdomains_to_validate,
-                    timeout=_settings.get('DNS_PREVALIDATION_TIMEOUT', 5.0),
-                    workers=_settings.get('DNS_PREVALIDATION_WORKERS', 50),
-                    detect_wildcards=_settings.get('DNS_PREVALIDATION_DETECT_WILDCARDS', True),
-                )
-                # Filter stale/wildcard entries from DNS results
-                if prevalidation_result.get("stale_domains") or prevalidation_result.get("wildcard_domains"):
-                    filtered_dns = filter_dns_stale(
-                        combined_result.get("dns", {}),
-                        prevalidation_result.get("stale_domains", []),
-                        prevalidation_result.get("wildcard_domains", []),
+    prevalidation_enabled = _settings.get('DNS_PREVALIDATION_ENABLED', True)
+    uncover_enabled = (
+        _settings.get('OSINT_ENRICHMENT_ENABLED', False)
+        and _settings.get('UNCOVER_ENABLED', False)
+    )
+
+    if prevalidation_enabled or uncover_enabled:
+        workers = (1 if prevalidation_enabled else 0) + (1 if uncover_enabled else 0)
+        if prevalidation_enabled and uncover_enabled:
+            print(f"\n[*][Pipeline] GROUP 2.5+2b: DNS Pre-validation + Uncover Expansion (parallel)")
+        elif prevalidation_enabled:
+            print(f"\n[*][Pipeline] GROUP 2.5: DNS Pre-validation")
+        else:
+            print(f"\n[*][Pipeline] GROUP 2b: Uncover Expansion")
+        print("-" * 40)
+
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="group2p5") as g2p5_exec:
+            g2p5_futures = {}
+
+            # DNS Pre-validation
+            if prevalidation_enabled:
+                subdomains_to_validate = list(combined_result.get("dns", {}).get("subdomains", {}).keys())
+                if subdomains_to_validate:
+                    g2p5_futures["prevalidate"] = g2p5_exec.submit(
+                        _run_dns_prevalidation, combined_result, subdomains_to_validate, _settings
                     )
-                    combined_result["dns"] = filtered_dns
-                    combined_result["metadata"]["dns_prevalidation"] = {
-                        "original_count": len(subdomains_to_validate),
-                        "validated_count": prevalidation_result.get("valid_count", 0),
-                        "stale_removed": len(prevalidation_result.get("stale_domains", [])),
-                        "wildcards_removed": len(prevalidation_result.get("wildcard_domains", [])),
-                    }
-                    print(f"[+][DNS] Pre-validation complete: {prevalidation_result.get('valid_count', 0)} valid, "
-                          f"{len(prevalidation_result.get('stale_domains', []))} stale, "
-                          f"{len(prevalidation_result.get('wildcard_domains', []))} wildcard")
-                    save_recon_file(combined_result, output_file)
-            except Exception as e:
-                print(f"[!][DNS] Pre-validation failed (continuing): {e}")
+
+            # Uncover Expansion
+            if uncover_enabled:
+                from recon.main_recon_modules.uncover_enrich import run_uncover_expansion, merge_uncover_into_pipeline
+                g2p5_futures["uncover"] = g2p5_exec.submit(
+                    _run_uncover_expansion, combined_result, _settings, TARGET_DOMAIN
+                )
+
+            # Fan-in: merge results
+            for name, future in g2p5_futures.items():
+                try:
+                    data = future.result()
+                    if name == "prevalidate" and data:
+                        combined_result.update(data)
+                        save_recon_file(combined_result, output_file)
+                    elif name == "uncover" and data:
+                        combined_result["uncover"] = data.get("uncover")
+                        combined_result["metadata"]["modules_executed"].append("uncover_expansion")
+                        _graph_update_bg("update_graph_from_uncover", combined_result, USER_ID, PROJECT_ID)
+                except Exception as e:
+                    print(f"[!][{name}] Failed: {e}")
 
     # =====================================================================
-    # GROUP 2b — Uncover Target Expansion (before port scan / OSINT)
-    # =====================================================================
-    if _settings.get('OSINT_ENRICHMENT_ENABLED', False) and _settings.get('UNCOVER_ENABLED', False):
-        try:
-            from recon.main_recon_modules.uncover_enrich import run_uncover_expansion, merge_uncover_into_pipeline
-            uncover_data = run_uncover_expansion(combined_result, _settings)
-            if uncover_data:
-                combined_result["uncover"] = uncover_data
-                merge_uncover_into_pipeline(combined_result, uncover_data, TARGET_DOMAIN)
-                combined_result["metadata"]["modules_executed"].append("uncover_expansion")
-                _graph_update_bg("update_graph_from_uncover", combined_result, USER_ID, PROJECT_ID)
-        except Exception as e:
-            print(f"[!][Uncover] Expansion failed: {e}")
-
-    # =====================================================================
-    # GROUP 3 — Fan-Out: Shodan + Port Scan (parallel)
-    # Both need IPs/hostnames from DNS. Independent of each other.
+    # GROUP 3 — Fan-Out: Shodan + Port Scan + OSINT (parallel)
+    # Shodan + Naabu + Masscan need IPs/hostnames from DNS.
+    # OSINT enrichment is purely passive API calls — no dependency on port scan.
+    # All four run concurrently to overlap network wait times.
     # =====================================================================
     shodan_enabled = _settings.get('SHODAN_ENABLED', True) and any([
         _settings.get('SHODAN_HOST_LOOKUP'),
@@ -1447,6 +1505,32 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
 
     naabu_enabled = _settings.get('NAABU_ENABLED', True)
     masscan_enabled = _settings.get('MASSCAN_ENABLED', True)
+
+    # Pre-flight OSINT: compute enabled tools and launch background executor
+    # This executor will shut down after Nmap (Group 3.5); OSINT runs in
+    # parallel with the entire port_scan + shodan + nmap block.
+    osint_executor = None
+    osint_futures: dict = {}
+    osint_enabled: dict = {}
+    if _settings.get('OSINT_ENRICHMENT_ENABLED', False):
+        osint_enabled = {
+            name: cfg for name, cfg in _OSINT_TOOLS.items()
+            if _settings.get(cfg[0], False)
+            and (
+                _settings.get(f'{name.upper()}_API_KEY', '')
+                or (name == 'censys' and _settings.get('CENSYS_API_TOKEN', ''))
+                or name == 'otx'  # OTX supports anonymous requests without an API key
+            )
+        }
+        if osint_enabled:
+            import importlib
+            osint_workers = min(len(osint_enabled), 5)
+            osint_executor = ThreadPoolExecutor(max_workers=osint_workers, thread_name_prefix="osint-bg")
+            print(f"\n[*][Pipeline] GROUP 3: OSINT Enrichment ({', '.join(osint_enabled.keys())}) — launched in background")
+            for name, (_, module_path, func_name, _) in osint_enabled.items():
+                mod = importlib.import_module(module_path)
+                fn = getattr(mod, func_name)
+                osint_futures[name] = osint_executor.submit(fn, combined_result, _settings)
 
     if "port_scan" in SCAN_MODULES and not naabu_enabled and not masscan_enabled:
         print("\n[!][Pipeline] Both Naabu and Masscan are disabled — skipping port scan phase")
@@ -1547,47 +1631,25 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
             _graph_update_bg("update_graph_from_nmap", combined_result, USER_ID, PROJECT_ID)
 
     # =====================================================================
-    # GROUP 3b — OSINT Enrichment (parallel, passive — no packets to target)
-    # Runs independently from port scanning; data feeds into the graph only.
+    # OSINT fan-in — wait for background executor and merge results
+    # (OSINT was launched before Group 3; it's been running concurrently
+    # with port_scan + shodan + nmap — the heaviest phases)
     # =====================================================================
-    if not _settings.get('OSINT_ENRICHMENT_ENABLED', False):
-        enabled_osint = {}
-    else:
-        enabled_osint = {
-            name: cfg for name, cfg in _OSINT_TOOLS.items()
-            if _settings.get(cfg[0], False)
-            and (
-                _settings.get(f'{name.upper()}_API_KEY', '')
-                or (name == 'censys' and _settings.get('CENSYS_API_TOKEN', ''))
-                or name == 'otx'  # OTX supports anonymous requests without an API key
-            )
-        }
-
-    if enabled_osint:
-        print(f"\n[*][Pipeline] GROUP 3b: OSINT Enrichment ({', '.join(enabled_osint.keys())}) — parallel")
-        print("-" * 40)
-
-        import importlib
-        osint_workers = min(len(enabled_osint), 5)
-        with ThreadPoolExecutor(max_workers=osint_workers, thread_name_prefix="osint") as osint_exec:
-            osint_futures = {}
-            for name, (_, module_path, func_name, _) in enabled_osint.items():
-                mod = importlib.import_module(module_path)
-                fn = getattr(mod, func_name)
-                osint_futures[name] = osint_exec.submit(fn, combined_result, _settings)
-
-            for name, future in osint_futures.items():
-                try:
-                    data = future.result()
-                    if data:
-                        combined_result[name] = data
-                        combined_result["metadata"]["modules_executed"].append(f"{name}_enrich")
-                        print(f"[+][{name.upper()}] Enrichment merged")
-                except Exception as e:
-                    print(f"[!][{name.upper()}] Enrichment failed: {e}")
+    if osint_executor is not None:
+        osint_executor.shutdown(wait=True)
+        print(f"\n[*][Pipeline] OSINT fan-in — merging {len(osint_futures)} enrichment tool(s)")
+        for name, future in osint_futures.items():
+            try:
+                data = future.result()
+                if data:
+                    combined_result[name] = data
+                    combined_result["metadata"]["modules_executed"].append(f"{name}_enrich")
+                    print(f"[+][{name.upper()}] Enrichment merged")
+            except Exception as e:
+                print(f"[!][{name.upper()}] Enrichment failed: {e}")
 
         # Queue graph updates for completed OSINT tools
-        for name, (_, _, _, graph_method) in enabled_osint.items():
+        for name, (_, _, _, graph_method) in osint_enabled.items():
             if name in combined_result:
                 _graph_update_bg(graph_method, combined_result, USER_ID, PROJECT_ID)
 
@@ -1661,7 +1723,7 @@ def run_domain_recon(target: str, anonymous: bool = False, bruteforce: bool = Fa
                         "high_value_targets": len([t for t in prioritized.get("ranked_targets", []) if t.get("score", 0) >= 70]),
                     }
                     print_priority_summary(prioritized)
-                    save_recon_file(combined_result, output_file)
+                    # Save deferred — resource_enum/vuln_scan will save after their phases
             except Exception as e:
                 print(f"[!][Priority] Target prioritization failed (continuing): {e}")
 

@@ -142,6 +142,133 @@
   margin-top: var(--space-2);
 }
 
+/* ─── ImportModal dropzone & status ─── */
+
+.importDropzone {
+  border: 2px dashed var(--border-default);
+  border-radius: var(--radius-default);
+  padding: var(--space-4);
+  text-align: center;
+  cursor: pointer;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.importDropzoneHasFile {
+  background: var(--bg-tertiary);
+}
+
+.importFileInfo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.importFileName {
+  font-size: var(--text-sm);
+}
+
+.importPlaceholder {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.importUploadIcon {
+  margin: 0 auto var(--space-2);
+  display: block;
+}
+
+.importHint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* Status: loading */
+
+.importLoading {
+  text-align: center;
+  padding: var(--space-4);
+}
+
+.importSpinner {
+  animation: spin 1s linear infinite;
+  margin: 0 auto var(--space-3);
+  display: block;
+}
+
+.importLoadingText {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.importLoadingSubtext {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* Status: success */
+
+.importSuccess {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.importSuccessHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--status-success);
+}
+
+.importSuccessTitle {
+  font-weight: var(--font-semibold);
+}
+
+.importSuccessMsg {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.importStats {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: var(--space-2);
+  border-radius: var(--radius-default);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+}
+
+/* Status: error */
+
+.importError {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.importErrorHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--status-error);
+}
+
+.importErrorTitle {
+  font-weight: var(--font-semibold);
+}
+
+.importErrorMsg {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
 /* ─── Responsive ─── */
 
 @media (max-width: 767px) {

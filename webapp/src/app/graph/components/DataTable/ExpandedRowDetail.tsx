@@ -68,7 +68,7 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
                 <div key={`${conn.nodeId}-${conn.relationType}-${i}`} className={styles.connItem}>
                   <span
                     className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
+                    style={{ '--dot-color': NODE_COLORS[conn.nodeType] || NODE_COLORS.Default } as React.CSSProperties}
                   />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{renderConnName(conn.nodeType, conn.nodeName)}</span>
@@ -93,7 +93,7 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
                 <div key={`${conn.nodeId}-${conn.relationType}-${i}`} className={styles.connItem}>
                   <span
                     className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
+                    style={{ '--dot-color': NODE_COLORS[conn.nodeType] || NODE_COLORS.Default } as React.CSSProperties}
                   />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{renderConnName(conn.nodeType, conn.nodeName)}</span>
@@ -118,7 +118,7 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
                 <div key={`l2-${conn.nodeId}-${i}`} className={styles.connItem}>
                   <span
                     className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
+                    style={{ '--dot-color': NODE_COLORS[conn.nodeType] || NODE_COLORS.Default } as React.CSSProperties}
                   />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{renderConnName(conn.nodeType, conn.nodeName)}</span>
@@ -142,7 +142,7 @@ export const ExpandedRowDetail = memo(function ExpandedRowDetail({ row }: Expand
                 <div key={`l3-${conn.nodeId}-${i}`} className={styles.connItem}>
                   <span
                     className={styles.connDot}
-                    style={{ background: NODE_COLORS[conn.nodeType] || NODE_COLORS.Default }}
+                    style={{ '--dot-color': NODE_COLORS[conn.nodeType] || NODE_COLORS.Default } as React.CSSProperties}
                   />
                   <span className={styles.connType}>{conn.nodeType}</span>
                   <span className={styles.connName}>{renderConnName(conn.nodeType, conn.nodeName)}</span>
