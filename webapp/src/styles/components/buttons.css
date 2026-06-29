@@ -325,3 +325,25 @@
 .dividerTall {
   height: 24px;
 }
+
+/* ─── Mobile touch targets ─── */
+@media (max-width: 767px) {
+  .reconStartButton {
+    min-height: 44px;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    width: 100%;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    min-height: 44px;
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+  }
+
+  .iconButton {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
