@@ -1,23 +1,22 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { ChevronDown, FolderSearch, Upload, X, Loader2, Play } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronDown, FolderSearch, Play } from 'lucide-react'
 import { Toggle, WikiInfoButton } from '@/components/ui'
 import type { Project } from '@prisma/client'
 import styles from '../ProjectForm.module.css'
 import { NodeInfoTooltip } from '../NodeInfoTooltip'
 import { FileImportButton } from '../FileImportButton'
 import { AiToggleLabel } from '../AiToggleLabel'
+import { WordlistManager } from '../WordlistManager'
 
 type FormData = Omit<Project, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'user'>
 
-const BUILTIN_WORDLISTS = [
-  { name: 'common.txt', path: '/usr/share/seclists/Discovery/Web-Content/common.txt' },
-  { name: 'directory-list-2.3-small.txt', path: '/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-small.txt' },
-  { name: 'raft-medium-directories.txt', path: '/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt' },
+const WEB_CONTENT_BUILTINS = [
+  { name: 'common.txt', path: '/usr/share/seclists/Discovery/Web-Content/common.txt', size: '25KB', desc: 'Most common paths' },
+  { name: 'directory-list-2.3-small.txt', path: '/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-small.txt', size: '400KB', desc: 'Small directory list' },
+  { name: 'raft-medium-directories.txt', path: '/usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt', size: '890KB', desc: 'Raft medium' },
 ]
-
-const DEFAULT_WORDLIST = BUILTIN_WORDLISTS[0].path
 
 interface CustomWordlist {
   name: string
@@ -36,84 +35,6 @@ interface FfufSectionProps {
 export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufSectionProps) {
   const [isOpen, setIsOpen] = useState(true)
   const [customWordlists, setCustomWordlists] = useState<CustomWordlist[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const canUpload = !!projectId
-
-  const fetchCustomWordlists = useCallback(async () => {
-    if (!projectId) return
-    try {
-      const res = await fetch(`/api/projects/${projectId}/wordlists`)
-      if (res.ok) {
-        const json = await res.json()
-        setCustomWordlists(json.wordlists || [])
-      }
-    } catch {
-      // Silently fail -- custom wordlists just won't appear
-    }
-  }, [projectId])
-
-  useEffect(() => {
-    fetchCustomWordlists()
-  }, [fetchCustomWordlists])
-
-  const handleUpload = async (file: File) => {
-    if (!projectId) return
-    setIsUploading(true)
-    setUploadError(null)
-
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const res = await fetch(`/api/projects/${projectId}/wordlists`, {
-        method: 'POST',
-        body: formData,
-      })
-
-      const result = await res.json()
-
-      if (!res.ok) {
-        setUploadError(result.error || 'Upload failed')
-        return
-      }
-
-      setCustomWordlists(result.wordlists || [])
-      if (result.uploaded?.path) {
-        updateField('ffufWordlist', result.uploaded.path)
-      }
-    } catch {
-      setUploadError('Upload failed. Please try again.')
-    } finally {
-      setIsUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  const handleDelete = async (name: string) => {
-    if (!projectId) return
-
-    try {
-      const res = await fetch(
-        `/api/projects/${projectId}/wordlists?name=${encodeURIComponent(name)}`,
-        { method: 'DELETE' }
-      )
-
-      if (res.ok) {
-        const result = await res.json()
-        setCustomWordlists(result.wordlists || [])
-
-        const deletedPath = `/app/recon/wordlists/${projectId}/${name}`
-        if (data.ffufWordlist === deletedPath) {
-          updateField('ffufWordlist', DEFAULT_WORDLIST)
-        }
-      }
-    } catch {
-      // Silently fail
-    }
-  }
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
@@ -236,146 +157,16 @@ export function FfufSection({ data, updateField, projectId, mode, onRun }: FfufS
               </div>
 
               <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>
-                  Wordlist <span style={{ fontWeight: 400, color: 'var(--text-tertiary)' }}>(built-in or upload)</span>
-                </label>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 'var(--space-2)',
-                    alignItems: 'stretch',
-                  }}
-                >
-                  <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-                    <select
-                      className="select"
-                      value={data.ffufWordlist}
-                      onChange={(e) => updateField('ffufWordlist', e.target.value || DEFAULT_WORDLIST)}
-                      aria-label="FFuf wordlist"
-                    >
-                      <optgroup label="Built-in (SecLists in recon image)">
-                        {BUILTIN_WORDLISTS.map((wl) => (
-                          <option key={wl.path} value={wl.path}>
-                            {wl.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                      {canUpload && customWordlists.length === 0 && (
-                        <optgroup label="Your custom lists">
-                          <option disabled value="__ffuf_no_custom_yet__">
-                            (None yet — use Upload .txt →)
-                          </option>
-                        </optgroup>
-                      )}
-                      {customWordlists.length > 0 && (
-                        <optgroup label="Your custom lists">
-                          {customWordlists.map((wl) => (
-                            <option key={wl.path} value={wl.path}>
-                              {wl.name} ({formatSize(wl.size)})
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".txt,text/plain"
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleUpload(file)
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="primaryButton"
-                    style={{
-                      whiteSpace: 'nowrap',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      flex: '0 0 auto',
-                      alignSelf: 'flex-start',
-                    }}
-                    onClick={() => (canUpload ? fileInputRef.current?.click() : undefined)}
-                    disabled={isUploading || !canUpload}
-                    title={
-                      !canUpload
-                        ? 'Save the project first to upload custom wordlists'
-                        : 'Upload a .txt wordlist — it will appear under “Your custom lists” in the menu'
-                    }
-                  >
-                    {isUploading ? <Loader2 size={14} className={styles.spinner} /> : <Upload size={14} />}
-                    {isUploading ? 'Uploading...' : 'Upload .txt'}
-                  </button>
-                </div>
-                {uploadError && (
-                  <span className={styles.fieldHint} style={{ color: 'var(--status-error)' }}>
-                    {uploadError}
-                  </span>
-                )}
-                {!uploadError && !canUpload && (
-                  <span className={styles.fieldHint}>
-                    Save the project first; then you can upload .txt payload lists (max 50MB) and select them in the menu
-                    above.
-                  </span>
-                )}
-                {!uploadError && canUpload && (
-                  <span className={styles.fieldHint}>
-                    Custom files are <strong>not</strong> listed until you upload them. Click <strong>Upload .txt</strong>,
-                    then choose your file under <strong>Your custom lists</strong> in the dropdown.
-                  </span>
-                )}
+                <WordlistManager
+                  value={(data.ffufWordlist as string) || ''}
+                  onChange={(path) => updateField('ffufWordlist', path)}
+                  projectId={projectId}
+                  label="Wordlist"
+                  categories={['Web Content', 'API Endpoints', 'Fuzzing']}
+                  extraBuiltins={WEB_CONTENT_BUILTINS}
+                  allowUpload={!!projectId}
+                />
               </div>
-
-              {customWordlists.length > 0 && canUpload && (
-                <div className={styles.fieldGroup}>
-                  <label className={styles.fieldLabel}>Uploaded Wordlists</label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                    {customWordlists.map((wl) => (
-                      <div
-                        key={wl.name}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: 'var(--space-1) var(--space-2)',
-                          background: 'var(--bg-tertiary)',
-                          borderRadius: 'var(--radius-default)',
-                          fontSize: 'var(--text-xs)',
-                          border: data.ffufWordlist === wl.path ? '1px solid var(--accent-secondary)' : '1px solid var(--border-default)',
-                        }}
-                      >
-                        <span style={{ color: 'var(--text-primary)' }}>
-                          {wl.name}
-                          <span style={{ color: 'var(--text-tertiary)', marginLeft: 'var(--space-2)' }}>
-                            {formatSize(wl.size)}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(wl.name)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: 'var(--text-tertiary)',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                          title={`Delete ${wl.name}`}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div className={styles.fieldRow}>
                 <div className={styles.fieldGroup}>
