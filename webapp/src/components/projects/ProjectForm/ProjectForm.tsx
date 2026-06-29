@@ -67,6 +67,8 @@ import { seedInitialModels, needsModelGate, hasNoConfiguredProvider } from './pr
 import { SavePresetModal } from './SavePresetModal'
 import { UserPresetDrawer } from './UserPresetDrawer'
 import { getPresetById, type ReconPreset } from '@/lib/recon-presets'
+import { ScanProfileSelector } from './ScanProfileSelector'
+import { SCAN_PROFILES, getProfileById, DEFAULT_PROFILE, type ScanProfile } from './scanProfiles'
 
 const WorkflowView = dynamic(
   () => import('./WorkflowView/WorkflowView').then(m => ({ default: m.WorkflowView })),
@@ -209,6 +211,12 @@ export function ProjectForm({
     }
     return null
   })
+
+  // Scan Profile — default to Optimal
+  const [scanProfile, setScanProfile] = useState<string>(
+    () => (formData as Record<string, unknown>).scanProfile as string || DEFAULT_PROFILE
+  )
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   // User Presets
   const [isSavePresetModalOpen, setIsSavePresetModalOpen] = useState(false)
@@ -374,6 +382,12 @@ export function ProjectForm({
     setAppliedPreset(preset)
     setIsPresetModalOpen(false)
     toast.success(`Recon preset "${preset.name}" applied`, 'Preset Applied')
+  }, [toast])
+
+  const handleProfileChange = useCallback((profile: ScanProfile) => {
+    setScanProfile(profile.id)
+    setFormData(prev => ({ ...prev, ...profile.settings } as ProjectFormData))
+    toast.success(`${profile.name} profile applied`, 'Profile Changed')
   }, [toast])
 
   const handleLoadUserPreset = useCallback((settings: Record<string, unknown>) => {
@@ -680,7 +694,34 @@ export function ProjectForm({
         </div>
       ) : (
         <>
-          {!isMobile && (
+          {/* Scan Profile Selector — choose preset settings */}
+          {mode === 'create' && (
+            <ScanProfileSelector
+              selected={scanProfile}
+              onChange={handleProfileChange}
+              disabled={isSubmitting}
+            />
+          )}
+
+          {/* Target fields — always visible */}
+          <TargetSection data={formData} updateField={updateField} mode={mode} />
+          <ScanModulesSection data={formData} updateField={updateField} />
+
+          {/* Advanced Settings Toggle */}
+          <div className={styles.advancedToggle}>
+            <button
+              type="button"
+              className={styles.advancedToggleBtn}
+              onClick={() => setShowAdvanced(!showAdvanced)}
+            >
+              {showAdvanced ? '▼' : '▶'} Advanced Settings
+            </button>
+            <span className={styles.advancedToggleHint}>
+              {showAdvanced ? 'All configuration tabs shown below' : `${TAB_GROUPS.reduce((sum, g) => sum + g.tabs.length, 0)} tabs hidden — click to expand`}
+            </span>
+          </div>
+
+          {showAdvanced && !isMobile && (
           <div className={styles.tabsWrapper}>
           <div className={styles.tabs}>
             {TAB_GROUPS.map((group, gi) => (
@@ -765,8 +806,8 @@ export function ProjectForm({
           </div>
           )}
 
-          {/* Mobile accordion: replace tab bar with collapsible sections */}
-          {isMobile && (
+          {/* Mobile accordion — only shown when Advanced is expanded */}
+          {showAdvanced && isMobile && (
             <div className={styles.mobileAccordion}>
               {TAB_GROUPS.map((group, gi) => {
                 const groupKey = `group-${gi}`

@@ -2190,3 +2190,41 @@
     font-size: var(--text-xs);
   }
 }
+
+/* ─── Advanced Settings Toggle ─── */
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-default);
+}
+
+.advancedToggleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-default);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.advancedToggleBtn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.advancedToggleHint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
