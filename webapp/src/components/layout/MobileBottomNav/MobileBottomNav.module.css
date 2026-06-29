@@ -74,7 +74,7 @@
 }
 
 /* ─── desktop: hidden ─── */
-@media (min-width: 769px) {
+@media (min-width: 768px) {
   .bottomNav {
     display: none;
   }

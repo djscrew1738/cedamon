@@ -23,15 +23,11 @@ services:
   # ---------------------------------------------------------------------------
   postgres:
     ports: !reset []
-    cap_drop:
-      - ALL
     security_opt:
       - no-new-privileges:true
 
   neo4j:
     ports: !reset []
-    cap_drop:
-      - ALL
     security_opt:
       - no-new-privileges:true
 
@@ -48,13 +44,8 @@ services:
       - ALL
 
   agent:
-    read_only: true
-    tmpfs:
-      - /tmp:noexec,nosuid,size=500m
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
 
   recon-orchestrator:
     security_opt:
