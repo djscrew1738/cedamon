@@ -361,8 +361,8 @@ def grab_banner(host: str, port: int, timeout: float = 5.0, use_ssl: bool = Fals
                 sock.send(probe)
                 sock.settimeout(timeout)
                 banner = sock.recv(1024)
-            except:
-                print(f"[!] grab_banner: sock.send(probe)")
+            except (OSError, socket.timeout) as e:
+                print(f"[!] grab_banner: socket error for port {port}: {e}")
                 pass
 
         sock.close()
@@ -393,7 +393,7 @@ def identify_service(banner: str, port: int) -> Dict:
                     "version": version_info,
                     "confidence": "high"
                 }
-            except:
+            except Exception:
                 return {"service": service, "version": None, "confidence": "medium"}
     
     return {"service": "unknown", "version": None, "banner_hint": banner[:100], "confidence": "low"}
@@ -1326,8 +1326,8 @@ def download_wappalyzer_database(settings: dict = None) -> Optional[str]:
                     cached_data = json.load(f)
                 tech_count = len(cached_data.get('technologies', {}))
                 print(f"[*][httpx] Using cached Wappalyzer DB ({tech_count} technologies, {file_age_hours:.1f}h old)")
-            except:
-                print(f"[*][httpx] Using cached Wappalyzer DB ({file_age_hours:.1f}h old)")
+            except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
+                print(f"[*][httpx] Could not read cached Wappalyzer DB: {e}")
             return str(WAPPALYZER_CACHE_FILE)
 
     print("[*][httpx] Downloading latest Wappalyzer technologies database...")

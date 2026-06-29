@@ -1633,8 +1633,8 @@ async def websocket_endpoint(
                 "message": f"Fatal error: {str(e)}",
                 "recoverable": False
             })
-        except:
-            pass
+        except Exception:
+            logger.debug("Could not send error message to disconnected client")
     finally:
         # Don't cancel active tasks — let background agents keep running
         # and persisting messages to DB even when the user disconnects.
