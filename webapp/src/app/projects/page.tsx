@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, FolderOpen, Users, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { Plus, FolderOpen, Users, RefreshCw, Trash2, Upload, Zap, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { useProjects, useDeleteProject } from '@/hooks/useProjects'
 import { useUsers, useCreateUser, useDeleteUser } from '@/hooks/useUsers'
@@ -19,8 +19,15 @@ export default function ProjectsPage() {
   const toast = useToast()
   const [showUserModal, setShowUserModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [showQuickCreate, setShowQuickCreate] = useState(false)
   const [newUserName, setNewUserName] = useState('')
   const [newUserEmail, setNewUserEmail] = useState('')
+
+  // Quick Create state
+  const [qcName, setQcName] = useState('')
+  const [qcDomain, setQcDomain] = useState('')
+  const [qcSubmitting, setQcSubmitting] = useState(false)
+  const [qcStartingRecon, setQcStartingRecon] = useState(false)
 
   const { data: users, isLoading: usersLoading } = useUsers()
   const { data: projects, isLoading: projectsLoading, refetch } = useProjects(userId || undefined)
@@ -29,7 +36,6 @@ export default function ProjectsPage() {
   const deleteUserMutation = useDeleteUser()
   const hasAutoSelected = useRef(false)
 
-  // Clear stale userId if deleted, or auto-select first user on initial load
   useEffect(() => {
     if (!users) return
     if (userId && !users.find(u => u.id === userId)) {
@@ -64,13 +70,101 @@ export default function ProjectsPage() {
       const res = await fetch(`/api/recon/${projectId}/start`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alertError(data.error || 'Failed to start recon')
+        const err = data.error || ''
+        if (res.status === 0 || err.includes('fetch failed') || err.includes('ECONNREFUSED')) {
+          alertError('Recon orchestrator is not running. Start it with: docker compose up -d recon-orchestrator')
+        } else {
+          alertError(err || 'Failed to start recon')
+        }
         return
       }
       toast.success('Recon pipeline started')
       router.push(`/graph?project=${projectId}&autostart=true`)
     } catch (err) {
-      alertError(err instanceof Error ? err.message : 'Failed to start recon')
+      const msg = err instanceof Error ? err.message : 'Failed to start recon'
+      if (msg.includes('fetch') || msg.includes('Failed to fetch')) {
+        alertError('Cannot reach recon orchestrator. Ensure it is running: docker compose up -d recon-orchestrator')
+      } else {
+        alertError(msg)
+      }
+    }
+  }
+
+  // Quick Create: create project via API
+  const handleQuickCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userId) {
+      alertError('Select a user first')
+      return
+    }
+    if (!qcName.trim()) {
+      alertError('Project name is required')
+      return
+    }
+    if (!qcDomain.trim()) {
+      alertError('Target domain is required')
+      return
+    }
+
+    setQcSubmitting(true)
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          name: qcName.trim(),
+          targetDomain: qcDomain.trim(),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        alertError(data.error || 'Failed to create project')
+        setQcSubmitting(false)
+        return
+      }
+
+      const project = await res.json()
+      toast.success('Project created')
+
+      // Set current project and optionally start recon
+      setCurrentProject({
+        id: project.id,
+        name: project.name,
+        targetDomain: project.targetDomain,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+      })
+
+      // Auto-start recon
+      setQcStartingRecon(true)
+      try {
+        const reconRes = await fetch(`/api/recon/${project.id}/start`, { method: 'POST' })
+        if (reconRes.ok) {
+          toast.success('Recon pipeline started')
+          router.push(`/graph?project=${project.id}&autostart=true`)
+          return
+        }
+        const reconData = await reconRes.json().catch(() => ({}))
+        const reconErr = reconData.error || ''
+        if (reconRes.status === 0 || reconErr.includes('fetch failed') || reconErr.includes('ECONNREFUSED')) {
+          toast.error('Project created, but recon orchestrator is not running')
+        } else {
+          toast.error(`Project created, but recon failed: ${reconErr}`)
+        }
+      } catch {
+        toast.error('Project created, but could not reach recon orchestrator')
+      }
+
+      // Navigate to graph anyway
+      router.push(`/graph?project=${project.id}`)
+    } catch (err) {
+      alertError(err instanceof Error ? err.message : 'Failed to create project')
+      setQcSubmitting(false)
+      setQcStartingRecon(false)
+    } finally {
+      if (!qcStartingRecon) setQcSubmitting(false)
     }
   }
 
@@ -111,6 +205,7 @@ export default function ProjectsPage() {
   }
 
   const isLoading = usersLoading || projectsLoading
+  const isCreating = qcSubmitting || qcStartingRecon
 
   return (
     <div className={styles.container}>
@@ -129,14 +224,28 @@ export default function ProjectsPage() {
             <RefreshCw size={14} />
           </button>
           {userId && (
-            <button
-              className="secondaryButton"
-              onClick={() => setShowImportModal(true)}
-              title="Import project from backup"
-            >
-              <Upload size={14} />
-              Import Project
-            </button>
+            <>
+              <button
+                className={styles.quickCreateBtn}
+                onClick={() => {
+                  setQcName('')
+                  setQcDomain('')
+                  setShowQuickCreate(true)
+                }}
+                title="Quickly create a project with just a name and domain"
+              >
+                <Zap size={14} />
+                Quick Create
+              </button>
+              <button
+                className="secondaryButton"
+                onClick={() => setShowImportModal(true)}
+                title="Import project from backup"
+              >
+                <Upload size={14} />
+                Import
+              </button>
+            </>
           )}
           {userId ? (
             <Link href="/projects/new" className="primaryButton">
@@ -189,7 +298,19 @@ export default function ProjectsPage() {
       </div>
 
       {isLoading ? (
-        <div className={styles.loading}>Loading...</div>
+        <div className={styles.skeletonGrid}>
+          {[1, 2, 3].map(i => (
+            <div key={i} className={styles.skeletonCard}>
+              <div className={styles.skeletonLine} />
+              <div className={styles.skeletonLine} />
+              <div className={styles.skeletonLine} />
+              <div className={styles.skeletonActions}>
+                <div className={styles.skeletonBtn} />
+                <div className={styles.skeletonBtn} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : projects && projects.length > 0 ? (
         <div className={styles.grid}>
           {projects.map((project) => (
@@ -211,17 +332,103 @@ export default function ProjectsPage() {
           <FolderOpen size={48} />
           <h2>No Projects Yet</h2>
           <p>Create your first project to get started with reconnaissance.</p>
-          {userId ? (
-            <Link href="/projects/new" className="primaryButton">
-              <Plus size={14} />
-              Create Project
-            </Link>
-          ) : (
-            <button className="primaryButton" disabled>
-              <Plus size={14} />
-              Create Project
-            </button>
-          )}
+          <div className={styles.emptyActions}>
+            {userId ? (
+              <>
+                <button
+                  className={styles.quickCreateBtn}
+                  onClick={() => {
+                    setQcName('')
+                    setQcDomain('')
+                    setShowQuickCreate(true)
+                  }}
+                >
+                  <Zap size={14} />
+                  Quick Create
+                </button>
+                <Link href="/projects/new" className="primaryButton">
+                  <Plus size={14} />
+                  Full Setup
+                </Link>
+              </>
+            ) : (
+              <button className="primaryButton" disabled>
+                <Plus size={14} />
+                Create Project
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Quick Create Modal ─── */}
+      {showQuickCreate && (
+        <div className={styles.modalOverlay} onClick={() => !isCreating && setShowQuickCreate(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            {isCreating ? (
+              <div className={styles.creatingStatus}>
+                <Loader2 size={24} className={styles.creatingSpinner} />
+                <p>{qcStartingRecon ? 'Starting recon pipeline...' : 'Creating project...'}</p>
+              </div>
+            ) : (
+              <>
+                <h2 className={styles.modalTitle}>
+                  <Zap size={16} style={{ marginRight: 'var(--space-1-5)', verticalAlign: 'middle' }} />
+                  Quick Create Project
+                </h2>
+                <p className={styles.modalSubtitle}>
+                  Minimal setup — sensible defaults applied. Use <strong>New Project</strong> for full configuration.
+                </p>
+                <form onSubmit={handleQuickCreate}>
+                  <div className="formGroup">
+                    <label className="formLabel formLabelRequired">Project Name</label>
+                    <input
+                      type="text"
+                      className="textInput"
+                      value={qcName}
+                      onChange={(e) => setQcName(e.target.value)}
+                      placeholder="e.g., Acme Corp Pentest"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                  <div className="formGroup">
+                    <label className="formLabel formLabelRequired">Target Domain</label>
+                    <input
+                      type="text"
+                      className="textInput"
+                      value={qcDomain}
+                      onChange={(e) => setQcDomain(e.target.value)}
+                      placeholder="e.g., example.com"
+                      required
+                    />
+                  </div>
+                  <div className={styles.quickCreateInfo}>
+                    <strong>Defaults applied:</strong> Full scan profile, all recon modules enabled,
+                    nuclei critical+high+medium, max 100 iterations, standard stealth mode off.
+                  </div>
+                  <div className={styles.modalActions}>
+                    <button
+                      type="button"
+                      className="secondaryButton"
+                      onClick={() => setShowQuickCreate(false)}
+                      disabled={isCreating}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="primaryButton"
+                      disabled={isCreating || !userId}
+                    >
+                      <Zap size={14} />
+                      Create & Scan
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
         </div>
       )}
 

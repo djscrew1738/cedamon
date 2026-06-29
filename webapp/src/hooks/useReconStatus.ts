@@ -113,8 +113,14 @@ export function useReconStatus({
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to start recon')
+        const data = await response.json().catch(() => ({}))
+        const err = data.error || ''
+        if (err.includes('fetch failed') || err.includes('ECONNREFUSED') || err.includes('Internal server error')) {
+          throw new Error(
+            'Recon orchestrator is not running. Start it with: docker compose up -d recon-orchestrator'
+          )
+        }
+        throw new Error(err || 'Failed to start recon')
       }
 
       const data: ReconState = await response.json()
@@ -127,7 +133,7 @@ export function useReconStatus({
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       setError(errorMessage)
       onErrorRef.current?.(errorMessage)
-      if (showToasts) toast.error(`Failed to start recon: ${errorMessage}`)
+      if (showToasts) toast.error(errorMessage, 'Recon Start Failed')
       return null
 
     } finally {
