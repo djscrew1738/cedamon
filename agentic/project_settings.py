@@ -384,6 +384,45 @@ DEFAULT_AGENT_SETTINGS: dict[str, Any] = {
     'ROE_THIRD_PARTY_PROVIDERS': [],
     'ROE_COMPLIANCE_FRAMEWORKS': [],
     'ROE_NOTES': '',
+
+    # ────────────────────────────────────────────────────────────────
+    # XBOW Integration — advanced autonomous agent capabilities
+    # ────────────────────────────────────────────────────────────────
+    # Enable XBOW modules (OODA loop, dynamic exploit synthesis,
+    # context management, dynamic tool acquisition, general planning).
+    # When False, the agent uses the standard ReAct graph exclusively.
+    'XBOW_ENABLED': False,
+
+    # Prefer OODA loop over standard ReAct graph for invoke calls.
+    # When True, invoke() routes through invoke_with_ooda().
+    'XBOW_PREFER_OODA': False,
+
+    # Maximum OODA cycles per mission (prevent infinite loops).
+    'XBOW_MAX_CYCLES': 200,
+
+    # Maximum debug-retry attempts for exploit synthesis.
+    'XBOW_EXPLOIT_MAX_RETRIES': 3,
+
+    # Execution timeout for sandboxed exploit scripts (seconds).
+    'XBOW_SANDBOX_TIMEOUT': 60,
+
+    # Enable automatic tool installation when planner detects missing tools.
+    'XBOW_AUTO_INSTALL_TOOLS': False,
+
+    # Number of consecutive no-progress cycles before triggering recovery.
+    'XBOW_STUCK_THRESHOLD': 5,
+
+    # Maximum repeated identical actions before stuck detection.
+    'XBOW_REPEATED_ACTION_THRESHOLD': 2,
+
+    # Top-K relevant past summaries to include in context.
+    'XBOW_CONTEXT_TOP_K': 5,
+
+    # Path to the sandbox Docker image (set to '' to disable sandbox).
+    'XBOW_SANDBOX_IMAGE': 'redamon-sandbox:latest',
+
+    # Path to the context manager's SQLite database.
+    'XBOW_CONTEXT_DB_PATH': '/tmp/redamon_context.db',
 }
 
 

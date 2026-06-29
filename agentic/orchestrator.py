@@ -102,6 +102,20 @@ class AgentOrchestrator:
         # Metasploit prewarm: background restart tasks keyed by session_key
         self._prewarm_tasks: dict[str, asyncio.Task] = {}
 
+        # ------------------------------------------------------------------
+        # XBOW Integration Modules (lazy-init on first use).
+        # These enable: dynamic exploit synthesis, OODA loop, general
+        # security planning, context management, sandboxed execution,
+        # and dynamic tool acquisition.
+        # ------------------------------------------------------------------
+        self._xbow_initialized = False
+        self.sandbox_executor = None       # SandboxExecutor
+        self.context_manager = None        # ContextManager
+        self.tool_loader = None            # ToolLoader
+        self.general_planner = None        # GeneralPlanner
+        self.exploit_synth = None          # ExploitSynthAgent
+        self.ooda_loop = None             # OODALoop
+
     async def initialize(self) -> None:
         """Initialize tools and graph (LLM setup deferred until project_id is known)."""
         if self._initialized:
@@ -1070,6 +1084,248 @@ class AgentOrchestrator:
     # =========================================================================
     # PUBLIC API
     # =========================================================================
+
+    def _initialize_xbow_modules(self) -> None:
+        """Lazy-initialize XBOW integration modules.
+
+        Creates SandboxExecutor, ContextManager, ToolLoader, GeneralPlanner,
+        ExploitSynthAgent, and OODALoop. Safe to call multiple times — only
+        the first call does anything.
+        """
+        if self._xbow_initialized:
+            return
+
+        logger.info("Initializing XBOW integration modules...")
+
+        try:
+            from sandbox_executor import SandboxExecutor
+            self.sandbox_executor = SandboxExecutor(auto_build=False)
+            logger.info("  [XBOW] SandboxExecutor initialized")
+        except Exception as exc:
+            logger.warning("  [XBOW] SandboxExecutor init failed: %s", exc)
+
+        try:
+            from context_manager import ContextManager
+            self.context_manager = ContextManager(
+                db_path=os.environ.get(
+                    "REDAMON_CONTEXT_DB",
+                    "/tmp/redamon_context.db",
+                ),
+            )
+            self.context_manager.initialize()
+            logger.info("  [XBOW] ContextManager initialized")
+        except Exception as exc:
+            logger.warning("  [XBOW] ContextManager init failed: %s", exc)
+
+        try:
+            from tool_loader import ToolLoader
+            self.tool_loader = ToolLoader(
+                llm=self.llm,
+                auto_install=False,  # Explicit install only
+            )
+            logger.info("  [XBOW] ToolLoader initialized")
+        except Exception as exc:
+            logger.warning("  [XBOW] ToolLoader init failed: %s", exc)
+
+        try:
+            from general_planner import GeneralPlanner
+            self.general_planner = GeneralPlanner(
+                llm=self.llm,
+                tool_loader=self.tool_loader,
+                context_manager=self.context_manager,
+            )
+            logger.info("  [XBOW] GeneralPlanner initialized")
+        except Exception as exc:
+            logger.warning("  [XBOW] GeneralPlanner init failed: %s", exc)
+
+        try:
+            from exploit_synth_agent import ExploitSynthAgent
+            self.exploit_synth = ExploitSynthAgent(
+                llm=self.llm,
+                sandbox_executor=self.sandbox_executor,
+            )
+            logger.info("  [XBOW] ExploitSynthAgent initialized")
+        except Exception as exc:
+            logger.warning("  [XBOW] ExploitSynthAgent init failed: %s", exc)
+
+        try:
+            from ooda_loop import OODALoop
+            self.ooda_loop = OODALoop(
+                llm=self.llm,
+                planner=self.general_planner,
+                context_manager=self.context_manager,
+                sandbox_executor=self.sandbox_executor,
+                tool_loader=self.tool_loader,
+                exploit_synth=self.exploit_synth,
+                # Wire the existing tool executor callback.
+                execute_tool_fn=self._ooda_execute_tool,
+            )
+            logger.info("  [XBOW] OODALoop initialized")
+        except Exception as exc:
+            logger.warning("  [XBOW] OODALoop init failed: %s", exc)
+
+        self._xbow_initialized = True
+        logger.info("XBOW integration modules initialized")
+
+    async def _ooda_execute_tool(
+        self, tool_name: str, tool_args: dict
+    ) -> dict:
+        """Execute a tool via the existing PhaseAwareToolExecutor.
+
+        This bridges the OODA loop's ACT phase with RedaMon's existing
+        MCP-based tool execution infrastructure.
+        """
+        if not self.tool_executor:
+            return {"output": "No tool executor available", "success": False}
+        try:
+            result = await self.tool_executor.execute(
+                tool_name,
+                tool_args,
+                phase="exploitation",
+                skip_phase_check=True,
+            )
+            return result if result else {"output": "", "success": True}
+        except Exception as exc:
+            return {"output": str(exc), "error": str(exc), "success": False}
+
+    async def invoke_with_ooda(
+        self,
+        question: str,
+        user_id: str,
+        project_id: str,
+        session_id: str,
+    ) -> InvokeResponse:
+        """Invoke the agent using the XBOW OODA executive loop.
+
+        This is the enhanced execution path that uses:
+        - GeneralPlanner for task classification and hierarchical planning
+        - OODALoop for self-correcting Observe-Orient-Decide-Act cycles
+        - ContextManager for intelligent context retrieval
+        - ExploitSynthAgent for dynamic exploit synthesis
+        - ToolLoader for dynamic tool acquisition
+
+        Falls back to the standard ReAct graph if XBOW modules
+        are not available.
+        """
+        if not self._initialized:
+            raise RuntimeError(
+                "Orchestrator not initialized. Call initialize() first."
+            )
+
+        self._apply_project_settings(project_id)
+
+        if self.llm is None:
+            msg = "LLM not configured. Please add an API key in Global Settings."
+            logger.error(f"[{user_id}/{project_id}/{session_id}] {msg}")
+            return InvokeResponse(error=msg)
+
+        # Initialize XBOW modules.
+        self._initialize_xbow_modules()
+
+        if not self.ooda_loop:
+            logger.warning(
+                "XBOW OODA loop unavailable, falling back to standard ReAct graph"
+            )
+            return await self.invoke(question, user_id, project_id, session_id)
+
+        logger.info(
+            f"[{user_id}/{project_id}/{session_id}] "
+            f"Invoking with XBOW OODA loop: {question[:100]}"
+        )
+
+        try:
+            config = create_config(user_id, project_id, session_id)
+            input_state = {
+                "messages": [HumanMessage(content=question)],
+                "user_id": user_id,
+                "project_id": project_id,
+                "session_id": session_id,
+                "conversation_objectives": [{"content": question}],
+                "current_objective_index": 0,
+                "current_phase": "informational",
+                "execution_trace": [],
+                "target_info": {},
+                "todo_list": [],
+                "task_complete": False,
+            }
+
+            # Run the OODA loop.
+            result = await self.ooda_loop.run(
+                state=input_state,
+                config=config,
+                objective=question,
+            )
+
+            # Build response from OODA loop result.
+            completion = result.get("completion_reason", "OODA loop completed")
+            flag = result.get("flag_found")
+            cycles = result.get("cycles", 0)
+            elapsed = result.get("elapsed_seconds", 0)
+
+            answer = f"{completion}"
+            if flag:
+                answer += f"\n\nFlag found: {flag}"
+            answer += f"\n\n[OODA: {cycles} cycles, {elapsed:.1f}s]"
+
+            return InvokeResponse(
+                answer=answer,
+                task_complete=True,
+                iteration_count=cycles,
+            )
+
+        except Exception as e:
+            logger.error(
+                f"[{user_id}/{project_id}/{session_id}] XBOW OODA error: {e}",
+                exc_info=True,
+            )
+            # Fall back to standard ReAct on failure.
+            logger.info("Falling back to standard ReAct graph")
+            return await self.invoke(question, user_id, project_id, session_id)
+
+    async def run_benchmark(self, task_path: str) -> dict:
+        """Run a CTF benchmark task autonomously.
+
+        Loads the task JSON file, creates a plan, and runs the OODA loop
+        until a flag matching the expected pattern is found or timeout.
+
+        Args:
+            task_path: Path to the benchmark task JSON file.
+
+        Returns:
+            dict with task_id, found_flag, steps_taken, elapsed_seconds, success.
+        """
+        if not self._initialized:
+            raise RuntimeError(
+                "Orchestrator not initialized. Call initialize() first."
+            )
+
+        self._initialize_xbow_modules()
+
+        if not self.general_planner:
+            return {"error": "GeneralPlanner not available", "success": False}
+
+        try:
+            from general_planner import BenchmarkRunner, BenchmarkTask
+
+            task = BenchmarkTask.from_json(task_path)
+            logger.info("=== BENCHMARK MODE: %s ===", task.task_id)
+
+            runner = BenchmarkRunner(
+                planner=self.general_planner,
+                ooda_loop=self.ooda_loop,
+                output_dir=os.environ.get(
+                    "REDAMON_BENCHMARK_DIR",
+                    "/tmp/redamon_benchmark",
+                ),
+            )
+
+            result = await runner.run(task_path)
+            logger.info("=== BENCHMARK COMPLETE: %s ===", task.task_id)
+            return result
+
+        except Exception as exc:
+            logger.error("Benchmark execution failed: %s", exc, exc_info=True)
+            return {"error": str(exc), "success": False}
 
     async def invoke(
         self,
