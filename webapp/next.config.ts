@@ -3,7 +3,7 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   output: 'standalone',
 
-  serverExternalPackages: ['neo4j-driver', 'pdfjs-dist', 'pdf-parse'],
+  serverExternalPackages: ['neo4j-driver', 'pdfjs-dist', 'pdf-parse', '@prisma/client'],
 
   images: {
     remotePatterns: [],

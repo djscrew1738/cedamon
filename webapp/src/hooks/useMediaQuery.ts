@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
  * Reactively queries a CSS media query string and returns whether it matches.
  *
  * Usage:
- *   const isSmall = useMediaQuery('(max-width: 768px)');
+ *   const isSmall = useMediaQuery('(max-width: 767px)');
  *   const isDark = useMediaQuery('(prefers-color-scheme: dark)');
  */
 export function useMediaQuery(query: string): boolean {
@@ -28,10 +28,10 @@ export function useMediaQuery(query: string): boolean {
 }
 
 /**
- * Convenience hook: true when the viewport is ≤ 768px (tablet / mobile).
+ * Convenience hook: true when the viewport is <= 767px (tablet / mobile).
  */
 export function useIsMobile(): boolean {
-  return useMediaQuery('(max-width: 768px)');
+  return useMediaQuery('(max-width: 767px)');
 }
 
 /**

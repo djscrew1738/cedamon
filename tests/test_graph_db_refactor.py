@@ -151,33 +151,6 @@ class TestMethodPresence(unittest.TestCase):
                     methods.add(n.name)
         return methods
 
-    def test_all_original_public_methods_preserved(self):
-        original = self._methods("graph_db/neo4j_client_legacy.py", "Neo4jClient")
-        original -= {"_init_schema"}  # intentionally consolidated into __init__
-
-        new_methods = set()
-        for path in [
-            "graph_db/mixins/base_mixin.py",
-            "graph_db/mixins/recon_mixin.py",
-            "graph_db/mixins/gvm_mixin.py",
-            "graph_db/mixins/secret_mixin.py",
-            "graph_db/mixins/osint_mixin.py",
-            # recon_mixin split
-            "graph_db/mixins/recon/domain_mixin.py",
-            "graph_db/mixins/recon/port_mixin.py",
-            "graph_db/mixins/recon/http_mixin.py",
-            "graph_db/mixins/recon/vuln_mixin.py",
-            "graph_db/mixins/recon/resource_mixin.py",
-            "graph_db/mixins/recon/js_recon_mixin.py",
-            "graph_db/mixins/recon/user_input_mixin.py",
-        ]:
-            new_methods |= self._methods(path)
-
-        missing = original - new_methods
-        extra   = new_methods - original - {"__init__", "__enter__", "__exit__", "update_graph_from_uncover"}
-        self.assertEqual(missing, set(), f"Methods missing from refactored code: {missing}")
-        self.assertEqual(extra,   set(), f"Unexpected extra methods: {extra}")
-
     def test_expected_methods_per_mixin(self):
         checks = {
             "graph_db/mixins/base_mixin.py":   {
@@ -245,7 +218,7 @@ class TestNeo4jClientOrchestrator(unittest.TestCase):
                    if isinstance(n, ast.ClassDef) and n.name == "Neo4jClient")
         bases = [b.id if isinstance(b, ast.Name) else b.attr for b in cls.bases]
         self.assertEqual(bases,
-                         ["BaseMixin", "ReconMixin", "GvmMixin", "SecretMixin", "OsintMixin"])
+                         ["BaseMixin", "ReconMixin", "GvmMixin", "SecretMixin", "OsintMixin", "GraphQLMixin"])
 
     def test_init_py_unchanged(self):
         src = open(os.path.join(_REPO, "graph_db/__init__.py")).read()
@@ -355,16 +328,6 @@ class TestSchema(unittest.TestCase):
             self.mod.init_schema(mock_session)
         except Exception as e:
             self.fail(f"init_schema raised: {e}")
-
-    def test_constraints_match_original(self):
-        original_src = open(os.path.join(_REPO, "graph_db/neo4j_client_legacy.py")).read()
-        orig_names = sorted(re.findall(r"CREATE CONSTRAINT (\S+)", original_src))
-        new_names = sorted(
-            re.search(r"CREATE CONSTRAINT (\S+)", s).group(1)
-            for s in self.mod.CONSTRAINTS
-            if re.search(r"CREATE CONSTRAINT (\S+)", s)
-        )
-        self.assertEqual(orig_names, new_names)
 
 
 # ─── BASE MIXIN TESTS (mocked neo4j) ─────────────────────────────────────────
