@@ -68,7 +68,7 @@ import { SavePresetModal } from './SavePresetModal'
 import { UserPresetDrawer } from './UserPresetDrawer'
 import { getPresetById, type ReconPreset } from '@/lib/recon-presets'
 import { ScanProfileSelector } from './ScanProfileSelector'
-import { SCAN_PROFILES, getProfileById, DEFAULT_PROFILE, type ScanProfile } from './scanProfiles'
+import { DEFAULT_PROFILE, type ScanProfile } from './scanProfiles'
 
 const WorkflowView = dynamic(
   () => import('./WorkflowView/WorkflowView').then(m => ({ default: m.WorkflowView })),
