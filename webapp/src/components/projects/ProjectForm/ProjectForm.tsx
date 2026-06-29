@@ -217,8 +217,6 @@ export function ProjectForm({
     () => (formData as Record<string, unknown>).scanProfile as string || DEFAULT_PROFILE
   )
   const [showAdvanced, setShowAdvanced] = useState(false)
-
-  // User Presets
   const [isSavePresetModalOpen, setIsSavePresetModalOpen] = useState(false)
   const [isUserPresetDrawerOpen, setIsUserPresetDrawerOpen] = useState(false)
 
@@ -686,7 +684,7 @@ export function ProjectForm({
         </div>
       </div>
 
-      <div ref={bodyRef} className={styles.bodyWrapper}>
+      <div ref={bodyRef} className={`${styles.bodyWrapper} ${!showAdvanced ? styles.bodyCollapsed : ''}`}>
       {isLoadingDefaults ? (
         <div className={styles.loadingContainer}>
           <Loader2 size={24} className={styles.spinner} />

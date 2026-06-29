@@ -2229,6 +2229,13 @@
   color: var(--text-tertiary);
 }
 
+/* When Advanced is collapsed, hide tabs and tab content */
+.bodyCollapsed .tabsWrapper,
+.bodyCollapsed .tabs,
+.bodyCollapsed .mobileAccordion {
+  display: none !important;
+}
+
 /* ─── Advanced Toggle — Responsive ─── */
 @media (max-width: 767px) {
   .advancedToggle {
