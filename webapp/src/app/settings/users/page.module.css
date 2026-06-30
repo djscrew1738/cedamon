@@ -119,6 +119,15 @@
   color: var(--status-error);
 }
 
+.deleteConfirmButton {
+  border-color: var(--status-error);
+}
+
+.confirmText {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
 .form {
   display: flex;
   flex-direction: column;

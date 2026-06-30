@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { Loader2, ChevronDown, ChevronUp, CheckCircle2, XCircle } from 'lucide-react'
 import styles from './ScanProgressMonitor.module.css'
 
 export interface ActiveScan {
@@ -10,7 +10,6 @@ export interface ActiveScan {
   phase?: string | null
   phaseNumber?: number | null
   totalPhases?: number
-  /** Optional human-readable elapsed time string (e.g. "2m 34s") */
   elapsed?: string | null
 }
 
@@ -18,27 +17,35 @@ interface ScanProgressMonitorProps {
   scans: ActiveScan[]
 }
 
-/**
- * Map a scan status to a colour class for the status dot.
- */
 function statusColor(status: string): string {
   switch (status) {
-    case 'running':
-      return styles.dotRunning
-    case 'starting':
-      return styles.dotStarting
-    case 'paused':
-      return styles.dotPaused
-    case 'error':
-    case 'stopping':
-      return styles.dotError
-    default:
-      return styles.dotIdle
+    case 'running': return styles.dotRunning
+    case 'starting': return styles.dotStarting
+    case 'paused': return styles.dotPaused
+    case 'error': return styles.dotError
+    case 'completed': return styles.dotCompleted
+    default: return styles.dotIdle
   }
 }
 
 export function ScanProgressMonitor({ scans }: ScanProgressMonitorProps) {
   const [expanded, setExpanded] = useState(false)
+  const [completedToast, setCompletedToast] = useState<string | null>(null)
+
+  const prevScansRef = useRef<ActiveScan[]>([])
+
+  // Detect scan completions and show summary
+  useEffect(() => {
+    const prevMap = new Map(prevScansRef.current.map(s => [s.label, s.status]))
+    for (const scan of scans) {
+      const prevStatus = prevMap.get(scan.label)
+      if (prevStatus && prevStatus !== 'completed' && scan.status === 'completed') {
+        setCompletedToast(scan.label)
+        setTimeout(() => setCompletedToast(null), 6000)
+      }
+    }
+    prevScansRef.current = scans
+  }, [scans])
 
   const activeScans = scans.filter(
     s => s.status === 'running' || s.status === 'starting' || s.status === 'paused'
@@ -48,26 +55,45 @@ export function ScanProgressMonitor({ scans }: ScanProgressMonitorProps) {
     if (activeScans.length > 0) setExpanded(prev => !prev)
   }, [activeScans.length])
 
-  if (activeScans.length === 0) return null
+  if (activeScans.length === 0 && !completedToast) return null
 
   return (
     <div className={styles.wrapper}>
+      {/* Completion toast */}
+      {completedToast && (
+        <div className={styles.completionToast}>
+          <CheckCircle2 size={14} className={styles.completionIcon} />
+          <span className={styles.completionText}>
+            {completedToast} completed
+          </span>
+          <button
+            className={styles.completionDismiss}
+            onClick={() => setCompletedToast(null)}
+            aria-label="Dismiss"
+          >
+            <XCircle size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Collapsed trigger badge */}
-      <button
-        className={styles.trigger}
-        onClick={toggle}
-        title={expanded ? 'Hide scan details' : 'Show scan details'}
-        aria-expanded={expanded}
-      >
-        <Loader2 size={12} className={styles.spinner} />
-        <span className={styles.triggerLabel}>
-          {activeScans.length} scan{activeScans.length > 1 ? 's' : ''} active
-        </span>
-        {expanded
-          ? <ChevronUp size={12} className={styles.chevron} />
-          : <ChevronDown size={12} className={styles.chevron} />
-        }
-      </button>
+      {activeScans.length > 0 && (
+        <button
+          className={styles.trigger}
+          onClick={toggle}
+          title={expanded ? 'Hide scan details' : 'Show scan details'}
+          aria-expanded={expanded}
+        >
+          <Loader2 size={12} className={styles.spinner} />
+          <span className={styles.triggerLabel}>
+            {activeScans.length} scan{activeScans.length > 1 ? 's' : ''} active
+          </span>
+          {expanded
+            ? <ChevronUp size={12} className={styles.chevron} />
+            : <ChevronDown size={12} className={styles.chevron} />
+          }
+        </button>
+      )}
 
       {/* Expanded scan list */}
       {expanded && (

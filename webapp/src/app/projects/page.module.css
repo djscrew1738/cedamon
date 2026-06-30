@@ -232,6 +232,11 @@
   margin: 0;
 }
 
+.modalTitleIcon {
+  margin-right: var(--space-1-5);
+  vertical-align: middle;
+}
+
 .modalSubtitle {
   font-size: var(--text-xs);
   color: var(--text-tertiary);

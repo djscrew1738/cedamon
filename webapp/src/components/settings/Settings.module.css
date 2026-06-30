@@ -38,6 +38,20 @@
   border-bottom: 1px solid var(--border-default);
   margin-bottom: var(--space-5);
   overflow-x: auto;
+  /* Scroll fade indicator */
+  background:
+    linear-gradient(to right, var(--bg-primary) 30%, transparent),
+    linear-gradient(to left, var(--bg-primary) 30%, transparent 70%) 100% 0,
+    linear-gradient(to right, rgba(0,0,0,0.08), transparent),
+    linear-gradient(to left, rgba(0,0,0,0.08), transparent) 100% 0;
+  background-repeat: no-repeat;
+  background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+  scrollbar-width: none;
+}
+
+.tabBar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -515,6 +529,7 @@
   .tab {
     padding: var(--space-2) var(--space-3);
     font-size: var(--text-xs);
+    min-height: 36px;
   }
 
   .settingsGrid {
@@ -702,8 +717,11 @@
   }
 
   .tab {
-    padding: var(--space-1-5) var(--space-2);
+    padding: var(--space-2) var(--space-2-5);
     font-size: 10px;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--space-1);
   }
 }
 

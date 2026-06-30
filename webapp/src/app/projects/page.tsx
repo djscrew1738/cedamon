@@ -373,7 +373,7 @@ export default function ProjectsPage() {
             ) : (
               <>
                 <h2 className={styles.modalTitle}>
-                  <Zap size={16} style={{ marginRight: 'var(--space-1-5)', verticalAlign: 'middle' }} />
+                  <Zap size={16} className={styles.modalTitleIcon} />
                   Quick Create Project
                 </h2>
                 <p className={styles.modalSubtitle}>

@@ -410,17 +410,16 @@ export default function UsersPage() {
       >
         <div className={styles.form}>
           {formError && <div className={styles.error}>{formError}</div>}
-          <p style={{ color: 'var(--text-primary)', fontSize: 'var(--text-sm)' }}>
+          <p className={styles.confirmText}>
             Are you sure you want to delete <strong>{modal.type === 'delete' ? modal.userName : ''}</strong>?
             This will also delete all their projects, conversations, and settings.
           </p>
           <div className={styles.modalActions}>
             <button className={styles.actionButton} onClick={closeModal}>Cancel</button>
             <button
-              className={`${styles.actionButton} ${styles.deleteButton}`}
+              className={`${styles.actionButton} ${styles.deleteButton} ${styles.deleteConfirmButton}`}
               onClick={handleDeleteUser}
               disabled={deleteUser.isPending}
-              style={{ borderColor: 'var(--status-error)' }}
             >
               {deleteUser.isPending ? 'Deleting...' : 'Delete User'}
             </button>

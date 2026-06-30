@@ -42,6 +42,26 @@ export const RECON_PHASES = [
 
 export type ReconPhase = typeof RECON_PHASES[number]
 
+/** Human-friendly descriptions shown during scan progress */
+export const PHASE_DESCRIPTIONS: Record<ReconPhase, string> = {
+  'Domain Discovery': 'Enumerating subdomains, DNS records, and discovering related assets',
+  'Port Scanning': 'Probing common ports to identify running services',
+  'HTTP Probing': 'Checking which services respond to HTTP/HTTPS and fingerprinting web servers',
+  'Resource Enumeration': 'Crawling and discovering endpoints, APIs, JS files, and hidden paths',
+  'Vulnerability Scanning': 'Running Nuclei templates and CVE checks against discovered services',
+  'MITRE Enrichment': 'Correlating findings with MITRE ATT&CK framework and threat intelligence',
+}
+
+/** Color for each phase (used in logs and progress UI) */
+export const PHASE_COLORS: Record<ReconPhase, string> = {
+  'Domain Discovery': '#3b82f6',
+  'Port Scanning': '#8b5cf6',
+  'HTTP Probing': '#06b6d4',
+  'Resource Enumeration': '#f59e0b',
+  'Vulnerability Scanning': '#ef4444',
+  'MITRE Enrichment': '#10b981',
+}
+
 // =============================================================================
 // GVM Vulnerability Scan Types
 // =============================================================================
