@@ -234,6 +234,23 @@ export function AttackPanel({ projectId, onTogglePartialReconLogs, onRequestReve
     runsRef.current = runs
   }, [runs])
 
+  // Build an attack status map: suggestionId -> status + run info
+  const attackStatusMap = useMemo(() => {
+    const map: Record<string, { status: string; runId?: string; error?: string; stats?: Record<string, number> }> = {}
+    for (const [suggId, runId] of Object.entries(runIdBySuggestion)) {
+      const run = runs.find(r => r.run_id === runId)
+      if (run) {
+        map[suggId] = {
+          status: run.status,
+          runId: run.run_id,
+          error: run.error ?? undefined,
+          stats: run.stats ?? undefined,
+        }
+      }
+    }
+    return map
+  }, [runIdBySuggestion, runs])
+
   useEffect(() => {
     fetchSuggestions()
     fetchSurfaceSummary()

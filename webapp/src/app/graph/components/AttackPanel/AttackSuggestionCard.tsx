@@ -4,6 +4,7 @@ import {
   Target,
   Flag,
   CheckCircle2,
+  XCircle,
   Play,
   Square,
   ScrollText,
@@ -144,10 +145,15 @@ export function AttackSuggestionCard({
                 <Play size={14} />
                 <span>Re-run</span>
               </button>
+            ) : runState?.status === 'error' ? (
+              <span className={styles.failedLabel}>
+                <XCircle size={14} />
+                Failed — {runState.error?.slice(0, 60) || 'Unknown error'}
+              </span>
             ) : (
               <span className={styles.doneLabel}>
                 <CheckCircle2 size={14} />
-                Already completed
+                Completed successfully
               </span>
             )
           ) : (
