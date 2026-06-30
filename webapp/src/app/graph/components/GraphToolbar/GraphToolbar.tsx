@@ -377,6 +377,17 @@ export function GraphToolbar({}: GraphToolbarProps) {
               </button>
             </div>
 
+            {/* GVM result summary badge */}
+            {gvmStatus === 'completed' && gvmSummary && gvmSummary.total > 0 && (
+              <div className={styles.gvmSummary} title={`${gvmSummary.critical} critical, ${gvmSummary.high} high, ${gvmSummary.medium} medium, ${gvmSummary.low} low`}>
+                <Shield size={11} />
+                <span className={styles.gvmSummaryCritical}>{gvmSummary.critical}</span>
+                <span className={styles.gvmSummaryHigh}>{gvmSummary.high}</span>
+                <span className={styles.gvmSummaryMedium}>{gvmSummary.medium}</span>
+                <span className={styles.gvmSummaryLow}>{gvmSummary.low}</span>
+              </div>
+            )}
+
             {/* Other Scans (GVM, BadDNS, Nuclei, Takeover, JS Recon, GitHub Hunt, TruffleHog) */}
             <div className={styles.actionGroup}>
               <button

@@ -413,6 +413,26 @@
   color: white;
 }
 
+/* GVM scan result summary badge */
+.gvmSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.gvmSummaryCritical { color: #ef4444; }
+.gvmSummaryHigh { color: #f97316; }
+.gvmSummaryMedium { color: #eab308; }
+.gvmSummaryLow { color: #3b82f6; }
+
 /* GitHub Secret Hunt Button */
 .githubHuntButton {
   display: flex;

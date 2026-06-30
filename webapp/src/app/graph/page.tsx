@@ -1495,6 +1495,7 @@ export default function GraphPage() {
         onDownloadGvmJSON: handleDownloadGvmJSON,
         onToggleGvmLogs: handleToggleGvmLogs,
         gvmStatus: gvmState?.status || 'idle',
+        gvmSummary: gvmState?.summary ?? null,
         hasGvmData,
         isGvmLogsOpen: openLogTabs.includes('gvm'),
         onStartGithubHunt: handleStartGithubHunt,
