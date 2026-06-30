@@ -11,6 +11,8 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.language_models import BaseChatModel
 
+from agentic.llm_security import redact_secrets
+
 logger = logging.getLogger(__name__)
 
 REPORT_SYSTEM_PROMPT = """You are a senior penetration testing report writer at a top-tier offensive security consultancy. Given structured security assessment data, generate thorough, professional narrative summaries for each section of a pentest report.

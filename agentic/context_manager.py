@@ -32,6 +32,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+try:
+    from .llm_security import redact_secrets
+except ImportError:
+    from agentic.llm_security import redact_secrets
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -290,6 +295,9 @@ class ContextManager:
     ) -> int:
         """Record an action and auto-extract assets/vulns from findings."""
         self.initialize()
+
+        # Phase 1 hardening: redact secrets from raw output before storage.
+        raw_output = redact_secrets(raw_output)
 
         if len(raw_output) > 50_000:
             raw_output = (
