@@ -43,6 +43,7 @@ export function GraphToolbar({}: GraphToolbarProps) {
     onDownloadGvmJSON,
     onToggleGvmLogs,
     gvmStatus = 'idle',
+    gvmSummary,
     hasGvmData = false,
     isGvmLogsOpen = false,
     onStartGithubHunt,

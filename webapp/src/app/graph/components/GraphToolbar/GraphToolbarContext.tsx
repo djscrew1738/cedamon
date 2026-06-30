@@ -40,6 +40,7 @@ export interface GraphToolbarContextValue {
   gvmStatus?: GvmStatus
   hasGvmData?: boolean
   isGvmLogsOpen?: boolean
+  gvmSummary?: GvmState['summary']
   // GitHub Hunt props
   onStartGithubHunt?: () => void
   onPauseGithubHunt?: () => void

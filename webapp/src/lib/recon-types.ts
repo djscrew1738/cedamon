@@ -78,6 +78,15 @@ export interface GvmState {
   completed_at: string | null
   error: string | null
   container_id?: string | null
+  /** Vulnerability counts by severity (populated on completion) */
+  summary?: {
+    critical: number
+    high: number
+    medium: number
+    low: number
+    info: number
+    total: number
+  } | null
 }
 
 export const GVM_PHASES = [
